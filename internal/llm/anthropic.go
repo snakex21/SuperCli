@@ -42,6 +42,7 @@ func NormalizeAnthropicBaseURL(base string) string {
 type AnthropicConfig struct {
 	BaseURL   string
 	APIKey    string
+	Tokens    AnthropicTokenSource // optional OAuth credentials, refreshed before requests
 	Model     string
 	MaxTokens int
 	// Timeout bounds response-header wait and the maximum idle gap between
@@ -93,10 +94,17 @@ func NewAnthropic(cfg AnthropicConfig) (*AnthropicProvider, error) {
 		cfg.ConnectTimeout = 30 * time.Second
 	}
 	if cfg.HTTPClient == nil {
-		transport := http.DefaultTransport.(*http.Transport).Clone()
-		transport.DialContext = (&net.Dialer{Timeout: cfg.ConnectTimeout, KeepAlive: 30 * time.Second}).DialContext
-		transport.ResponseHeaderTimeout = 0                 // bounded per request below so custom clients behave the same
-		cfg.HTTPClient = &http.Client{Transport: transport} // no Client.Timeout: streaming body must not be capped
+		// Zen's edge fingerprints the TLS ClientHello AND the HTTP request
+		// bytes: for opencode.ai we replay the bun handshake and write raw
+		// bun-shaped HTTP; every other backend keeps the stock transport.
+		if zenClient := newOpenCodeZenHTTPClient(cfg.BaseURL, cfg.ConnectTimeout); zenClient != nil {
+			cfg.HTTPClient = zenClient
+		} else {
+			transport := http.DefaultTransport.(*http.Transport).Clone()
+			transport.DialContext = (&net.Dialer{Timeout: cfg.ConnectTimeout, KeepAlive: 30 * time.Second}).DialContext
+			transport.ResponseHeaderTimeout = 0                 // bounded per request below so custom clients behave the same
+			cfg.HTTPClient = &http.Client{Transport: transport} // no Client.Timeout: streaming body must not be capped
+		}
 	}
 	caps := cfg.Capabilities
 	if caps == nil {
@@ -151,6 +159,18 @@ func (p *AnthropicProvider) Complete(ctx context.Context, msgs []Message, tools 
 			return nil, fmt.Errorf("build image fallback request: %w", err)
 		}
 	}
+	if p.cfg.Tokens != nil {
+		body, err = claudeOAuthRequest(body, true)
+		if err != nil {
+			return nil, fmt.Errorf("Claude request: %w", err)
+		}
+		if len(imageFallback) > 0 {
+			imageFallback, err = claudeOAuthRequest(imageFallback, true)
+			if err != nil {
+				return nil, fmt.Errorf("Claude image request: %w", err)
+			}
+		}
+	}
 	out := make(chan Delta, 16)
 	go func() {
 		defer close(out)
@@ -194,6 +214,13 @@ func (p *AnthropicProvider) Complete(ctx context.Context, msgs []Message, tools 
 				_ = reader.Close()
 			}
 		}
+		// Signed-history prefixes use SuperCli's canonical names and instructions;
+		// the deterministic OAuth wire wrapper must not invalidate them next turn.
+		if p.cfg.Tokens != nil {
+			if canonical, e := claudeOAuthRequest(actual, false); e == nil {
+				actual = canonical
+			}
+		}
 		streamCtx := context.WithValue(ctx, anthropicPrefixKey{}, anthropicRequestPrefix(actual))
 		if err := p.streamSSE(streamCtx, respBody, out); err != nil {
 			select {
@@ -216,6 +243,7 @@ func (p *AnthropicProvider) do(ctx context.Context, cancel context.CancelFunc, b
 	betaRetried := false
 	visionRetried := false
 	zenRemapped := false
+	authRetried := false
 	for {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.cfg.BaseURL+"/messages", bytes.NewReader(body))
 		if err != nil {
@@ -232,7 +260,11 @@ func (p *AnthropicProvider) do(ctx context.Context, cancel context.CancelFunc, b
 		if beta := endpointBetaHeader(p.cfg.BaseURL); beta != "" {
 			req.Header.Set("anthropic-beta", beta)
 		}
-		if p.cfg.APIKey != "" {
+		if p.cfg.Tokens != nil {
+			if err := applyAnthropicOAuth(ctx, req, p.cfg.Tokens, false); err != nil {
+				return nil, err
+			}
+		} else if p.cfg.APIKey != "" {
 			req.Header.Set("x-api-key", p.cfg.APIKey)
 		}
 		if isOpenCodeZenBaseURL(p.cfg.BaseURL) && req.Header.Get("x-api-key") == "" {
@@ -243,11 +275,21 @@ func (p *AnthropicProvider) do(ctx context.Context, cancel context.CancelFunc, b
 		if err != nil {
 			return nil, fmt.Errorf("http: %w", err)
 		}
+		if observer, ok := p.cfg.Tokens.(interface{ ObserveUsageHeaders(http.Header, string) }); ok {
+			observer.ObserveUsageHeaders(resp.Header, strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer "))
+		}
 		if resp.StatusCode/100 == 2 {
 			return resp, nil
 		}
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 		resp.Body.Close()
+		if resp.StatusCode == http.StatusUnauthorized && p.cfg.Tokens != nil && !authRetried {
+			if _, err := p.cfg.Tokens.AccessToken(ctx, true); err != nil {
+				return nil, err
+			}
+			authRetried = true
+			continue
+		}
 		// The endpoint refused until a beta feature is opted into. The body is
 		// drained and closed above, the request bytes are unchanged and nothing
 		// has been written anywhere, so replaying it is free of side effects —

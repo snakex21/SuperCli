@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"supercli/internal/account/claudeauth"
 	"supercli/internal/account/codexauth"
 	"supercli/internal/account/credits"
 	"supercli/internal/agent"
@@ -17,6 +18,7 @@ import (
 	"supercli/internal/llm/providers"
 	"supercli/internal/storage/memory"
 	"supercli/internal/storage/session"
+	"supercli/internal/system/browser"
 	"supercli/internal/system/config"
 	"supercli/internal/system/uilang"
 	"supercli/internal/tools"
@@ -617,6 +619,26 @@ func wireSlashLate(cmds map[string]tui.SlashHandler, d slashWireDeps) {
 	// browser flow and registers a "codex" provider entry;
 	// /logout clears the saved tokens.
 	cmds["login"] = func(ctx context.Context, args string) (string, error) {
+		if strings.EqualFold(strings.TrimSpace(args), "claude") {
+			claudeManager := claudeauth.NewManager(d.dataDir, claudeauth.Options{Language: d.uiLanguage})
+			if err := claudeManager.Login(ctx, browser.Open); err != nil {
+				return "Claude: " + err.Error(), nil
+			}
+			if d.provMgr != nil {
+				name, err := d.provMgr.EnsureClaudeProvider()
+				if err != nil {
+					return "Claude login saved; provider setup failed: " + err.Error(), nil
+				}
+				if name != "" {
+					scan := d.provMgr.ScanProvider(name, d.caps)
+					if scan.Err != nil {
+						return "Claude login saved; model discovery failed: " + scan.Err.Error(), nil
+					}
+				}
+			}
+			_, _ = claudeManager.RefreshUsage(ctx)
+			return uilang.Text(d.uiLanguage, "claude.login.success"), nil
+		}
 		if codexAuthMgr == nil {
 			initCodexAuth(d.dataDir, d.tomlCfg)
 		}
@@ -667,6 +689,12 @@ func wireSlashLate(cmds map[string]tui.SlashHandler, d slashWireDeps) {
 		return out, nil
 	}
 	cmds["logout"] = func(ctx context.Context, args string) (string, error) {
+		if strings.EqualFold(strings.TrimSpace(args), "claude") {
+			if err := claudeauth.NewManager(d.dataDir, claudeauth.Options{}).Logout(); err != nil {
+				return "Claude: " + err.Error(), nil
+			}
+			return uilang.Text(d.uiLanguage, "claude.logout.success"), nil
+		}
 		// Multi-account: "/logout <label>" removes that named
 		// account's auth-<label>.json. Bare "/logout" removes the
 		// default account (and its usage snapshot) as before.

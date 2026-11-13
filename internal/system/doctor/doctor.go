@@ -293,6 +293,14 @@ func providerPingChecks(ctx context.Context, mgr *providers.Manager) []Check {
 			continue
 		}
 		keyNote := ""
+		if strings.EqualFold(p.Type, "claude") {
+			check := Check{Name: name, Status: OK, Detail: "Claude account login saved in portable claude-auth.json"}
+			if !mgr.ClaudeLoggedIn() {
+				check.Status, check.Detail, check.Remediation = Fail, "Claude account is not signed in", "use /login claude"
+			}
+			out = append(out, check)
+			continue
+		}
 		if p.APIKey == "" && strings.HasPrefix(strings.ToLower(p.BaseURL), "https://") {
 			keyNote = " · no API key set"
 		}

@@ -44,6 +44,7 @@ func setupProviderManager(dataDir, cwd string, caps *llm.CapabilityRegistry) *pr
 	tc, _ := config.ResolveConfig(dataDir, cwd, "")
 	provMgr.SetCodexAuthOptions(codexauth.Options{ClientID: tc.CodexAuth.ClientID, Issuer: tc.CodexAuth.Issuer, BackendURL: tc.CodexAuth.BackendURL})
 	_, _ = provMgr.EnsureCodexProvider()
+	_, _ = provMgr.EnsureClaudeProvider()
 	provMgr.LoadCodexModels(caps)
 	return provMgr
 }

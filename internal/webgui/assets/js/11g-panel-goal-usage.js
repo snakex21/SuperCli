@@ -315,7 +315,7 @@ function renderUsageInspector(stats) {
 
   var lead = el("div", "usage-lead");
   lead.appendChild(usageLeadMetric(t("stats.totalTokens"), fmtInteger(stats.tokens.total), t("usage.session"), "tokens"));
-  var costMetric = usageLeadMetric(t("stats.totalCost"), costPrimary(stats.cost), costMeta(stats.cost),
+  var costMetric = usageLeadMetric(t(stats.cost.state === "subscription" ? "subscription.usage" : "stats.totalCost"), costPrimary(stats.cost), costMeta(stats.cost),
     "cost cost-state-" + normalizedCostState(stats.cost));
   var coverage = costCoverage(stats.cost);
   if (coverage) costMetric.appendChild(el("div", "usage-lead-coverage", coverage));
@@ -496,6 +496,12 @@ sections.usage = async function () {
       if (seq === usageRenderSeq && currentSection === "usage" && requestSession === activeSessionID) panelContent.appendChild(renderCodexUsageDashboard(accounts));
     } catch (accountError) {
       if (seq === usageRenderSeq && currentSection === "usage") panelContent.appendChild(el("div", "usage-caption", t("acct.usage.title") + ": " + accountError.message));
+    }
+    try {
+      var claude = await j("/api/claude/account");
+      if (seq === usageRenderSeq && currentSection === "usage" && requestSession === activeSessionID) panelContent.appendChild(renderClaudeUsageDashboard(claude));
+    } catch (claudeError) {
+      if (seq === usageRenderSeq && currentSection === "usage") panelContent.appendChild(el("div", "usage-caption", "Claude: " + claudeError.message));
     }
   } catch (e) {
     if (seq === usageRenderSeq && currentSection === "usage") {

@@ -219,6 +219,11 @@ func DefaultContext(ctx context.Context, cfg config.Config, dataDir string, caps
 		return p, nil
 	case config.ProviderCodex:
 		return buildCodexProvider(cfg, dataDir, caps)
+	case config.ProviderClaude:
+		return llm.NewClaude(llm.AnthropicConfig{
+			BaseURL: cfg.BaseURL, Model: cfg.Model, MaxTokens: cfg.MaxTokens,
+			Timeout: cfg.Timeout, ConnectTimeout: cfg.ConnectTimeout, Capabilities: caps,
+		}, dataDir)
 	case config.ProviderAnthropic:
 		return llm.NewAnthropic(llm.AnthropicConfig{
 			BaseURL:      cfg.BaseURL,

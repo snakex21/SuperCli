@@ -38,7 +38,7 @@ func VerifyConnectionForProvider(ctx context.Context, providerType, baseURL, api
 		providerType = protocol
 		baseURL = llm.NormalizeAnyRouterBaseURL(baseURL)
 	}
-	if llm.IsOpenCodeZenBaseURL(baseURL) || providerType == config.ProviderResponses || providerType == config.ProviderAnthropic {
+	if llm.IsOpenCodeZenBaseURL(baseURL) || providerType == config.ProviderResponses || providerType == config.ProviderAnthropic || providerType == config.ProviderClaude {
 		var p llm.Provider
 		var err error
 		if llm.IsOpenCodeZenBaseURL(baseURL) {
@@ -53,6 +53,12 @@ func VerifyConnectionForProvider(ctx context.Context, providerType, baseURL, api
 				Provider: providerType, BaseURL: baseURL,
 				APIKey: llm.KiloDefaultKey(baseURL, apiKey), Model: model, MaxTokens: 8,
 			}, "provider-verify")
+		} else if providerType == config.ProviderClaude {
+			dataDir := storage.PortableDataRoot()
+			if len(dataDirs) > 0 && dataDirs[0] != "" {
+				dataDir = dataDirs[0]
+			}
+			p, err = llm.NewClaude(llm.AnthropicConfig{BaseURL: baseURL, Model: model}, dataDir)
 		} else if providerType == config.ProviderAnthropic {
 			p, err = llm.NewAnthropic(llm.AnthropicConfig{BaseURL: baseURL, APIKey: apiKey, Model: model, MaxTokens: 8})
 		} else {

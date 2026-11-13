@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"supercli/internal/account/claudeauth"
 	"supercli/internal/account/codexauth"
 	"supercli/internal/llm"
 )
@@ -233,6 +234,9 @@ func (m Model) renderCodexUsageMenu() string {
 	labels, selected := []string{m.tr("tui.menu_usage.34a04b78fc"), m.tr("acct.title")}, 1
 	if m.loadedSessionID != "" {
 		labels, selected = []string{labels[0], m.tr("tui.menu_usage.20844222e7"), labels[1]}, 2
+	}
+	if claudeauth.NewManager(m.dataDir, claudeauth.Options{}).LoggedIn() {
+		labels = append(labels, "Claude")
 	}
 	p.tabs = m.menuTabs(labels, selected)
 	rows := m.codexUsageRows()

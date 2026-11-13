@@ -75,10 +75,11 @@ function normalizeStats(raw) {
       },
     },
     activeContext: activeContext ? {
-      model: activeContext.model || "", provider: activeContext.provider || "",
+      model: activeContext.model || "", provider: activeContext.provider || "", providerType: activeContext.provider_type || "",
       window: statNumber(activeContext.window), windowSource: String(activeContext.window_source || ""),
     } : null,
     cost: {
+      subscriptionUsage: Array.isArray(raw.subscription_usage) ? raw.subscription_usage : [],
       state: String(cost.state || "unknown").toLowerCase(), amount: statNullableNumber(cost.amount),
       currency: cost.currency || "USD", source: String(cost.source || ""), estimated: !!cost.estimated,
       pricingCurrency: cost.pricing_currency || "USD",
@@ -159,7 +160,7 @@ function costPrimary(cost) {
   if ((state === "estimated" || state === "manual" || state === "partial") && cost.amount !== null) {
     return (state === "manual" ? "" : "~") + fmtMoney(cost.amount, cost.currency);
   }
-  if (state === "subscription") return t("cost.subscriptionValue");
+  if (state === "subscription") return subscriptionCostPrimary(cost);
   if (state === "local") return t("cost.localValue");
   if (state === "free") return t("cost.freeValue");
   if (cost.source === "fx_missing") return t("cost.fxMissingValue");
@@ -231,7 +232,12 @@ function appendActiveContext(parent, active, context, session) {
     " · " + (active.window > 0 ? fmtInteger(active.window) : "—");
   parent.appendChild(note);
 }
-function appendSidebarCost(parent, cost) {
+// Subscription accounts relevant to a mixed conversation: those used by its
+// calls or selected for the next request (e.g. API first, then Claude/ChatGPT).
+function subscriptionAccountsFor(accounts, providerTypes) {
+  return (accounts || []).filter(function (a) { return a.provider_type && providerTypes.indexOf(a.provider_type) >= 0; });
+}
+function appendSidebarCost(parent, cost, providerTypes) {
   var state = normalizedCostState(cost);
   var sessionID = activeSessionID;
   var block = el("button", "side-cost cost-state-" + state);
@@ -239,13 +245,19 @@ function appendSidebarCost(parent, cost) {
   block.title = t("cost.openDetails");
   block.setAttribute("aria-label", t("cost.openDetails") + ": " + costPrimary(cost));
   block.setAttribute("aria-haspopup", "dialog");
-  block.appendChild(i18nEl("span", "side-cost-label", "stats.totalCost"));
+  block.appendChild(i18nEl("span", "side-cost-label", state === "subscription" ? "subscription.usage" : "stats.totalCost"));
   block.appendChild(el("span", "side-cost-value" + (cost.amount === null ? " text" : ""), costPrimary(cost)));
-  block.appendChild(el("span", "side-cost-meta", costMeta(cost)));
+  if (state === "subscription" && cost.subscriptionUsage && cost.subscriptionUsage.length) {
+    block.appendChild(renderSubscriptionSummary(cost.subscriptionUsage, true));
+  } else {
+    block.appendChild(el("span", "side-cost-meta", costMeta(cost)));
+    var mixed = subscriptionAccountsFor(cost.subscriptionUsage, providerTypes || []);
+    if (mixed.length) block.appendChild(renderSubscriptionSummary(mixed, true));
+  }
   var coverage = costCoverage(cost);
   if (coverage) block.appendChild(el("span", "side-cost-coverage", coverage));
   if (cost.ratesPending) block.appendChild(i18nEl("span", "side-cost-meta", "cost.pending"));
-  block.addEventListener("click", function () { openCostDetails(sessionID); });
+  block.addEventListener("click", function () { if (state === "subscription") openPanel("usage"); else openCostDetails(sessionID); });
   parent.appendChild(block);
 }
 
@@ -575,11 +587,17 @@ function costDetailsTokens(row) {
 function renderCostDetails(data, fetchRates) {
   var body = el("div", "cost-details-body");
   var rows = Array.isArray(data.rows) ? data.rows : [];
-  var total = normalizeStats({cost: data.total}).cost;
+  var total = normalizeStats({cost: data.total, subscription_usage: data.subscription_usage}).cost;
   total.currency = data.currency || total.currency;
-  var summary = el("div", "cost-details-total", t("stats.totalCost") + ": " + costPrimary(total));
+  var summary = el("div", "cost-details-total", t(normalizedCostState(total) === "subscription" ? "subscription.usage" : "stats.totalCost") + ": " + costPrimary(total));
   summary.appendChild(el("span", "cost-details-caption", costMeta(total)));
   body.appendChild(summary);
+  if (total.state === "subscription") body.appendChild(renderSubscriptionSummary(total.subscriptionUsage || []));
+  else {
+    var usedTypes = rows.map(function (row) { return row.provider_type || ""; });
+    var mixedAccounts = subscriptionAccountsFor(total.subscriptionUsage, usedTypes);
+    if (mixedAccounts.length) body.appendChild(renderSubscriptionSummary(mixedAccounts));
+  }
   if (!rows.length) body.appendChild(i18nEl("div", "usage-empty", "cost.empty"));
   else {
     var scroll = el("div", "cost-details-scroll");
@@ -588,7 +606,7 @@ function renderCostDetails(data, fetchRates) {
     scroll.setAttribute("aria-label", t("cost.detailsTitle"));
     var table = el("table", "cost-details-table");
     var head = el("thead"), header = el("tr");
-    ["stats.model", "stats.totalTokens", "cost.apiCalls", "stats.totalCost"].forEach(function (key) {
+    ["stats.model", "stats.totalTokens", "cost.apiCalls", total.state === "subscription" ? "subscription.usage" : "stats.totalCost"].forEach(function (key) {
       var cell = i18nEl("th", "", key);
       cell.setAttribute("scope", "col");
       if (key === "cost.apiCalls") cell.title = t("cost.callsHint");
@@ -607,7 +625,7 @@ function renderCostDetails(data, fetchRates) {
       tokens.setAttribute("aria-label", t("stats.totalTokens") + ": " + fmtInteger(row.total) + "; " + tokens.title);
       tr.appendChild(tokens);
       tr.appendChild(el("td", "cost-details-number", fmtInteger(row.calls)));
-      var cost = normalizeStats({cost: row.cost}).cost;
+      var cost = normalizeStats({cost: row.cost, subscription_usage: (data.subscription_usage || []).filter(function (account) { return account.provider_type === row.provider_type; })}).cost;
       cost.currency = data.currency || cost.currency;
       var amount = el("td", "cost-details-number", costPrimary(cost));
       amount.title = costMeta(cost);
@@ -996,7 +1014,7 @@ async function renderStats() {
     if (stats.dailyTokens > 0) box.appendChild(statRow(t("stats.daily"), fmtCompactNumber(stats.dailyTokens)));
     appendCompactContext(box, stats.context);
     appendActiveContext(box, stats.activeContext, stats.context, stats.session);
-    appendSidebarCost(box, stats.cost);
+    appendSidebarCost(box, stats.cost, [stats.session.providerType, stats.activeContext ? stats.activeContext.providerType : ""]);
     costSnapshot = stats.cost;
   } catch (e) {
     if (!current()) return;

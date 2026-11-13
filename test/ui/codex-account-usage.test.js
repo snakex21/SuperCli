@@ -29,7 +29,7 @@ test('known zero and nonzero usage are preserved per account without percentage 
  const h=fixture(),a=account({primary:{window_seconds:18000,used_percent:0,remaining_percent:100,resets_at:1800000000},secondary:{window_seconds:604800,used_percent:75.5,remaining_percent:24.5,resets_at:1800100000}});
  const b={...account({secondary:{window_seconds:604800,used_percent:100,remaining_percent:0}}),label:'work'};
  const root=h.c.renderCodexUsageDashboard({accounts:[a,b],usage_summary:{accounts:2,known:2,unknown:0,available:1,exhausted:1,stale:0}});
- assert.equal(root.all('codex-usage-account').length,2);assert.equal(root.all('codex-usage-window').length,3);assert.equal(root.all('codex-usage-meter')[0].attrs['aria-valuenow'],'0');assert.match(root.text(),/Used 75.5%/);assert.match(root.text(),/Remaining 24.5%/);assert.match(root.text(),/Available: 1/);assert.doesNotMatch(root.text(),/175.5%/);
+ assert.equal(root.all('codex-usage-account').length,2);assert.equal(root.all('codex-usage-window').length,3);assert.equal(root.all('codex-usage-meter')[0].attrs['aria-valuenow'],'100');assert.match(root.text(),/Used 75.5%/);assert.match(root.text(),/Remaining 24.5%/);assert.match(root.text(),/Available: 1/);assert.doesNotMatch(root.text(),/175.5%/);
 });
 test('stale windows, plans, zero credits and unavailable snapshots remain explicit',()=>{
  const h=fixture(),a=account({secondary:{window_seconds:604800,used_percent:96,remaining_percent:4,stale:true}}, {plan_type:'pro',captured_at:'2026-10-03T12:00:00Z',credits:{has_credits:false,unlimited:false,balance:'0'}});

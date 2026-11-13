@@ -38,6 +38,7 @@ const (
 	ProviderOpenAI    = "openai"
 	ProviderResponses = "responses" // API-key authenticated OpenAI Responses API
 	ProviderAnthropic = "anthropic"
+	ProviderClaude    = "claude"   // Claude account OAuth, native Messages API
 	ProviderEcho      = "echo"     // explicit echo; usually inferred from empty API key
 	ProviderOpencode  = "opencode" // F15: opencode headless gateway (Ollama/OpenRouter/Groq)
 	ProviderCodex     = "codex"    // ChatGPT-subscription auth (OAuth, Responses API backend)
@@ -47,7 +48,7 @@ const (
 // populated by Load; never construct Config directly outside tests.
 type Config struct {
 	// Provider selects which implementation backs the agent.
-	// "openai", "responses", "anthropic", "codex", "opencode", or
+	// "openai", "responses", "anthropic", "claude", "codex", "opencode", or
 	// "echo". Empty means "decide from API key".
 	Provider string `json:"provider"`
 
@@ -96,7 +97,7 @@ func DefaultBaseURL(provider string) string {
 	switch provider {
 	case ProviderCodex:
 		return "https://chatgpt.com/backend-api/codex"
-	case ProviderAnthropic:
+	case ProviderAnthropic, ProviderClaude:
 		return "https://api.anthropic.com/v1"
 	}
 	return "https://api.openai.com/v1"
@@ -181,7 +182,7 @@ func (c *Config) Normalize() error {
 		if c.Model == "" {
 			c.Model = "no model"
 		}
-	case ProviderAnthropic:
+	case ProviderAnthropic, ProviderClaude:
 		// Native Anthropic Messages API. Model is optional at startup — user can
 		// pick one via /models after configuring the provider.
 		if c.Model == "" {
@@ -207,8 +208,8 @@ func (c *Config) Normalize() error {
 			c.Model = "gpt-5.5"
 		}
 	default:
-		return fmt.Errorf("config: unknown provider %q (want %q, %q, %q, %q, %q, or %q)",
-			c.Provider, ProviderOpenAI, ProviderResponses, ProviderAnthropic, ProviderEcho, ProviderOpencode, ProviderCodex)
+		return fmt.Errorf("config: unknown provider %q (want %q, %q, %q, %q, %q, %q, or %q)",
+			c.Provider, ProviderOpenAI, ProviderResponses, ProviderAnthropic, ProviderClaude, ProviderEcho, ProviderOpencode, ProviderCodex)
 	}
 	return nil
 }

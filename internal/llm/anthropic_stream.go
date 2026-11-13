@@ -53,12 +53,20 @@ func (p *AnthropicProvider) streamSSE(ctx context.Context, r io.Reader, out chan
 			}
 		case "content_block_start":
 			sawResponse = true
+			if p.cfg.Tokens != nil && ev.ContentBlock.Type == "tool_use" {
+				ev.ContentBlock.Name = claudeOAuthToolName(ev.ContentBlock.Name, false)
+			}
 			{
 				var raw struct {
 					Block json.RawMessage `json:"content_block"`
 				}
 				if json.Unmarshal([]byte(data), &raw) == nil {
 					reasoningAcc[ev.Index] = newAnthropicReasoning(raw.Block)
+					if p.cfg.Tokens != nil && ev.ContentBlock.Type == "tool_use" {
+						if acc := reasoningAcc[ev.Index]; acc != nil {
+							acc.fields["name"], _ = json.Marshal(ev.ContentBlock.Name)
+						}
+					}
 				}
 			}
 			if ev.ContentBlock.Type == "tool_use" {

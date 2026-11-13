@@ -58,6 +58,12 @@ sections.accounts = async function () {
   });
   panelContent.appendChild(g);
   panelContent.appendChild(renderCodexUsageDashboard(got, sections.accounts));
+  try {
+    var claude = await j("/api/claude/account");
+    if (seq === codexAccountsRenderSeq && currentSection === "accounts") panelContent.appendChild(renderClaudeUsageDashboard(claude, sections.accounts));
+  } catch (error) {
+    if (seq === codexAccountsRenderSeq && currentSection === "accounts") panelContent.appendChild(el("div", "usage-caption", "Claude: " + error.message));
+  }
 };
 
 /* Codex limits are account-scoped. Missing/stale windows are not zero usage. */
@@ -159,15 +165,15 @@ function renderCodexUsageDashboard(data, onUpdated) {
         if (limit.name || limit.id) label = (limit.name || limit.id) + " · " + label;
         row.appendChild(el("div", "codex-usage-window-label", label));
         var metrics = el("div", "codex-usage-window-values");
+        metrics.appendChild(el("strong", "", t("acct.usage.remaining") + " " + codexUsagePercentText(window.remaining_percent)));
         metrics.appendChild(el("span", "", t("acct.usage.used") + " " + codexUsagePercentText(window.used_percent)));
-        metrics.appendChild(el("span", "", t("acct.usage.remaining") + " " + codexUsagePercentText(window.remaining_percent)));
         row.appendChild(metrics);
-        var used = codexUsagePercent(window.used_percent);
-        if (used !== null) {
-          var meter = el("div", "codex-usage-meter");
-          meter.setAttribute("role", "progressbar"); meter.setAttribute("aria-label", label + " · " + t("acct.usage.used"));
-          meter.setAttribute("aria-valuemin", "0"); meter.setAttribute("aria-valuemax", "100"); meter.setAttribute("aria-valuenow", String(used));
-          var fill = el("span", ""); fill.style.width = used + "%"; meter.appendChild(fill); row.appendChild(meter);
+        var remaining = window.stale ? null : codexUsagePercent(window.remaining_percent);
+        if (remaining !== null) {
+          var meter = el("div", "codex-usage-meter remaining");
+          meter.setAttribute("role", "progressbar"); meter.setAttribute("aria-label", label + " · " + t("acct.usage.remaining"));
+          meter.setAttribute("aria-valuemin", "0"); meter.setAttribute("aria-valuemax", "100"); meter.setAttribute("aria-valuenow", String(remaining));
+          var fill = el("span", ""); fill.style.width = remaining + "%"; meter.appendChild(fill); row.appendChild(meter);
         }
         row.appendChild(el("div", "codex-usage-meta", t("acct.usage.reset") + ": " + codexUsageReset(window.resets_at) +
           (window.stale ? " · " + t("acct.usage.stale") : "")));

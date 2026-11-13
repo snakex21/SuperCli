@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"supercli/internal/account/claudeauth"
 	"supercli/internal/account/codexauth"
 	"supercli/internal/llm"
 	"supercli/internal/system/config"
@@ -110,6 +111,13 @@ func (m *Manager) List(caps *llm.CapabilityRegistry) []ProviderInfo {
 		}
 		// Probe connectivity.
 		connected, err := probeProvider(p)
+		if p.Type == config.ProviderClaude {
+			connected = claudeauth.NewManager(m.home, claudeauth.Options{}).LoggedIn()
+			err = nil
+			if !connected {
+				err = fmt.Errorf("Claude: not logged in; use /login claude")
+			}
+		}
 		pi.Connected = connected
 		if err != nil {
 			pi.Error = err.Error()

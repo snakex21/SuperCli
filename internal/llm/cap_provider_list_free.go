@@ -332,7 +332,7 @@ func KiloDefaultKey(baseURL, apiKey string) string {
 	if strings.Contains(baseURL, "api.kilo.ai") {
 		return "anonymous"
 	}
-	if strings.Contains(baseURL, "opencode.ai/zen") {
+	if strings.Contains(baseURL, "opencode.ai/zen") || strings.Contains(baseURL, "opencode.ai/inference") {
 		return "public"
 	}
 	return apiKey

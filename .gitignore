@@ -72,6 +72,10 @@ pricing_cache.json
 # points somewhere else.
 auth.json
 auth-*.json
+claude-auth.json
+claude-usage.json
+.claude-usage-*
+.claude-auth-*
 
 # OS/editor noise
 .DS_Store

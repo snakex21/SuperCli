@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"supercli/internal/account/claudeauth"
 	"supercli/internal/llm"
 	"supercli/internal/llm/prompt"
 	"supercli/internal/llm/providers"
@@ -186,6 +187,11 @@ func (m *Model) probeProvidersCmd() tea.Cmd {
 		}
 		// Echo and ChatGPT-OAuth (codex) providers have no
 		// pingable /v1/models endpoint; mark them online.
+		if p.Type == "claude" {
+			loggedIn := claudeauth.NewManager(m.dataDir, claudeauth.Options{}).LoggedIn()
+			m.providerStatuses[p.Name] = providerStatus{checked: true, online: loggedIn}
+			continue
+		}
 		if p.Type == "echo" || p.Type == "codex" {
 			m.providerStatuses[p.Name] = providerStatus{checked: true, online: true}
 			continue
