@@ -20,6 +20,8 @@ func thunderbirdResponseError(op string, response thunderbirdBridgeResponse) err
 		return fmt.Errorf("%s (Thunderbird did NOT execute %s; it is safe to call it again later, which uses a new request id)", msg, op)
 	case op == "repair_folder" && thunderbirdFolderBusy(msg):
 		return fmt.Errorf("%s (folder is busy; nothing was changed; try repair_folder again in a few minutes, no automatic retry)", msg)
+	case op == "create_folder" && strings.Contains(strings.ToLower(msg), "already exists"):
+		return fmt.Errorf("%s (nothing was changed: the folder already exists, so treat this step as done and continue with the existing folder; its id is <account id>://<path>, e.g. account2://Name for Local Folders, as listed by op 'folders')", msg)
 	case thunderbirdFolderLookupError(msg):
 		return fmt.Errorf("%s (nothing was executed. List folders with op 'folders' - it covers one account, so add account:'Local Folders' for local folders - and pass the exact folder.id such as account1://INBOX or account2://Name)", msg)
 	}

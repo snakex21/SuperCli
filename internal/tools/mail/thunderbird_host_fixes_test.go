@@ -192,3 +192,10 @@ func TestThunderbirdFolderAdminNeverGuessesAccount(t *testing.T) {
 		t.Fatalf("parent id must select its account: %s %v", routed, err)
 	}
 }
+
+func TestThunderbirdCreateFolderAlreadyExistsIsNotABlocker(t *testing.T) {
+	err := thunderbirdResponseError("create_folder", thunderbirdBridgeResponse{Error: "folders.create() failed, because _T already exists in /"})
+	if !strings.Contains(err.Error(), "treat this step as done") {
+		t.Fatalf("error = %q", err)
+	}
+}
