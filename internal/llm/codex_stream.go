@@ -94,7 +94,10 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 			}
 		} else {
 			reasoningModel := p.supportsReasoningControl()
-			cacheKey := promptCacheSessionID(ctx, p.cfg.PromptCacheKey)
+			// Standard Responses keys follow the shared prompt prefix, not the
+			// conversation (see responsesPromptCacheKey); worker scopes and
+			// helper purposes still get their own keys.
+			cacheKey := standardResponsesCacheKey(ctx, p.cfg.PromptCacheKey)
 			reqBody, err = prepareAssembledStandardResponsesRequest(standardPrimary, cacheKey, reasoningModel, p.sampling)
 			if err != nil {
 				return nil, fmt.Errorf("build standard responses request: %w", err)
