@@ -1,12 +1,9 @@
 package web
 
 import (
-	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -24,22 +21,23 @@ import (
 //   - private, loopback, link-local, and otherwise non-public IPs
 //     are blocked at dial time (covers DNS rebinding, not just the
 //     initial resolve)
-//   - max 5 redirects, 30 s total timeout, 2 MB body cap
+//   - max 5 redirects, 30 s total timeout, 2 MB body cap (20 MB for PDF)
 type WebFetch struct {
 	client *http.Client
+	pages  *pageCache
 }
 
 const (
 	webFetchTimeout      = 30 * time.Second
 	webFetchMaxRedirects = 5
 	webFetchMaxBody      = 2 << 20 // 2 MB
-	webFetchDefaultChars = 20000
 	webFetchMaxChars     = 100000
+	webFetchMaxPDF       = 20 << 20 // 20 MB
 )
 
 // NewWebFetch returns a tool with an SSRF-guarded HTTP client.
 func NewWebFetch() *WebFetch {
-	return &WebFetch{client: newPublicHTTPClient(webFetchTimeout)}
+	return &WebFetch{client: newPublicHTTPClient(webFetchTimeout), pages: newPageCache()}
 }
 
 // newPublicHTTPClient is shared by page reads and file downloads. Both check
@@ -123,132 +121,6 @@ func validateFetchURL(raw string) (*url.URL, error) {
 		return nil, fmt.Errorf("fetching private or local addresses is not allowed (%s)", ip)
 	}
 	return u, nil
-}
-
-type webFetchArgs struct {
-	URL      string `json:"url"`
-	MaxChars int    `json:"max_chars"`
-	Mode     string `json:"mode"`
-	Refresh  bool   `json:"refresh"`
-}
-
-// Spec returns the tool registration.
-func (t *WebFetch) Spec() Tool {
-	return Tool{
-		Name:       "web_fetch",
-		ReadOnly:   true,
-		ReuseTTL:   2 * time.Minute,
-		RefreshArg: "refresh",
-		NextTools:  []string{"web_download"},
-		Description: "Read a public http(s) page as title + plain text (a given URL or a search result). " +
-			"mode=media lists only media/download links; refresh=true skips a recent cached read. To save files use web_download. " +
-			"Not for local files, private addresses or authenticated APIs.",
-		Schema: `{
-  "type": "object",
-  "properties": {
-    "url":       {"type": "string", "description": "Full http(s) URL to fetch."},
-    "max_chars": {"type": "integer", "description": "Max characters (default 20000, max 100000)."},
-    "mode":      {"type": "string", "enum": ["text", "media"], "description": "text (default) or media (links only, first 64 KiB)."},
-    "refresh":   {"type": "boolean", "description": "Skip reuse of a recent result (default false)."}
-  },
-  "required": ["url"]
-}`,
-		Fn: t.execute,
-	}
-}
-
-func (t *WebFetch) execute(ctx context.Context, args json.RawMessage) (Result, error) {
-	var a webFetchArgs
-	if err := json.Unmarshal(args, &a); err != nil {
-		return Result{Err: fmt.Errorf("web_fetch: bad args: %w", err)}, nil
-	}
-	u, err := validateFetchURL(a.URL)
-	if err != nil {
-		return Result{Err: fmt.Errorf("web_fetch: %w", err)}, nil
-	}
-	if a.Mode != "" && a.Mode != "text" && a.Mode != "media" {
-		return Result{Err: fmt.Errorf("web_fetch: mode must be text or media")}, nil
-	}
-	maxChars := a.MaxChars
-	if maxChars <= 0 {
-		maxChars = webFetchDefaultChars
-	}
-	if maxChars > webFetchMaxChars {
-		maxChars = webFetchMaxChars
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, webFetchTimeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return Result{Err: fmt.Errorf("web_fetch: %w", err)}, nil
-	}
-	req.Header.Set("User-Agent", "SuperCli/1.0 (web_fetch tool)")
-	// Prefer compact Markdown/plain representations when a site exposes them;
-	// falling back to HTML keeps compatibility with ordinary pages.
-	req.Header.Set("Accept", "text/markdown;q=1.0,text/x-markdown;q=0.95,text/plain;q=0.9,text/html;q=0.8,application/xhtml+xml;q=0.7,*/*;q=0.1")
-
-	resp, err := t.client.Do(req)
-	if err != nil {
-		return Result{Err: fmt.Errorf("web_fetch: %w", requestFailedErr(err, u.Host))}, nil
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		// Retain bounded API diagnostics, while HTML errors expose readable
-		// failure text rather than scripts or bootstrap configuration.
-		return Result{Err: fmt.Errorf("web_fetch: %w", httpFailedErr(resp, u.Host))}, nil
-	}
-
-	reader := bufio.NewReader(resp.Body)
-	prefix, _ := reader.Peek(512)
-	contentType := resp.Header.Get("Content-Type")
-	if !isFetchedText(prefix, contentType) {
-		return Result{Err: fmt.Errorf("web_fetch: binary response; use web_download with url and a local path to save this file")}, nil
-	}
-	bodyLimit := webFetchMaxBody
-	if a.Mode == "media" {
-		bodyLimit = mediaHeadBytes
-	}
-	body, err := io.ReadAll(io.LimitReader(reader, int64(bodyLimit)+1))
-	if err != nil {
-		return Result{Err: fmt.Errorf("web_fetch: read body: %w", err)}, nil
-	}
-
-	bodyTruncated := len(body) > bodyLimit
-	if bodyTruncated {
-		body = body[:bodyLimit]
-	}
-	if !isFetchedText(body, contentType) {
-		return Result{Err: fmt.Errorf("web_fetch: binary response; use web_download with url and a local path to save this file")}, nil
-	}
-	page := string(body)
-	media := fetchedMediaURLs(page, contentType, resp.Request.URL, maxChars)
-	if a.Mode == "media" {
-		return Result{Text: formatFetchedMedia(page, contentType, resp.Request.URL, media)}, nil
-	}
-	title, content := formatFetched(page, contentType)
-
-	finalURL := resp.Request.URL.String()
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "URL: %s\n", finalURL)
-	if title != "" {
-		fmt.Fprintf(&sb, "Title: %s\n", title)
-	}
-	sb.WriteString("\n")
-	if media != "" {
-		sb.WriteString(media)
-		sb.WriteString("\n")
-	}
-	if len(content) > maxChars {
-		sb.WriteString(content[:maxChars])
-		fmt.Fprintf(&sb, "\n\n[content truncated at %d characters; total %d]", maxChars, len(content))
-	} else {
-		sb.WriteString(content)
-	}
-	if bodyTruncated {
-		fmt.Fprintf(&sb, "\n\n[response exceeds %d bytes; use web_download to save the complete file]", webFetchMaxBody)
-	}
-	return Result{Text: sb.String()}, nil
 }
 
 // isFetchedText prevents compressed files, images and other binary bodies
