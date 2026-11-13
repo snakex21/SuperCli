@@ -189,6 +189,21 @@ func (l *Loop) runStep(
 	if l.draftBridge != nil && l.lastDraftText != "" {
 		l.recordDraftOutcome(step, text, verifyTokens, out)
 	}
+	// A final answer that reports passing checks against the evidence of
+	// this Run gets a visible note. It is appended, never blocking, and it
+	// enters history so the next turn sees it too.
+	if len(toolCalls) == 0 && !truncatedToolCalls && hasVisibleUserReply(text) {
+		warning := ""
+		// Worker reports are evidence for the coordinator, which runs its own
+		// checks; the note is for the answer a person reads.
+		if !inWorkerRun(ctx) {
+			warning = l.verificationClaimWarning(text)
+		}
+		if warning != "" {
+			text += warning
+			out <- MessageEvent{Text: warning}
+		}
+	}
 
 	// Build the assistant message and append it to history.
 	// Two views: the in-memory history that drives the NEXT

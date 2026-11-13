@@ -141,6 +141,7 @@ func runWorkerLoopLocked(ctx context.Context, w *Worker, prompt string, workers 
 		scope += ":" + w.Loop.runID
 	}
 	ctx = llm.WithPromptCacheScope(ctx, scope)
+	ctx = context.WithValue(ctx, workerRunKey{}, true)
 	w.stateMu.RLock()
 	effort := w.reasoningEffort
 	w.stateMu.RUnlock()
