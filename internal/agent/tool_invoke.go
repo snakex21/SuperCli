@@ -360,6 +360,7 @@ func (l *Loop) resolveInvokeToolCalls(calls []llm.ToolCall) []llm.ToolCall {
 		runTools = append(runTools, "headless_control", "process_session")
 	}
 	runTools = append(runTools, l.workflowTools...)
+	runTools = append(runTools, l.stableCatalogAlwaysOn()...)
 	for i := range calls {
 		if calls[i].Name != invokeToolName {
 			continue
@@ -376,3 +377,24 @@ func (l *Loop) resolveInvokeToolCalls(calls []llm.ToolCall) []llm.ToolCall {
 // InvokeToolDispatches reports how many dispatcher envelopes were successfully
 // rewritten to a target call in this loop's lifetime.
 func (l *Loop) InvokeToolDispatches() int64 { return l.invokeDispatchTotal.Load() }
+
+// stableCatalogAlwaysOn names the configured always-on tools (e.g. enabled
+// image/video generation) that the stable thin catalog advertises with "call
+// the target through invoke_tool". They never carry a native schema in that
+// mode, so refusing the envelope ("call it directly") left the model with no
+// declared way to reach them: live, it retried the same envelope and told the
+// user it cannot generate images. The target still validates its own
+// arguments; dormant tools still need tool_search activation.
+func (l *Loop) stableCatalogAlwaysOn() []string {
+	if l == nil || l.registry == nil || !l.thinTools || !l.stableToolset || l.route != RouteCoordinator {
+		return nil
+	}
+	_, tail := l.thinPartition()
+	var names []string
+	for _, t := range tail {
+		if !l.registry.IsActive(t.Name) && !isDirectToolEligible(t) {
+			names = append(names, t.Name)
+		}
+	}
+	return names
+}
