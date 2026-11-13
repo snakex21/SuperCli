@@ -74,7 +74,7 @@ func TestFlipFloppingEditsAreNamedAndStopped(t *testing.T) {
 			results[message.ToolCallID] = message.Content
 		}
 	}
-	for id, wantNote := range map[string]string{"t0": "", "t1": "", "t2": "at step 2 (now 2 times)", "t3": "at step 4 (now 2 times)", "t4": "at step 4 (now 3 times)"} {
+	for id, wantNote := range map[string]string{"t0": "", "t1": "", "t2": "step 2 with identical code (now 2 times)", "t3": "step 4 with identical code (now 2 times)", "t4": "step 4 with identical code (now 3 times)"} {
 		got := results[id]
 		if wantNote == "" {
 			if strings.Contains(got, "[loop]") {
@@ -82,8 +82,11 @@ func TestFlipFloppingEditsAreNamedAndStopped(t *testing.T) {
 			}
 			continue
 		}
-		if !strings.Contains(got, "[loop] This exact version") || !strings.Contains(got, wantNote) {
+		if !strings.Contains(got, "[loop] Same failure as at step") || !strings.Contains(got, wantNote) {
 			t.Fatalf("%s: want note %q, got %s", id, wantNote, got)
+		}
+		if !strings.Contains(got, "Change approach: re-read the failing assertion") {
+			t.Fatalf("%s: note does not steer to a new approach: %s", id, got)
 		}
 	}
 	if !strings.Contains(notices.String(), "SuperCli stopped the edit loop") {
@@ -121,10 +124,35 @@ func TestCheckCyclesIgnoresNewVersionsAndPassingRuns(t *testing.T) {
 	}
 	// Timing noise does not hide a repeat.
 	c.observe("again", []string{"go", "test"}, true, "FAIL x 0.93s", 10)
-	if !strings.Contains(c.note("again"), "at step 0") {
+	if !strings.Contains(c.note("again"), "as at step 0 ") {
 		t.Fatal("repeat with different timing not detected")
 	}
 	if _, due := c.stopDue(); due {
 		t.Fatal("cap reached after one repeat")
+	}
+}
+
+// The loop texts must not hand the model a ready-made excuse: a hint that
+// "the tests may contradict each other" made models abandon solvable tasks.
+// A conflict is only named when the model can say precisely which
+// requirements clash, and the stop message stays neutral.
+func TestCheckCycleTextsDoNotSuggestGivingUp(t *testing.T) {
+	note := fmt.Sprintf(checkCycleNoteText, 3, 2)
+	for _, want := range []string{"Same failure as at step 3 with identical code", "Change approach", "re-read the failing assertion", "explain precisely which ones"} {
+		if !strings.Contains(note, want) {
+			t.Errorf("note lacks %q: %s", want, note)
+		}
+	}
+	stop := fmt.Sprintf(checkCycleStopText, 3)
+	for _, text := range []string{note, stop} {
+		lower := strings.ToLower(text)
+		for _, bad := range []string{"may contradict", "contradict each other", "tests may"} {
+			if strings.Contains(lower, bad) {
+				t.Errorf("loop text suggests the task is impossible (%q): %s", bad, text)
+			}
+		}
+	}
+	if !strings.HasPrefix(stop, "SuperCli stopped the edit loop") {
+		t.Errorf("stop text changed its user-visible prefix: %s", stop)
 	}
 }

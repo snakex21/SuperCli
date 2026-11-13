@@ -41,7 +41,17 @@ const (
 	checkCycleMaxFileSize = 4 << 20
 )
 
-const checkCycleStopText = "SuperCli stopped the edit loop: the code went back to versions that had already failed the same check with the same output %d times. The requirements or tests may contradict each other."
+// checkCycleStopText is shown to the user and appended to the final answer.
+// It states what happened without guessing why: suggesting that the tests
+// contradict each other made models give up on tasks they could solve.
+const checkCycleStopText = "SuperCli stopped the edit loop: the edited files went back %d times to a version that had already failed the same check with the same output."
+
+// checkCycleNoteText is added to the result of a check that repeats an
+// earlier failure. It points at a new approach first; a conflict in the
+// requirements is the model's conclusion to justify, not a suggested exit.
+const checkCycleNoteText = "[loop] Same failure as at step %d with identical code (now %d times). " +
+	"Change approach: re-read the failing assertion and the relevant code before editing again; do not re-apply an earlier version. " +
+	"If you believe the requirements truly conflict, explain precisely which ones."
 
 func (c *checkCycles) reset() {
 	c.mu.Lock()
@@ -129,9 +139,7 @@ func (c *checkCycles) observe(callID string, command []string, failed bool, outp
 	if c.notes == nil {
 		c.notes = make(map[string]string)
 	}
-	c.notes[callID] = fmt.Sprintf("[loop] This exact version of the edited files already failed this check with the same output at step %d (now %d times). "+
-		"Your edits are going back and forth. Consider that the tests or requirements may contradict each other, or rethink the approach; do not re-apply an earlier version.",
-		record.step, record.count)
+	c.notes[callID] = fmt.Sprintf(checkCycleNoteText, record.step, record.count)
 }
 
 // note returns and clears the note for a tool call.
