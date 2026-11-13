@@ -418,6 +418,14 @@ type Loop struct {
 	// identicalFails blocks a third identical failed tool call in a Run.
 	identicalFails identicalFailureGate
 
+	// verifyTrail records the last verification command of a Run for the
+	// non-blocking claim check on the final answer.
+	verifyTrail verificationTrail
+
+	// checkCycles notices edits that return to versions already shown to
+	// fail the same check, and stops such a loop after a few repeats.
+	checkCycles checkCycles
+
 	// identicalWrites blocks an identical successful mutation that has
 	// already been applied repeatedMutationLimit times in a Run.
 	identicalWrites identicalSuccessGate
@@ -1005,6 +1013,8 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	l.toolEvidence.Store(false)
 	l.concreteFailure.Store(false)
 	l.failedChecks.reset()
+	l.verifyTrail.reset()
+	l.checkCycles.reset()
 	l.emptyReplyNudges = 0
 	l.resetPostReview(prompt)
 	l.finalReplyOnly = false

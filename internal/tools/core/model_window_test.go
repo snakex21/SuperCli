@@ -31,3 +31,23 @@ func TestWebFetchPageWindowStaysInline(t *testing.T) {
 		t.Fatal("oversized web_fetch output was not retained behind a preview")
 	}
 }
+
+func TestReadBatchBudgetIsSharedByParallelCalls(t *testing.T) {
+	ctx := WithModelWindow(context.Background(), 16384)
+	one := ReadBatchBudget(ctx)
+	if one != 16384*4*8/100 {
+		t.Fatalf("budget=%d", one)
+	}
+	if got := ReadBatchBudget(WithReadBatchShare(ctx, 2)); got != max(one/2, readBatchShareMin) {
+		t.Fatalf("two calls: %d", got)
+	}
+	if got := ReadBatchBudget(WithReadBatchShare(ctx, 4)); got != readBatchShareMin {
+		t.Fatalf("four calls must hit the floor: %d", got)
+	}
+	if got := ReadBatchBudget(WithModelWindow(context.Background(), 1_000_000)); got != readBatchMaxBudget {
+		t.Fatalf("large window: %d", got)
+	}
+	if got := ReadBatchBudget(context.Background()); got != ModelReadBatchInlineBytes {
+		t.Fatalf("unknown window: %d", got)
+	}
+}

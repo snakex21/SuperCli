@@ -175,7 +175,7 @@ func TestCompactFactsBoundedFreshPaths(t *testing.T) {
 func TestCompactFactsReadManyPreview(t *testing.T) {
 	root := t.TempDir()
 	for _, name := range []string{"one.go", "two.go", "three.go"} {
-		body := strings.Repeat("a long enough line to force a balanced preview\n", 300)
+		body := strings.Repeat("a long enough line to exceed one batch budget\n", 80)
 		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -188,20 +188,20 @@ func TestCompactFactsReadManyPreview(t *testing.T) {
 	}
 	store := core.NewOutputStore()
 	content := store.ModelContent("read_many", result)
-	if core.StoredOutputHandle(content) == "" {
-		t.Fatal("fixture did not exercise model preview")
+	if !strings.Contains(content, `Next: read_many reads="three.go:1-300"`) {
+		t.Fatalf("fixture did not exercise a budgeted batch: %s", content)
 	}
 	history := []llm.Message{
 		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "c", Name: "read_many", Arguments: string(args)}}},
 		{Role: llm.RoleTool, Name: "read_many", ToolCallID: "c", Content: content},
 	}
 	got := CompactFacts(history, nil)
-	for _, name := range []string{"one.go", "two.go", "three.go"} {
+	for _, name := range []string{"one.go", "two.go"} {
 		if !strings.Contains(got, name) {
 			t.Fatalf("lost successful sibling %s: %s", name, got)
 		}
 	}
-	if strings.Contains(got, "missing.go") {
+	if strings.Contains(got, "missing.go") || strings.Contains(got, "three.go") {
 		t.Fatalf("failed sibling reported as read: %s", got)
 	}
 	// After pruning only aggregate counts survive; do not guess which path failed.

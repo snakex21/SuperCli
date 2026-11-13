@@ -385,8 +385,42 @@ func TestPatchFile_ReportsAmbiguousOld(t *testing.T) {
 		t.Fatal("expected failure")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "old occurs 3 times") || !strings.Contains(msg, "expected_count=3") {
+	if !strings.Contains(msg, "old occurs 3 times") || !strings.Contains(msg, "add nearby unique lines") {
 		t.Fatalf("message does not explain the ambiguity: %s", msg)
+	}
+	// Raising the count is how one requested edit became four; never offer it.
+	if strings.Contains(msg, "expected_count") {
+		t.Fatalf("ambiguity must not suggest expected_count: %s", msg)
+	}
+}
+
+// The S3 regression: four identical keys in different sections. Each match is
+// shown with the lines above it, which name the section that disambiguates.
+func TestPatchFile_AmbiguousOldShowsEachMatchWithSection(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("{\n")
+	for _, section := range []string{"app", "audit", "logs", "cache"} {
+		fmt.Fprintf(&b, "  %q: {\n    \"enabled\": true,\n    \"retention_days\": 30,\n  },\n", section)
+	}
+	b.WriteString("}\n")
+	path := writeTemp(t, "config.json", b.String())
+	_, err := PatchFile(path, []PatchChange{{Old: `    "retention_days": 30,`, New: `    "retention_days": 90,`}}, "")
+	if err == nil {
+		t.Fatal("expected failure")
+	}
+	msg := err.Error()
+	for i, section := range []string{"app", "audit", "logs", "cache"} {
+		want := fmt.Sprintf("match %d, line %d:", i+1, 4+i*4)
+		if !strings.Contains(msg, want) || !strings.Contains(msg, fmt.Sprintf("|   %q: {", section)) {
+			t.Fatalf("match %d (%s) not shown with its section: %s", i+1, section, msg)
+		}
+	}
+	if strings.Contains(msg, "expected_count") {
+		t.Fatal(msg)
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != b.String() {
+		t.Fatal("ambiguous patch wrote")
 	}
 }
 

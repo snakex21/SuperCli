@@ -45,7 +45,7 @@ func TestReadManyFailedPreviewPreservesAllItemsAndErrorCauses(t *testing.T) {
 		}
 		outcomes[i] = readManyOutcome{request: readManyRequest{File: strings.Repeat("目录", 130) + fmt.Sprintf("/file%d.go", i), From: 1, To: 300}, err: fmt.Errorf("diagnostic-%d %s: %w", i, strings.Repeat("details ", 70)+fmt.Sprintf("RECOVER_MIDDLE_%d ", i)+strings.Repeat("details ", 70), cause)}
 	}
-	result := renderReadMany(outcomes)
+	result := renderReadMany(outcomes, nil, core.ModelReadBatchInlineBytes)
 	if !errors.Is(result.Err, context.Canceled) || !errors.Is(result.Err, os.ErrNotExist) {
 		t.Fatal("batch causes were flattened")
 	}

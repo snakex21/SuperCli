@@ -23,7 +23,7 @@ func TestPrunedReadManyKeepsBatchOutcome(t *testing.T) {
 					name := fmt.Sprintf("%s-%d.go", strings.Repeat("fixture", 18), i)
 					reads = append(reads, name+":1-200")
 					if i < successes {
-						body := strings.Repeat("numbered source evidence "+strings.Repeat("x", 50)+"\n", 200)
+						body := strings.Repeat("numbered source evidence "+strings.Repeat("x", 50)+"\n", 10)
 						if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0600); err != nil {
 							t.Fatal(err)
 						}

@@ -72,7 +72,7 @@ func TestReadSiblingFallbackRemainsBounded(t *testing.T) {
 	}
 	path := filepath.Join(dir, "missing.go")
 	original := fileops.FileErr(os.ErrNotExist, path)
-	if got := suggestReadFile(context.Background(), path, original); got != original {
+	if got := similarReadFiles(context.Background(), path, original); got != original {
 		t.Fatalf("partial directory listing presented as small: %v", got)
 	}
 }

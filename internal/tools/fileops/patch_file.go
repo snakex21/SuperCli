@@ -140,17 +140,26 @@ func PatchFileContext(ctx context.Context, path string, changes []PatchChange, b
 	}
 	beforeHash := sha256.Sum256(data)
 	beforeHex := hex.EncodeToString(beforeHash[:])
-	if baseHash != "" && !strings.EqualFold(baseHash, beforeHex) {
-		// The digest was already computed for this guard. Return it with the
-		// rejection so reviewing the changed source needs no separate hash
-		// command. A retry still checks its hash against the file again.
-		return PatchResult{}, fmt.Errorf("fileops.PatchFile: base_hash mismatch (file changed); nothing written; current_hash=%s; review current contents before retrying with this hash", beforeHex)
+	hashNote := ""
+	if baseHash = strings.TrimSpace(baseHash); baseHash != "" && !strings.EqualFold(baseHash, beforeHex) {
+		if !hashIssued(path, baseHash) {
+			// Never shown for this file, so it cannot describe a read: it was
+			// guessed. The exact old text is the real stale-edit guard.
+			hashNote = "note: base_hash ignored (not from an earlier result for this file); omit it"
+		} else {
+			// The digest was already computed for this guard. Return it with the
+			// rejection so reviewing the changed source needs no separate hash
+			// command. A retry still checks its hash against the file again.
+			noteIssuedHash(path, beforeHex)
+			return PatchResult{}, fmt.Errorf("fileops.PatchFile: file changed since the result that gave this base_hash (another edit or command wrote it); nothing written; current_hash=%s; review current contents before retrying with this hash", beforeHex)
+		}
 	}
 
 	before := string(data)
 	content := before
 	total := 0
 	var relaxed []string
+	var regions []textRegion
 	for i, ch := range changes {
 		if ch.Old == "" {
 			return PatchResult{}, fmt.Errorf("fileops.PatchFile: change %d: old is empty; nothing written", i)
@@ -161,7 +170,7 @@ func PatchFileContext(ctx context.Context, path string, changes []PatchChange, b
 		}
 		got := strings.Count(content, ch.Old)
 		if got == want {
-			content = strings.Replace(content, ch.Old, ch.New, want)
+			content, regions = spliceTracked(content, exactSpans(content, ch.Old, ch.New, want), regions)
 			total += want
 			continue
 		}
@@ -170,7 +179,7 @@ func PatchFileContext(ctx context.Context, path string, changes []PatchChange, b
 		// answers that — it only risks patching the wrong one.
 		if got == 0 {
 			if spans, mode, ok := relaxedMatch(content, ch.Old, ch.New, want); ok {
-				content = splice(content, spans)
+				content, regions = spliceTracked(content, spans, regions)
 				total += want
 				relaxed = appendUnique(relaxed, mode)
 				continue
@@ -189,12 +198,14 @@ func PatchFileContext(ctx context.Context, path string, changes []PatchChange, b
 	afterHex := hex.EncodeToString(afterHash[:])
 	changed := content != before
 	if !changed {
+		noteIssuedHash(path, beforeHex)
 		return PatchResult{
 			Replacements: total,
 			BeforeHash:   beforeHex,
 			AfterHash:    afterHex,
 			Changed:      false,
 			Empty:        len(afterData) == 0,
+			Note:         hashNote,
 		}, nil
 	}
 	if err := ctx.Err(); err != nil {
@@ -204,7 +215,15 @@ func PatchFileContext(ctx context.Context, path string, changes []PatchChange, b
 		return PatchResult{}, FileErr(err, path)
 	}
 	notePatchWrite(path)
+	noteIssuedHash(path, beforeHex, afterHex)
 	note, duplicated := pureInsertionNote(content, changes)
+	if hashNote != "" {
+		if note == "" {
+			note = hashNote
+		} else {
+			note += "; " + hashNote[len("note: "):]
+		}
+	}
 	// A relaxed match changed bytes the model did not literally send, so say
 	// so on the success path. Without it the next patch against the same block
 	// is written from the same wrong bytes again.
@@ -224,7 +243,7 @@ func PatchFileContext(ctx context.Context, path string, changes []PatchChange, b
 		Empty:          len(afterData) == 0,
 		Note:           note,
 		Duplicated:     duplicated,
-		WrittenPreview: patchWrittenSnapshot(before, content),
+		WrittenPreview: writtenPreview(before, content, regions),
 	}, nil
 }
 

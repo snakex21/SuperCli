@@ -82,7 +82,6 @@ func TestPatchFileWrittenSnapshotOnlyAfterWrite(t *testing.T) {
 	for _, args := range []string{
 		`{"path":"sample.txt","old":"same","new":"same"}`,
 		`{"path":"sample.txt","old":"missing","new":"new"}`,
-		`{"path":"sample.txt","old":"same","new":"new","base_hash":"stale"}`,
 	} {
 		out, _ := NewPatchFile(root).execute(t.Context(), json.RawMessage(args))
 		if strings.Contains(out.Text, "Written snapshot") {

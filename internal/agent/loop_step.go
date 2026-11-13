@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"supercli/internal/llm"
@@ -188,6 +189,24 @@ func (l *Loop) runStep(
 	}
 	if l.draftBridge != nil && l.lastDraftText != "" {
 		l.recordDraftOutcome(step, text, verifyTokens, out)
+	}
+	// A final answer that reports passing checks against the evidence of
+	// this Run gets a visible note. It is appended, never blocking, and it
+	// enters history so the next turn sees it too.
+	if len(toolCalls) == 0 && !truncatedToolCalls && hasVisibleUserReply(text) {
+		warning := ""
+		// Worker reports are evidence for the coordinator, which runs its own
+		// checks; the note is for the answer a person reads.
+		if !inWorkerRun(ctx) {
+			warning = l.verificationClaimWarning(text)
+		}
+		if stop := l.checkCycles.takeStopNote(); stop != "" && !strings.Contains(text, stop) {
+			warning += "\n\n[" + stop + "]"
+		}
+		if warning != "" {
+			text += warning
+			out <- MessageEvent{Text: warning}
+		}
 	}
 
 	// Build the assistant message and append it to history.
@@ -459,6 +478,23 @@ func (l *Loop) runStep(
 			}
 			return stepAbort
 		}
+	}
+	// Edits keep returning to versions that already failed the same check:
+	// stop the tool loop and have the model explain the conflict instead.
+	if repeats, due := l.checkCycles.stopDue(); due {
+		stopText := fmt.Sprintf(checkCycleStopText, repeats)
+		sys := llm.Message{
+			Role: llm.RoleSystem,
+			Content: "[edit loop] " + stopText + " Stop editing. Tell the user which versions you tried, " +
+				"the exact failing check output, and which requirements seem to conflict; ask how to proceed.",
+		}
+		l.Messages = append(l.Messages, sys)
+		l.persist(ctx, sys)
+		out <- NoticeEvent{Text: stopText}
+		l.finalReplyOnly = true
+		l.finalReplyFallback = stopText
+		l.statsEndStep(stepStart)
+		return stepContinue
 	}
 	if interjections == 0 {
 		if fallback, ok := standaloneDocxMutationFinalReply(toolCalls, toolOutcomes); ok {

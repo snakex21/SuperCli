@@ -107,15 +107,27 @@ func TestPatchFile_BaseHash(t *testing.T) {
 	}
 	sum := sha256.Sum256(content)
 	good := hex.EncodeToString(sum[:])
-	if _, err := PatchFile(path, []PatchChange{{Old: "stable", New: "ok"}}, "deadbeef"); err == nil {
-		t.Fatal("bad base_hash should fail")
+	// A hash this tool never issued for the file is a guess: it is ignored
+	// with a note, never reported as "file changed".
+	res, err := PatchFile(path, []PatchChange{{Old: "stable", New: "ok"}}, "deadbeef")
+	if err != nil || !res.Changed || res.BeforeHash != good || !strings.Contains(res.Note, "base_hash ignored") {
+		t.Fatalf("invented hash: %+v %v", res, err)
 	}
-	res, err := PatchFile(path, []PatchChange{{Old: "stable", New: "ok"}}, good)
-	if err != nil {
+	// An issued hash that still matches is accepted silently.
+	res2, err := PatchFile(path, []PatchChange{{Old: "ok", New: "fine"}}, strings.ToUpper(res.AfterHash))
+	if err != nil || !res2.Changed || res2.Note != "" {
+		t.Fatalf("issued hash: %+v %v", res2, err)
+	}
+	// An issued hash after someone else wrote the file is a real stale edit.
+	if err := os.WriteFile(path, []byte("fine\nexternal\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if !res.Changed || res.BeforeHash != good {
-		t.Fatalf("%+v", res)
+	_, err = PatchFile(path, []PatchChange{{Old: "fine", New: "x"}}, res2.AfterHash)
+	if err == nil || !strings.Contains(err.Error(), "file changed since the result that gave this base_hash") {
+		t.Fatalf("stale issued hash accepted: %v", err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != "fine\nexternal\n" {
+		t.Fatalf("stale edit wrote: %q", got)
 	}
 }
 

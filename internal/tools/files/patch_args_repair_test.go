@@ -27,7 +27,7 @@ func TestRedundantPatchPathsKeepAtomicityAndExactScope(t *testing.T) {
 		{name: "other unknown key", raw: "{\"path\":\"a.txt\",\"changes\":[{\"path\":\"a.txt\",\"old\":\"first\",\"new\":\"ONE\",\"extra\":true}]}"},
 		{name: "wrong nested type", raw: "{\"path\":\"a.txt\",\"changes\":[{\"path\":7,\"old\":\"first\",\"new\":\"ONE\"}]}"},
 		{name: "count still enforced", raw: "{\"path\":\"a.txt\",\"changes\":[{\"path\":\"a.txt\",\"old\":\"first\",\"new\":\"ONE\",\"expected_count\":2}]}"},
-		{name: "stale hash still enforced", raw: "{\"path\":\"a.txt\",\"base_hash\":\"stale\",\"changes\":[{\"path\":\"a.txt\",\"old\":\"first\",\"new\":\"ONE\"}]}"},
+		{name: "invented hash ignored", raw: "{\"path\":\"a.txt\",\"base_hash\":\"stale\",\"changes\":[{\"path\":\"a.txt\",\"old\":\"first\",\"new\":\"ONE\"}]}", want: "ONE second", ok: true},
 		{name: "later failed replacement stays atomic", raw: "{\"path\":\"a.txt\",\"changes\":[{\"path\":\"a.txt\",\"old\":\"first\",\"new\":\"ONE\"},{\"path\":\"a.txt\",\"old\":\"missing\",\"new\":\"TWO\"}]}"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -63,3 +63,14 @@ func TestCoreWordContractIsCompactAndDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// A missing target must stop the work, not redirect it: in the eval a
+// model edited a different file than the (nonexistent) one named and
+// reported success.
+func TestCoreMissingTargetHonesty(t *testing.T) {
+	for _, want := range []string{"Missing file/target", "say so and ask", "never substitute another"} {
+		if !strings.Contains(Core, want) {
+			t.Errorf("Core missing honesty rule %q", want)
+		}
+	}
+}

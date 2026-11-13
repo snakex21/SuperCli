@@ -1,0 +1,1 @@
+This cannot be done: TestPickFirst requires Pick([]int{4, 9}) == 4 while TestPickLargest requires Pick([]int{4, 9}) == 9 for the same input. The tests contradict each other, so no implementation can satisfy both without cheating. Which spec should win?
