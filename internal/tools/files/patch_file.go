@@ -56,7 +56,7 @@ func (t *PatchFile) Spec() Tool {
 				"old": {"type": "string", "description": "Text to replace"},
 				"new": {"type": "string", "description": "Its replacement; empty deletes"},
 				"expected_count": {"type": "integer", "description": "Matches to expect (default 1)", "minimum": 1},
-				"base_hash": {"type": "string", "description": "SHA-256 of current contents; rejects stale edits"},
+				"base_hash": {"type": "string", "description": "Optional; only an after_hash from an earlier result"},
 				"changes": {
 					"type": "array",
 					"description": "Several replacements instead of old/new",

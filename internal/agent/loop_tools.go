@@ -105,6 +105,14 @@ func (l *Loop) invokeToolCallsBatch(ctx context.Context, toolCalls []llm.ToolCal
 	// BEFORE any registry lookup, so allReadOnlyCalls / toolConflictWaves
 	// / dispatch all see names that actually exist.
 	toolCalls = l.rewritePlaceholderToolCalls(toolCalls, messages)
+	// Parallel read_many calls share one step's read budget.
+	batchReads := 0
+	for _, tc := range toolCalls {
+		if tc.Name == "read_many" {
+			batchReads++
+		}
+	}
+	ctx = core.WithReadBatchShare(ctx, batchReads)
 	// Independent reads do not touch the model backend and cannot conflict
 	// with one another. Run them concurrently on both local and cloud setups;
 	// the results are still appended in call order for a stable prompt.
@@ -734,6 +742,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) (r
 		l.identicalWrites.recordSuccess(tc.Name, tc.Arguments)
 		if toolCallKind(tc.Name, tc.Arguments) == "mutation" && !res.Inert {
 			l.identicalFails.workspaceChanged()
+			l.checkCycles.touch(l.baseDir, tc.Arguments)
 			l.forwardWorkerMutation(ctx)
 		}
 	}
@@ -758,8 +767,12 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) (r
 	// attempt is read after recordFailure above, so it is the number
 	// of the failure just seen (1 = first).
 	l.logToolFailure(tc, raw, attributed, l.identicalFails.attempts(tc.Name, tc.Arguments, l.failedChecks.stateRevision()))
-	modelContent := l.registry.ModelResultContentContext(ctx, tc.Name, attributed)
+	modelContent := l.registry.ModelResultContentContext(core.WithModelWindow(ctx, l.window()), tc.Name, attributed)
 	outputHandle := retainedToolOutputHandle(tc.Name, attributed, modelContent)
+	if note := l.checkCycles.note(tc.ID); note != "" {
+		// A fact about this result (flip-flopping edits), not an instruction.
+		modelContent = insertBeforeOutputEnvelope(modelContent, note)
+	}
 	if reused {
 		modelContent = reusedResultHint(reuseAge, tool.RefreshArg) + modelContent
 	}

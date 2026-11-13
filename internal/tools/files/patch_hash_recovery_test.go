@@ -44,7 +44,7 @@ func TestPatchFileTool_StaleHashRecovery(t *testing.T) {
 			patch := func(hash, old string) core.Result {
 				t.Helper()
 				args, err := json.Marshal(map[string]string{
-					"path": "sample.go", "base_hash": hash, "old": old, "new": "const Value = 2",
+					"path": "sample.go", "base_hash": hash, "old": old, "new": old + "0",
 				})
 				if err != nil {
 					t.Fatal(err)
@@ -75,14 +75,26 @@ func TestPatchFileTool_StaleHashRecovery(t *testing.T) {
 				return match[1]
 			}
 
-			hash := rejectedHash(patch("outdated-hash", "const Value = 1"), current)
+			// An invented hash is not evidence of any read: the edit applies
+			// with a note instead of a false "file changed" rejection.
+			first := patch("outdated-hash", "const Value = 1")
+			if first.Err != nil || !strings.Contains(first.Text, "base_hash ignored") || strings.Contains(first.Text, "file changed") {
+				t.Fatalf("invented hash: %+v", first)
+			}
+			issued := regexp.MustCompile("after_hash=([0-9a-f]{64})").FindStringSubmatch(first.Text)
+			if len(issued) != 2 {
+				t.Fatalf("no after_hash issued: %s", first.Text)
+			}
+			current = strings.Replace(current, "const Value = 1", "const Value = 10", 1)
 			assertUnchanged(current)
 
-			// The diagnostic is a snapshot, never a token that bypasses later
+			// An issued hash is a snapshot, never a token that bypasses later
 			// changes from the user, a formatter or another worker.
 			current += "// another writer" + newline
 			write(current)
-			hash = rejectedHash(patch(hash, "const Value = 1"), current)
+			hash := rejectedHash(patch(issued[1], "const Value = 10"), current)
+			assertUnchanged(current)
+			hash = rejectedHash(patch(issued[1], "const Value = 10"), current)
 			assertUnchanged(current)
 
 			read, err := reg.Execute(t.Context(), "read_lines", json.RawMessage(
@@ -90,11 +102,11 @@ func TestPatchFileTool_StaleHashRecovery(t *testing.T) {
 			if err != nil || read.Err != nil || !strings.Contains(read.Text, "another writer") {
 				t.Fatalf("current source unavailable for review: %v %+v", err, read)
 			}
-			result := patch(strings.ToUpper(hash), "const Value = 1")
+			result := patch(strings.ToUpper(hash), "const Value = 10")
 			if result.Err != nil || !strings.Contains(result.Text, "changed=true") {
 				t.Fatalf("reviewed retry failed: %+v", result)
 			}
-			current = strings.Replace(current, "const Value = 1", "const Value = 2", 1)
+			current = strings.Replace(current, "const Value = 10", "const Value = 100", 1)
 			assertUnchanged(current)
 		})
 	}
