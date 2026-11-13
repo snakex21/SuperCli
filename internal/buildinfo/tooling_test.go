@@ -31,6 +31,16 @@ func TestNoNodeDevelopmentToolchain(t *testing.T) {
 				return err
 			}
 			if entry.IsDir() {
+				// Agent-suite fixtures (and their reference solutions) are
+				// sample projects an evaluated agent works on, some of them
+				// Node projects tested with `node --test`; they are copied
+				// into isolated workspaces, not this repository's tooling.
+				if strings.HasSuffix(filepath.ToSlash(path), "test/go/eval/agent-suite-ref") {
+					return filepath.SkipDir
+				}
+				if parent := filepath.ToSlash(filepath.Dir(path)); strings.HasSuffix(parent, "test/go/eval/fixtures") && strings.HasPrefix(entry.Name(), "agent-") {
+					return filepath.SkipDir
+				}
 				return nil
 			}
 			ext := filepath.Ext(path)
