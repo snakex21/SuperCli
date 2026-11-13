@@ -253,7 +253,7 @@ func readManyContinuation(pending []readManyRequest, budget int) string {
 	if len(pending) > len(next) {
 		more = fmt.Sprintf(" (then %d more)", len(pending)-len(next))
 	}
-	return fmt.Sprintf("[incomplete: %d range(s) not returned to stay within the %d KB output budget; nothing shown above was cut. Do not assume their content. Write down what you need from the files above before reading on (older results may be pruned). Next: read_many reads=%q%s]\n",
+	return fmt.Sprintf("[incomplete: %d range(s) not returned to stay within the %d KB output budget; nothing shown above was cut. Do not assume their content. Next: read_many reads=%q%s]\n",
 		len(pending), budget/1024, strings.Join(parts, " | "), more)
 }
 

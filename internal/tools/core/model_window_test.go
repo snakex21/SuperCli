@@ -35,7 +35,7 @@ func TestWebFetchPageWindowStaysInline(t *testing.T) {
 func TestReadBatchBudgetIsSharedByParallelCalls(t *testing.T) {
 	ctx := WithModelWindow(context.Background(), 16384)
 	one := ReadBatchBudget(ctx)
-	if one != 16384*4*8/100 {
+	if one != 16384*4*15/100 {
 		t.Fatalf("budget=%d", one)
 	}
 	if got := ReadBatchBudget(WithReadBatchShare(ctx, 2)); got != one/2 {
