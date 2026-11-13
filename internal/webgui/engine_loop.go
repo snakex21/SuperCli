@@ -221,22 +221,13 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 	// tiny query-only tool always available, while the larger filtered search
 	// and fetch schemas remain discoverable through tool_search.
 	reg.MustRegister(tools.NewWebFetch().Spec())
+	reg.MustRegister(e.sharedBrowser().Spec())
 	downloadSpec := tools.NewWebDownload(home).Spec()
 	if turn != nil {
 		downloadSpec = turn.Wrap(downloadSpec)
 	}
 	reg.MustRegister(codeIntel.WrapMutation(downloadSpec))
-	webEngine := tc.WebSearch.Engine
-	webKey := tc.WebSearch.APIKey
-	if webKey == "" {
-		switch strings.ToLower(webEngine) {
-		case "brave":
-			webKey = os.Getenv("BRAVE_API_KEY")
-		case "tavily":
-			webKey = os.Getenv("TAVILY_API_KEY")
-		}
-	}
-	webSearcher := tools.NewWebSearch(webEngine, webKey, tc.WebSearch.BaseURL)
+	webSearcher := tools.NewConfiguredWebSearch(tc)
 	reg.MustRegister(webSearcher.Spec())
 	reg.MustRegister(webSearcher.LookupSpec())
 	reg.MarkAlwaysOn("web_lookup")

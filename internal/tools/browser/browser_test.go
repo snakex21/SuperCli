@@ -177,3 +177,19 @@ func TestGuardProxyRefusesPrivateAddresses(t *testing.T) {
 		t.Fatalf("internal server was contacted %d times", hits)
 	}
 }
+
+func TestCloseAllClosesEveryOpenBrowser(t *testing.T) {
+	closed := 0
+	a, b, idle := New(), New(), New()
+	a.sess = &session{closer: func() { closed++ }}
+	b.sess = &session{closer: func() { closed++ }}
+	a.touchLocked()
+	CloseAll()
+	if closed != 2 || a.sess != nil || b.sess != nil || idle.sess != nil || a.idle != nil {
+		t.Fatalf("CloseAll left browsers open: closed=%d", closed)
+	}
+	CloseAll() // idempotent
+	if closed != 2 {
+		t.Fatalf("closed twice: %d", closed)
+	}
+}

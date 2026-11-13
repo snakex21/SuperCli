@@ -152,6 +152,10 @@ type Engine struct {
 	codeIntel   map[string]*tools.CodeIntel
 	processMu   sync.Mutex
 	processes   map[string]*tools.ProcessSession
+	// One headless browser tool per Engine, shared by every chat run so an
+	// open page survives between turns; closed in Close.
+	browserOnce sync.Once
+	browserTool *tools.Browser
 	// Skill catalogs are workspace-scoped and immutable for the lifetime of a
 	// process. Reuse each lazy Discoverer across UI browsing and agent turns so
 	// external SKILL.md files are scanned once instead of once per request.
@@ -613,6 +617,9 @@ func (e *Engine) Close() error {
 	for _, tool := range codeIntel {
 		tool.Close()
 	}
+	if e.browserTool != nil {
+		e.browserTool.Close()
+	}
 	e.processMu.Lock()
 	processes := e.processes
 	e.processes = make(map[string]*tools.ProcessSession)
@@ -680,4 +687,10 @@ func (e *Engine) Close() error {
 		}
 	}
 	return errors.Join(goalErr, creditErr, costErr)
+}
+
+// sharedBrowser returns the Engine's browser tool, creating it on first use.
+func (e *Engine) sharedBrowser() *tools.Browser {
+	e.browserOnce.Do(func() { e.browserTool = tools.NewBrowser() })
+	return e.browserTool
 }
