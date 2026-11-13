@@ -52,3 +52,23 @@ func TestInvokeToolDispatchesAlwaysOnCatalogToolInStableThinMode(t *testing.T) {
 		t.Fatalf("dynamic mode changed: %+v", got[0])
 	}
 }
+
+// Live: the model wrapped the target as "functions.generate_image" inside the
+// envelope and got "unknown tool". Direct calls already accept that wrapper.
+func TestInvokeToolAcceptsFunctionsPrefixedTarget(t *testing.T) {
+	reg := tools.NewRegistry()
+	reg.MustRegister(tools.Tool{
+		Name: "lookup", Description: "lookup", ReadOnly: true,
+		Schema: `{"type":"object","properties":{"query":{"type":"string"}}}`,
+		Fn:     func(context.Context, json.RawMessage) (tools.Result, error) { return tools.Result{}, nil },
+	})
+	for _, name := range []string{"functions.lookup", "tools.lookup"} {
+		got, err := resolveInvokeToolCall(reg, llm.ToolCall{Name: invokeToolName, Arguments: `{"tool":"` + name + `","args":{"query":"x"}}`})
+		if err != nil || got.Name != "lookup" {
+			t.Fatalf("%s: got %+v err=%v", name, got, err)
+		}
+	}
+	if _, err := resolveInvokeToolCall(reg, llm.ToolCall{Name: invokeToolName, Arguments: `{"tool":"functions.missing"}`}); err == nil {
+		t.Fatal("unknown prefixed tool must still be refused")
+	}
+}
