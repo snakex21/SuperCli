@@ -161,29 +161,48 @@ stage.addEventListener("scroll", function () {
 // interrupted, but the way back should be one click/keypress. The zero-height
 // sticky dock keeps the button over the visible bottom of the transcript
 // column without adding layout height or moving any message.
-var jumpLatestDock = el("div", "jump-latest-dock");
-var jumpLatestBtn = el("button", "jump-latest");
-jumpLatestBtn.type = "button";
-jumpLatestBtn.hidden = true;
-jumpLatestBtn.appendChild(el("span", "jump-latest-arrow", "↓")).setAttribute("aria-hidden", "true");
-var jumpLatestLabel = el("span");
-jumpLatestLabel.setAttribute("data-i18n", "chat.jumpLatest");
-jumpLatestLabel.textContent = typeof t === "function" ? t("chat.jumpLatest") : "";
-jumpLatestBtn.appendChild(jumpLatestLabel);
-jumpLatestDock.appendChild(jumpLatestBtn);
-stage.appendChild(jumpLatestDock);
-var jumpLatestFrame = null;
+var jumpLatestDock = null, jumpLatestBtn = null, jumpLatestFrame = null;
+// Created lazily so embedders and isolated renderer harnesses that load this
+// file without the full shell are unaffected.
+function ensureJumpLatest() {
+  if (jumpLatestBtn) return jumpLatestBtn;
+  if (!stage || typeof stage.appendChild !== "function" || typeof document === "undefined") return null;
+  try { return createJumpLatest(); } catch (_) { jumpLatestDock = jumpLatestBtn = null; return null; }
+}
+function createJumpLatest() {
+  jumpLatestDock = document.createElement("div");
+  jumpLatestDock.className = "jump-latest-dock";
+  jumpLatestBtn = document.createElement("button");
+  jumpLatestBtn.className = "jump-latest";
+  jumpLatestBtn.type = "button";
+  jumpLatestBtn.hidden = true;
+  var arrow = document.createElement("span");
+  arrow.className = "jump-latest-arrow";
+  arrow.setAttribute("aria-hidden", "true");
+  arrow.textContent = "↓";
+  var label = document.createElement("span");
+  label.setAttribute("data-i18n", "chat.jumpLatest");
+  label.textContent = typeof t === "function" ? t("chat.jumpLatest") : "";
+  jumpLatestBtn.appendChild(arrow);
+  jumpLatestBtn.appendChild(label);
+  jumpLatestBtn.addEventListener("click", jumpToLatest);
+  jumpLatestDock.appendChild(jumpLatestBtn);
+  stage.appendChild(jumpLatestDock);
+  return jumpLatestBtn;
+}
 function updateJumpLatest() {
   jumpLatestFrame = null;
+  var button = ensureJumpLatest();
+  if (!button) return;
   // Hide while restoring/settling: those owners scroll programmatically.
   var away = stage.scrollHeight - stage.scrollTop - stage.clientHeight > Math.max(240, stage.clientHeight * 0.5);
   var show = away && !initialTranscriptTail && !!stream.firstElementChild;
-  if (jumpLatestBtn.hidden === !show) return;
-  if (!show && document.activeElement === jumpLatestBtn && typeof promptEl !== "undefined" && promptEl) promptEl.focus({ preventScroll: true });
-  jumpLatestBtn.hidden = !show;
+  if (button.hidden === !show) return;
+  if (!show && document.activeElement === button && typeof promptEl !== "undefined" && promptEl) promptEl.focus({ preventScroll: true });
+  button.hidden = !show;
 }
 function queueJumpLatestUpdate() {
-  if (jumpLatestFrame === null) jumpLatestFrame = requestAnimationFrame(updateJumpLatest);
+  if (jumpLatestFrame === null && typeof requestAnimationFrame === "function") jumpLatestFrame = requestAnimationFrame(updateJumpLatest);
 }
 function jumpToLatest() {
   cancelTranscriptResumeScroll();
@@ -193,7 +212,7 @@ function jumpToLatest() {
   if (typeof promptEl !== "undefined" && promptEl) promptEl.focus({ preventScroll: true });
   queueJumpLatestUpdate();
 }
-jumpLatestBtn.addEventListener("click", jumpToLatest);
+ensureJumpLatest();
 ["wheel", "touchstart", "pointerdown", "keydown"].forEach(function (name) {
   stage.addEventListener(name, cancelTranscriptResumeScroll, { passive: true });
 });
