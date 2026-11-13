@@ -1,12 +1,12 @@
 package tui
 
 import (
+	"embed"
 	"strings"
 	"sync"
 
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
-	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 )
@@ -24,6 +24,44 @@ const (
 	codeStyleDark         = "monokai"
 	codeStyleLight        = "github"
 )
+
+// Only the two styles above are ever used. Importing chroma/v2/styles parses
+// all ~70 embedded style XML files in its package init on every process
+// start (~5 ms and ~2 MB / 40k allocations measured on Windows), even for
+// `supercli --version`. The two XML files are copied verbatim from chroma
+// v2.27.0 (MIT, see THIRD_PARTY_NOTICES.md) and parsed lazily on first use.
+//
+//go:embed codestyles/*.xml
+var codeStyleFS embed.FS
+
+var codeStyles struct {
+	once        sync.Once
+	dark, light *chroma.Style
+}
+
+func codeStyle(dark bool) *chroma.Style {
+	codeStyles.once.Do(func() {
+		codeStyles.dark = loadCodeStyle(codeStyleDark)
+		codeStyles.light = loadCodeStyle(codeStyleLight)
+	})
+	if dark {
+		return codeStyles.dark
+	}
+	return codeStyles.light
+}
+
+func loadCodeStyle(name string) *chroma.Style {
+	r, err := codeStyleFS.Open("codestyles/" + name + ".xml")
+	if err == nil {
+		defer r.Close()
+		if style, err := chroma.NewXMLStyle(r); err == nil {
+			return style
+		}
+	}
+	// Unreachable with the embedded files; keep highlighting colourless
+	// rather than panicking in a renderer.
+	return chroma.MustNewStyle(name, chroma.StyleEntries{})
+}
 
 type codeHighlightKey struct {
 	lang, code string
@@ -139,10 +177,7 @@ func cachedLexer(lang string) chroma.Lexer {
 }
 
 func tokenizeCode(lexer chroma.Lexer, key codeHighlightKey, lineCount int) []string {
-	style := styles.Get(codeStyleDark)
-	if !key.dark {
-		style = styles.Get(codeStyleLight)
-	}
+	style := codeStyle(key.dark)
 	it, err := lexer.Tokenise(nil, key.code+"\n")
 	if err != nil {
 		return nil

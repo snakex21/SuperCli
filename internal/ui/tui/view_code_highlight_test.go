@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alecthomas/chroma/v2"
+	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
@@ -147,5 +149,24 @@ func BenchmarkFencedCodeStreamingFrame(b *testing.B) {
 	text := "```go\n" + strings.Repeat("func f(a int) string { return fmt.Sprint(a) } // c\n", 80) + "```"
 	for i := 0; i < b.N; i++ {
 		renderAssistantMarkdown(text, p, false)
+	}
+}
+
+// The embedded copies must stay identical to chroma's own registry entries;
+// only the package-init cost of the full registry is avoided.
+func TestEmbeddedCodeStylesMatchChroma(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		dark bool
+	}{{codeStyleDark, true}, {codeStyleLight, false}} {
+		got, want := codeStyle(tc.dark), styles.Get(tc.name)
+		if got.Name != want.Name {
+			t.Fatalf("style name = %q, want %q", got.Name, want.Name)
+		}
+		for _, tt := range []chroma.TokenType{chroma.Keyword, chroma.NameFunction, chroma.LiteralString, chroma.Comment, chroma.LiteralNumber, chroma.Operator, chroma.Text} {
+			if g, w := got.Get(tt).String(), want.Get(tt).String(); g != w {
+				t.Fatalf("%s %v = %q, want %q", tc.name, tt, g, w)
+			}
+		}
 	}
 }
