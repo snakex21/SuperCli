@@ -289,6 +289,9 @@ func Main() {
 	)
 	defer codeIntel.Close()
 	defer processSession.Close()
+	// Close headless browsers on normal exit on every OS; the Windows job
+	// object only covers crashes.
+	defer tools.CloseBrowsers()
 	if ftsClose != nil {
 		defer ftsClose()
 	}

@@ -43,13 +43,33 @@ type session struct {
 	// refAttr is a per-session random attribute name for element refs, so a
 	// page cannot pre-plant refs that hijack clicks.
 	refAttr string
+	// closer replaces the default shutdown (tests).
+	closer func()
 }
 
 func (s *session) close() {
+	if s.closer != nil {
+		s.closer()
+		return
+	}
 	_ = s.browser.Close()
 	if s.proxy != nil {
 		s.proxy.Close()
 	}
+}
+
+// live tracks every Tool so the application can close all browsers at
+// normal shutdown on every OS (the Windows job object is only a safety net
+// for crashes, and other systems have none).
+var live sync.Map // *Tool -> struct{}
+
+// CloseAll closes every browser started by any browser tool. Applications
+// call it on shutdown; a later call to a tool simply starts a new browser.
+func CloseAll() {
+	live.Range(func(key, _ any) bool {
+		key.(*Tool).Close()
+		return true
+	})
 }
 
 // Tool owns at most one headless browser, started on first use and closed
@@ -72,6 +92,7 @@ func New() *Tool {
 		_, err := web.PublicHTTPURL(ctx, raw)
 		return err
 	}
+	live.Store(t, struct{}{})
 	return t
 }
 
