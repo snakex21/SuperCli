@@ -158,7 +158,7 @@ func TestPatchWrittenSnapshotChainedEditsUsesWrittenFinalState(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := result.WrittenPreview
-	for _, want := range []string{"1 | first=3", "104 | last=4", "middle content omitted"} {
+	for _, want := range []string{"1 | first=3", "104 | last=4", "2 changed regions"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("lost final state %q: %q", want, text)
 		}
@@ -310,4 +310,57 @@ func TestPatchWrittenSnapshotLongContextDoesNotHideChangedRows(t *testing.T) {
 	}
 	assertPatchSnapshotBounded(t, text)
 	assertPatchSnapshotRows(t, after, text)
+}
+
+// The S3 regression: a replacement in four sections must show all four. The
+// head/tail snapshot hid the middle two, so an over-broad edit looked right.
+func TestPatchWrittenSnapshotShowsEveryChangedRegion(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("{\n")
+	for _, section := range []string{"app", "audit", "logs", "cache"} {
+		fmt.Fprintf(&b, "  %q: {\n    \"enabled\": true,\n%s    \"retention_days\": 30\n  },\n", section, strings.Repeat("    \"pad\": 0,\n", 6))
+	}
+	b.WriteString("}\n")
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := PatchFileContext(context.Background(), path, []PatchChange{
+		{Old: `"retention_days": 30`, New: `"retention_days": 90`, ExpectedCount: 4},
+	}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := result.WrittenPreview
+	written, _ := os.ReadFile(path)
+	if !strings.Contains(text, "4 changed regions") || strings.Contains(text, "middle content omitted") {
+		t.Fatalf("not every region reported: %s", text)
+	}
+	for i, section := range []string{"app", "audit", "logs", "cache"} {
+		line := 2 + i*10 + 8
+		if !strings.Contains(text, fmt.Sprintf("%4d |     \"retention_days\": 90", line)) {
+			t.Fatalf("region %d (%s) at line %d missing: %s", i+1, section, line, text)
+		}
+	}
+	if len(text) > patchRegionsBytes || !utf8.ValidString(text) {
+		t.Fatalf("regions snapshot over budget: %d", len(text))
+	}
+	assertPatchSnapshotRows(t, string(written), text)
+}
+
+// Many regions stay bounded and every one is at least named by line.
+func TestPatchWrittenSnapshotManyRegionsNamesTheRest(t *testing.T) {
+	before := strings.Repeat("key = 1\n"+strings.Repeat("filler\n", 8), 40)
+	path := filepath.Join(t.TempDir(), "many.txt")
+	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := PatchFileContext(context.Background(), path, []PatchChange{{Old: "key = 1", New: "key = 2", ExpectedCount: 40}}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := result.WrittenPreview
+	if len(text) > patchRegionsBytes || !strings.Contains(text, "more changed region(s) at lines") || !strings.Contains(text, ",352 not shown") {
+		t.Fatalf("unbounded or silent: %d %s", len(text), text)
+	}
 }

@@ -159,6 +159,7 @@ func PatchFileContext(ctx context.Context, path string, changes []PatchChange, b
 	content := before
 	total := 0
 	var relaxed []string
+	var regions []textRegion
 	for i, ch := range changes {
 		if ch.Old == "" {
 			return PatchResult{}, fmt.Errorf("fileops.PatchFile: change %d: old is empty; nothing written", i)
@@ -169,7 +170,7 @@ func PatchFileContext(ctx context.Context, path string, changes []PatchChange, b
 		}
 		got := strings.Count(content, ch.Old)
 		if got == want {
-			content = strings.Replace(content, ch.Old, ch.New, want)
+			content, regions = spliceTracked(content, exactSpans(content, ch.Old, ch.New, want), regions)
 			total += want
 			continue
 		}
@@ -178,7 +179,7 @@ func PatchFileContext(ctx context.Context, path string, changes []PatchChange, b
 		// answers that — it only risks patching the wrong one.
 		if got == 0 {
 			if spans, mode, ok := relaxedMatch(content, ch.Old, ch.New, want); ok {
-				content = splice(content, spans)
+				content, regions = spliceTracked(content, spans, regions)
 				total += want
 				relaxed = appendUnique(relaxed, mode)
 				continue
@@ -242,7 +243,7 @@ func PatchFileContext(ctx context.Context, path string, changes []PatchChange, b
 		Empty:          len(afterData) == 0,
 		Note:           note,
 		Duplicated:     duplicated,
-		WrittenPreview: patchWrittenSnapshot(before, content),
+		WrittenPreview: writtenPreview(before, content, regions),
 	}, nil
 }
 
