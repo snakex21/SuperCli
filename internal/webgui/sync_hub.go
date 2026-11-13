@@ -11,6 +11,7 @@ import (
 // captured under one lock, so replay cannot lose or duplicate a live delta.
 type syncFrame struct {
 	Type        string      `json:"type"`
+	Kind        string      `json:"kind,omitempty"`
 	QueuePaused bool        `json:"queue_paused,omitempty"`
 	ProjectPath string      `json:"project_path,omitempty"`
 	ProjectName string      `json:"project_name,omitempty"`
@@ -66,6 +67,15 @@ func (h *syncHub) changed() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.publishLocked(syncFrame{Type: "sessions_changed"})
+}
+
+// dataChanged tells every connected view (all windows/devices, including the
+// originating one) that persisted panel data of one kind changed. Browsers
+// refetch only open views and skip re-rendering identical data.
+func (h *syncHub) dataChanged(kind string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.publishLocked(syncFrame{Type: "data_changed", Kind: kind})
 }
 func (h *syncHub) start(session, prompt string, identity syncIdentity, cancel context.CancelFunc, details ...syncFrame) *liveSyncRun {
 	h.mu.Lock()

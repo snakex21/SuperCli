@@ -54,6 +54,7 @@ func (s *Server) handleMemory(w http.ResponseWriter, r *http.Request) {
 				}
 				_ = ps.Close()
 			}
+			s.eng.syncHub.dataChanged("memory")
 			writeJSON(w, map[string]any{"ok": true, "removed": removed})
 			return
 		}
@@ -99,6 +100,7 @@ func (s *Server) handleMemory(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		s.eng.syncHub.dataChanged("memory")
 		writeJSON(w, map[string]any{"ok": true, "id": entry.ID, "target": target})
 	case http.MethodDelete:
 		id := strings.TrimSpace(r.URL.Query().Get("id"))
@@ -122,6 +124,7 @@ func (s *Server) handleMemory(w http.ResponseWriter, r *http.Request) {
 			_ = store.Delete(id)
 			_ = store.Close()
 		}
+		s.eng.syncHub.dataChanged("memory")
 		writeJSON(w, map[string]any{"ok": true, "id": id})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -224,6 +227,7 @@ func (s *Server) handleGoal(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		s.eng.syncHub.dataChanged("goal")
 		writeJSON(w, out)
 		return
 	}
