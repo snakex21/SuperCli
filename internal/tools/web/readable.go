@@ -120,6 +120,10 @@ func extractReadable(src string, base *url.URL) readablePage {
 	r.base = base
 	r.render(root)
 	page.Text = r.String()
+	if !strings.Contains(page.Text, "```") {
+		// Carousels and responsive layouts repeat whole blocks verbatim.
+		page.Text = dedupeParagraphs(page.Text)
+	}
 	page.Links = r.links
 
 	if utf8.RuneCountInString(page.Text) < readableJSRenderedMinText && scriptCount > 0 {
