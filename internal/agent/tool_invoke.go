@@ -221,6 +221,18 @@ func resolveInvokeToolCallForRun(registry *tools.Registry, call llm.ToolCall, ru
 	target = strings.TrimSpace(target)
 	tool, ok := registry.Get(target)
 	if !ok {
+		// Same formatting wrappers normalizeToolCallNames accepts on direct calls
+		// (live: gpt-5.4-nano sent "functions.generate_image" inside the envelope).
+		for _, prefix := range []string{"functions.", "tools."} {
+			if trimmed := strings.TrimPrefix(target, prefix); trimmed != target {
+				if t, found := registry.Get(trimmed); found {
+					target, tool, ok = trimmed, t, true
+				}
+				break
+			}
+		}
+	}
+	if !ok {
 		// A retired line-editor name arrives here as an unknown tool. "Unknown"
 		// is a dead end the model answers by resending the payload some other
 		// way; the equivalent is the whole repair, so say it.
