@@ -339,6 +339,12 @@ func discoveryQuery(text string) string {
 			words[i] = "calendar"
 		case "uruchom", "wykonaj":
 			words[i] = "run"
+		case "wygeneruj", "generuj", "narysuj":
+			words[i] = "generate"
+		case "obraz", "obrazek", "obrazka", "grafika", "grafikę", "grafike", "zdjęcie", "zdjecie", "rysunek", "picture", "illustration":
+			words[i] = "image"
+		case "filmik", "wideo", "nagranie":
+			words[i] = "video"
 		}
 	}
 	return strings.Join(words, " ")
