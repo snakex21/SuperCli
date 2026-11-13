@@ -402,6 +402,9 @@ func parseOpenAIDataLines(r io.Reader, onData func(data string) error) (bool, er
 type openaiRequest struct {
 	Model     string `json:"model"`
 	MaxTokens int    `json:"max_tokens,omitempty"`
+	// OpenAI reasoning families (o-series, gpt-5+) reject max_tokens and
+	// take max_completion_tokens, which also budgets hidden reasoning.
+	MaxCompletionTokens int `json:"max_completion_tokens,omitempty"`
 	// Sampling parameters. Pointers + omitempty: a parameter the user
 	// never set is absent from the body, so the server applies its own
 	// default exactly as it did before pass-through existed. They sit
@@ -541,6 +544,15 @@ func buildOpenAIRequestWithReasoningKey(model, supportKey string, msgs []Message
 			req.Reasoning = visibleOpenAIReasoning(e)
 		} else if format == openAIReasoningEffort {
 			req.ReasoningEffort = e
+		}
+	}
+	if format == openAIReasoningEffort && isOpenAIReasoningFamily(model) {
+		req.MaxCompletionTokens, req.MaxTokens = req.MaxTokens, 0
+		// o-series never accept sampling; gpt-5.x accept it only when
+		// reasoning is off ("none"). Otherwise the turn fails with a 400 that
+		// no retry path recognizes.
+		if strings.HasPrefix(reasoningModelFamily(model), "o") || (req.ReasoningEffort != "" && req.ReasoningEffort != "none") {
+			req.Temperature, req.TopP = nil, nil
 		}
 	}
 	if len(tools) > 0 {
@@ -892,3 +904,17 @@ func openAIErrorMessage(raw json.RawMessage) string {
 // SuperCli only speaks /v1/chat/completions, where the timings form
 // (plus, on newer builds, usage.prompt_tokens_details) is what
 // actually arrives.
+
+// isOpenAIReasoningFamily names direct OpenAI reasoning models whose Chat
+// Completions contract differs from classic chat models (token cap field and
+// sampling). Claude ids also use the effort control but keep max_tokens.
+func isOpenAIReasoningFamily(model string) bool {
+	m := reasoningModelFamily(model)
+	switch {
+	case strings.HasPrefix(m, "gpt-5"), strings.HasPrefix(m, "gpt-6"),
+		strings.HasPrefix(m, "codex-"), m == "codex",
+		strings.HasPrefix(m, "o1"), strings.HasPrefix(m, "o3"), strings.HasPrefix(m, "o4"):
+		return true
+	}
+	return false
+}

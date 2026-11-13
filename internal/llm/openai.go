@@ -74,6 +74,11 @@ type OpenAIProvider struct {
 	// capability registry: a broken/mismatched gateway must not globally
 	// mark the same model id as text-only for other providers.
 	imageRejected atomic.Bool
+	// toolsEffortRejected is transport-local evidence that this endpoint
+	// refuses reasoning effort together with function tools (gpt-5.4+ on
+	// /chat/completions). Tool turns then omit the effort up front instead of
+	// paying a doomed 400 each turn; tool-free turns keep the user's level.
+	toolsEffortRejected atomic.Bool
 	// cachePrompt: resolved from cfg.CachePrompt (explicit) or
 	// isLocalBaseURL (auto). See OpenAIConfig.CachePrompt.
 	cachePrompt bool
@@ -257,6 +262,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
+	reqBody = p.omitToolsEffortIfRejected(reqBody, tools, reasoningFormat)
 
 	out := make(chan Delta, 16)
 	go func() {
@@ -329,6 +335,19 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 			resp.Body.Close()
 			cancel()
+			if len(tools) > 0 && !effortRetried && IsReasoningToolsCombinationError(resp.StatusCode, body) {
+				if patched, patchedOK := patchOpenAIReasoning(reqBody, "", reasoningFormat); patchedOK {
+					p.toolsEffortRejected.Store(true)
+					reqBody = patched
+					effortRetried = true
+					select {
+					case out <- Delta{Notice: fmt.Sprintf("model %q rejects reasoning effort together with tools on /chat/completions; tool turns continue without it (use provider type \"responses\" to keep reasoning with tools)", p.cfg.Model)}:
+					case <-ctx.Done():
+						return
+					}
+					continue
+				}
+			}
 			if effort, ok := LearnReasoningEffortFromError(p.reasoningKey(), resp.StatusCode, body, ctx); ok && !effortRetried {
 				if patched, patchedOK := patchOpenAIReasoning(reqBody, effort, reasoningFormat); patchedOK {
 					reqBody = patched
@@ -347,6 +366,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 				}
 				reqBody, err = buildOpenAIRequestWithReasoningKey(reqModel, p.reasoningKey(), msgs, tools, false, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens, p.sampling, ctx)
 				if err == nil {
+					reqBody = p.omitToolsEffortIfRejected(reqBody, tools, reasoningFormat)
 					visionRetried = true
 					select {
 					case out <- Delta{Notice: fmt.Sprintf("model %q rejected image input; retrying without images", p.cfg.Model)}:
@@ -631,4 +651,14 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		}
 	}()
 	return out, nil
+}
+
+func (p *OpenAIProvider) omitToolsEffortIfRejected(body []byte, tools []ToolDef, format openAIReasoningFormat) []byte {
+	if len(tools) == 0 || format == openAIReasoningNone || !p.toolsEffortRejected.Load() {
+		return body
+	}
+	if patched, ok := patchOpenAIReasoning(body, "", format); ok {
+		return patched
+	}
+	return body
 }

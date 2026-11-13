@@ -353,6 +353,13 @@ func ParseReasoningEffortError(body string) (ReasoningEffortError, bool) {
 	if !strings.Contains(low, "reasoning") && !strings.Contains(low, "effort") && !strings.Contains(low, "thinking") {
 		return ReasoningEffortError{}, false
 	}
+	// "Function tools with reasoning_effort are not supported for <model> in
+	// /v1/chat/completions" rejects a parameter combination on one endpoint,
+	// not the model's reasoning. Learning it as "unsupported" disabled
+	// reasoning for the model for the rest of the process.
+	if isReasoningToolsCombinationMessage(low) {
+		return ReasoningEffortError{}, false
+	}
 	// Rejections of replayed thinking blocks (bad signature, modified or
 	// misplaced block) describe conversation content, not the reasoning
 	// control. Treating them as "effort unsupported" would silently disable
@@ -385,6 +392,33 @@ func ParseReasoningEffortError(body string) (ReasoningEffortError, bool) {
 	// actionable evidence: the retry path should omit the control.
 	rejected := strings.Contains(low, "unsupported") || strings.Contains(low, "not supported") || strings.Contains(low, "invalid")
 	return info, info.Requested != "" || len(info.Supported) > 0 || rejected
+}
+
+// IsReasoningToolsCombinationError reports a 400 that rejects reasoning effort
+// only in combination with function tools on the Chat Completions endpoint
+// (gpt-5.4 and later direct OpenAI models: "use /v1/responses instead").
+func IsReasoningToolsCombinationError(status int, body []byte) bool {
+	if status != 400 {
+		return false
+	}
+	msg := string(body)
+	var payload struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &payload) == nil && payload.Error.Message != "" {
+		msg = payload.Error.Message
+	}
+	return isReasoningToolsCombinationMessage(strings.ToLower(msg))
+}
+
+func isReasoningToolsCombinationMessage(low string) bool {
+	if !strings.Contains(low, "reasoning") {
+		return false
+	}
+	return (strings.Contains(low, "function tool") || strings.Contains(low, "tools")) &&
+		(strings.Contains(low, "/v1/responses") || strings.Contains(low, "chat/completions") || strings.Contains(low, "responses api"))
 }
 
 // LearnReasoningEffortFromError records effort support discovered from a 400
