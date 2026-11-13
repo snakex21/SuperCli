@@ -31,7 +31,7 @@ import (
 type options struct {
 	suite, bin, provider, model, baseURL, keyEnv string
 	tasks, tags, out, workRoot, agent, refDir    string
-	label, ledger                                string
+	label, ledger, agentConfig                   string
 	repeats, jobs                                int
 	timeout                                      time.Duration
 	keep, skipNetwork                            bool
@@ -60,6 +60,7 @@ func main() {
 	fs.StringVar(&o.agent, "agent", "supercli", "supercli | reference (apply known-good solutions; grader self-test) | noop (untouched fixture)")
 	fs.StringVar(&o.refDir, "ref-dir", filepath.FromSlash("test/go/eval/agent-suite-ref"), "reference solutions for -agent reference")
 	fs.StringVar(&o.label, "label", "", "label printed in the report (default: model)")
+	fs.StringVar(&o.agentConfig, "agent-config", "", "TOML lines added to every isolated config (task agentConfig keys win), e.g. 'context_window = 32768'")
 	fs.StringVar(&o.ledger, "ledger", "", "append per-run cost rows to this markdown ledger")
 	fs.Float64Var(&o.budgetStop, "budget-stop", 0, "stop starting runs once the cumulative cost reaches this many USD (0 = no limit)")
 	fs.Float64Var(&o.priceIn, "price-in", 0, "USD per 1M uncached input tokens")

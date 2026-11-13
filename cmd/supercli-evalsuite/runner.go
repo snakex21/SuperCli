@@ -26,7 +26,7 @@ import (
 // workspace with an isolated data dir and records logs + transcript.
 func superCLIRunner(o options) agenteval.AgentRunner {
 	return func(ctx context.Context, in agenteval.AgentInput) (agenteval.AgentOutput, error) {
-		if err := prepareWorkspace(in); err != nil {
+		if err := prepareWorkspace(in, o.agentConfig); err != nil {
 			return agenteval.AgentOutput{}, err
 		}
 		args := []string{"--data-dir", in.DataDir, "--home", in.Workspace, "--provider", o.provider, "--model", o.model}
@@ -82,8 +82,8 @@ func superCLIRunner(o options) agenteval.AgentRunner {
 
 // prepareWorkspace writes the isolated agent config and turns the
 // fixture into a one-commit git repository, as a real project would be.
-func prepareWorkspace(in agenteval.AgentInput) error {
-	cfg := "# supercli-evalsuite isolated config\n" + strings.TrimSpace(in.Task.AgentConfig) + "\n"
+func prepareWorkspace(in agenteval.AgentInput, base string) error {
+	cfg := "# supercli-evalsuite isolated config\n" + mergeTOML(base, in.Task.AgentConfig)
 	if err := os.WriteFile(filepath.Join(in.DataDir, "config.toml"), []byte(cfg), 0o644); err != nil {
 		return err
 	}
@@ -104,6 +104,30 @@ func prepareWorkspace(in agenteval.AgentInput) error {
 		return err
 	}
 	return git("commit", "-q", "-m", "fixture", "--allow-empty")
+}
+
+// mergeTOML joins top-level "key = value" fragments; keys set by the
+// task override the run-wide fragment (TOML forbids duplicate keys).
+func mergeTOML(base, task string) string {
+	taskKeys := map[string]bool{}
+	for _, line := range strings.Split(task, "\n") {
+		if k, _, ok := strings.Cut(line, "="); ok {
+			taskKeys[strings.TrimSpace(k)] = true
+		}
+	}
+	var b strings.Builder
+	for _, line := range strings.Split(base, "\n") {
+		if k, _, ok := strings.Cut(line, "="); ok && taskKeys[strings.TrimSpace(k)] {
+			continue
+		}
+		if line = strings.TrimSpace(line); line != "" {
+			b.WriteString(line + "\n")
+		}
+	}
+	if t := strings.TrimSpace(task); t != "" {
+		b.WriteString(t + "\n")
+	}
+	return b.String()
 }
 
 func childEnv(o options) []string {
