@@ -1,4 +1,4 @@
-package app
+package web
 
 import (
 	"testing"
@@ -42,7 +42,7 @@ func TestHostedSearchConfigIsOffByDefaultAndResolvesKeys(t *testing.T) {
 	}
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("XAI_API_KEY", "x")
-	if engine := newConfiguredWebSearch(cfg).HostedEngine(); engine != "xai-hosted" {
+	if engine := NewConfiguredWebSearch(cfg).HostedEngine(); engine != "xai-hosted" {
 		t.Fatalf("tool not configured: %q", engine)
 	}
 }

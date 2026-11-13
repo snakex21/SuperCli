@@ -177,7 +177,7 @@ func registerFileWebAndLineTools(
 	// browser: headless Chrome/Edge for JS pages and clicking; discoverable.
 	registry.MustRegister(tools.NewBrowser().Spec())
 	registry.MustRegister(wrap.mut(tools.NewWebDownload(home).Spec()))
-	webSearcher := newConfiguredWebSearch(tomlCfg)
+	webSearcher := tools.NewConfiguredWebSearch(tomlCfg)
 	registry.MustRegister(webSearcher.Spec())
 	registry.MustRegister(webSearcher.LookupSpec())
 	registry.MarkAlwaysOn("web_lookup")
