@@ -18,6 +18,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/crgimenes/glaze v0.0.31
 	github.com/go-ole/go-ole v1.3.0
+	github.com/google/uuid v1.6.0
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/muesli/termenv v0.16.0
 	github.com/pkoukk/tiktoken-go v0.1.8
@@ -39,7 +40,6 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/klauspost/compress v1.17.4 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect

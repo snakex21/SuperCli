@@ -20,7 +20,7 @@ func callbackSuccessHTML() string {
 		icon:    `<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" opacity="0.25"/><path d="M8 12.5l2.5 2.5L16 9"/></svg>`,
 		title:   "Signed in",
 		message: "Your ChatGPT account is connected to SuperCli.",
-		hint:    "You can close this tab and return to the terminal.",
+		hint:    "You can close this tab and return to SuperCli.",
 		close:   true,
 	})
 }
@@ -39,7 +39,7 @@ func callbackErrorHTML(errCode, desc string) string {
 		icon:    `<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" opacity="0.25"/><path d="M15 9l-6 6M9 9l6 6"/></svg>`,
 		title:   "Sign-in failed",
 		message: htmlEscape(msg),
-		hint:    "You can close this tab and try again in the terminal.",
+		hint:    "Close this tab and try signing in again in SuperCli.",
 		close:   false,
 	})
 }

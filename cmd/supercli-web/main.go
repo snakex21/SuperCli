@@ -50,7 +50,7 @@ func run(crashDataDir *string) {
 	homeFlag := flag.String("home", "", "supercli home directory (overrides $SUPERCLI_HOME and cwd)")
 	workspaceFlag := flag.String("workspace", "", "active workspace directory without changing the portable data/config location")
 	dataDirFlag := flag.String("data-dir", "", "runtime data directory (overrides $SUPERCLI_DATA_DIR; default: supercli-data beside this executable)")
-	providerFlag := flag.String("provider", "", "LLM provider: openai, responses, anthropic, opencode, codex, or echo")
+	providerFlag := flag.String("provider", "", "LLM provider: openai, responses, anthropic, claude, opencode, codex, or echo")
 	modelFlag := flag.String("model", "", "model id")
 	keyFlag := flag.String("key", "", "API key (overrides SUPERCLI_LLM_API_KEY)")
 	baseFlag := flag.String("base-url", "", "base URL (overrides SUPERCLI_LLM_BASE_URL)")

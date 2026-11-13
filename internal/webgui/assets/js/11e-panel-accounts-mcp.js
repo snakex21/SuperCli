@@ -48,7 +48,7 @@ sections.accounts = async function () {
     } else if (!a.login_in_progress) {
       var bl = i18nEl("button", "", "acct.login");
       bl.addEventListener("click", async function () {
-        try { await jpost("/api/codex/login", { label: a.label }); } catch (e) { toast(e.message); }
+        try { await jpost("/api/codex/login", { label: a.label }); watchCodexLogin(a.label); } catch (e) { toast(e.message); }
         sections.accounts();
       });
       act.appendChild(bl);
@@ -65,6 +65,99 @@ sections.accounts = async function () {
     if (seq === codexAccountsRenderSeq && currentSection === "accounts") panelContent.appendChild(el("div", "usage-caption", "Claude: " + error.message));
   }
 };
+
+/* Browser sign-in finishes outside the GUI. Watch only that login (not usage),
+   then confirm it, reload the model list and redraw the open accounts panel. */
+var codexLoginWatch = null, codexLoginTimer = null;
+function watchCodexLogin(label) {
+  codexLoginWatch = { label: label, until: Date.now() + 5 * 60 * 1000 };
+  clearTimeout(codexLoginTimer);
+  codexLoginTimer = setTimeout(pollCodexLogin, 2000);
+}
+async function pollCodexLogin() {
+  var watch = codexLoginWatch;
+  if (!watch) return;
+  var got = null;
+  try { got = await j("/api/codex/accounts"); } catch (e) {}
+  if (watch !== codexLoginWatch) return;
+  var account = got && (got.accounts || []).find(function (a) { return a.label === watch.label; });
+  if (account && !account.login_in_progress) {
+    codexLoginWatch = null;
+    if (account.logged_in) {
+      toast(t("acct.loginDone"));
+      if (typeof loadModels === "function") loadModels();
+      if (typeof renderStats === "function") renderStats();
+      // Same next step as Claude: a connected screen with model choice and "chat".
+      if (currentSection === "accounts" && !overlay.hidden) { renderCodexConnected(account, got); return; }
+    } else if (account.login_error) toast(t("common.error") + ": " + account.login_error);
+    if (currentSection === "accounts" && !overlay.hidden) sections.accounts();
+    return;
+  }
+  if (Date.now() > watch.until) { codexLoginWatch = null; return; }
+  codexLoginTimer = setTimeout(pollCodexLogin, 2000);
+}
+// Mirrors renderClaudeLogin's connected state (same classes, same flow).
+function renderCodexConnected(account, data) {
+  data = data || {};
+  panelContent.innerHTML = "";
+  var root = el("section", "group claude-auth codex-auth");
+  var head = el("div", "claude-auth-head");
+  var back = el("button", "g-act", "\u2039 " + t("common.back"));
+  back.type = "button";
+  back.addEventListener("click", function () { sections.accounts(); });
+  head.appendChild(back);
+  head.appendChild(el("span", "claude-auth-brand", "SuperCli / ChatGPT"));
+  root.appendChild(head);
+  var content = el("div", "claude-auth-content");
+  root.appendChild(content);
+  if (typeof claudeStatusIcon === "function") content.appendChild(claudeStatusIcon(true));
+  content.appendChild(el("div", "claude-auth-eyebrow", "ChatGPT" + (account && account.email ? " \u00b7 " + account.email : "")));
+  content.appendChild(el("h2", "claude-auth-title", t("acct.loginDone")));
+  content.appendChild(el("p", "claude-auth-copy", t("codex.auth.body")));
+  var status = el("div", "claude-auth-status");
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  content.appendChild(status);
+  var models = Array.isArray(data.models) ? data.models : [];
+  var selected = document.createElement("select");
+  selected.className = "field-select";
+  selected.setAttribute("aria-label", t("stats.model"));
+  models.forEach(function (name) {
+    var option = el("option", "", name); option.value = name;
+    option.selected = name === data.active_model; selected.appendChild(option);
+  });
+  if (models.length) {
+    var modelLabel = el("label", "claude-auth-model");
+    modelLabel.appendChild(el("span", "", t("stats.model")));
+    modelLabel.appendChild(selected); content.appendChild(modelLabel);
+  }
+  var actions = el("div", "claude-auth-actions");
+  var chat = el("button", "claude-auth-primary", t("codex.auth.chat") + " \u2192");
+  chat.type = "button";
+  chat.addEventListener("click", async function () {
+    chat.disabled = true;
+    try {
+      if (models.length && data.provider) {
+        await jpost("/api/model", {provider: data.provider, model: selected.value});
+        await loadModels();
+        if (typeof renderStats === "function") await renderStats();
+        closePanel();
+        var prompt = document.getElementById("prompt"); if (prompt) prompt.focus();
+      } else openPanel("models");
+    } catch (e) {
+      chat.disabled = false;
+      status.classList.add("error"); status.setAttribute("role", "alert"); status.textContent = e.message;
+    }
+  });
+  actions.appendChild(chat);
+  var accounts = el("button", "claude-auth-secondary", t("acct.title"));
+  accounts.type = "button";
+  accounts.addEventListener("click", function () { sections.accounts(); });
+  actions.appendChild(accounts);
+  content.appendChild(actions);
+  panelContent.appendChild(root);
+  if (chat.focus) chat.focus();
+}
 
 /* Codex limits are account-scoped. Missing/stale windows are not zero usage. */
 function codexUsagePercent(value) {
