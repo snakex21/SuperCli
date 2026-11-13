@@ -7,8 +7,11 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+
+	"supercli/internal/tools/core"
 )
 
 func TestReadManyOversizedRangesReturnBoundedEvidence(t *testing.T) {
@@ -81,16 +84,16 @@ func TestReadManyRangeClampPreservesOutputBounds(t *testing.T) {
 		}
 	}
 	result, err := NewReadMany(root).execute(context.Background(), []byte(`{"reads":"a.txt:1-600 | b.txt:1-600"}`))
-	if err != nil || result.Err != nil || !strings.Contains(result.Text, "2 ok, 0 failed") {
+	if err != nil || result.Err != nil || !strings.Contains(result.Text, "1 ok, 0 failed") {
 		t.Fatalf("%+v %v", result, err)
 	}
-	if len(result.Text) > maxReadManyBytes+256 || len(result.ModelPreview) > 4096 || !strings.Contains(result.Text, "omitted_bytes") {
-		t.Fatal("existing byte bounds were lost")
+	if len(result.Text) > core.ModelReadBatchInlineBytes+256 || result.ModelPreview != "" || strings.Contains(result.Text, "omitted_bytes") {
+		t.Fatal("byte bound lost or middle trimming came back")
 	}
-	for _, text := range []string{result.Text, result.RetainedText, result.ModelPreview} {
-		if strings.Count(text, "[range capped at 300 lines; requested lines 301-600 not read]") != 2 {
-			t.Fatal("preview or retained result lost capped tails")
-		}
+	// The cut first file and the untouched second one both resume at their
+	// originally requested end, past the 300-line cap.
+	if !regexp.MustCompile(`lines \d+-600 not returned`).MatchString(result.Text) || !strings.Contains(result.Text, "b.txt:1-600") {
+		t.Fatalf("continuation lost the requested tails:\n%s", result.Text[len(result.Text)-600:])
 	}
 }
 

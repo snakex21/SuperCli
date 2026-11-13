@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"supercli/internal/tools/core"
 )
 
 func TestReadMany_ArrayPreservesOrderAndPartialErrors(t *testing.T) {
@@ -140,8 +142,9 @@ func TestReadMany_GlobExpansionHonorsGlobalCap(t *testing.T) {
 		}
 	}
 	res, _ := NewReadMany(dir).execute(context.Background(), []byte(`{"reads":"*.go:1-1"}`))
-	if res.Err == nil || !strings.Contains(res.Err.Error(), "glob expansion produced") {
-		t.Fatalf("want expansion cap error, got %+v", res)
+	// Matches past the cap are named for a follow-up call, not rejected.
+	if res.Err != nil || !strings.Contains(res.Text, "1 range(s) not returned") || !strings.Contains(res.Text, `reads="12.go:1-1"`) {
+		t.Fatalf("want expansion continuation, got %+v", res)
 	}
 }
 
@@ -172,11 +175,11 @@ func TestReadMany_GlobalOutputBound(t *testing.T) {
 	if res.Err != nil {
 		t.Fatal(res.Err)
 	}
-	if len(res.Text) > maxReadManyBytes+256 {
-		t.Fatalf("output = %d bytes, want <= %d-ish", len(res.Text), maxReadManyBytes)
+	if budget := core.ModelReadBatchInlineBytes; len(res.Text) > budget+256 {
+		t.Fatalf("output = %d bytes, want <= %d-ish", len(res.Text), budget)
 	}
-	if !strings.Contains(res.Text, "omitted_bytes") {
-		t.Error("bounded output missing explicit omission marker")
+	if !strings.Contains(res.Text, "[incomplete: 12 range(s) not returned") || strings.Contains(res.Text, "omitted_bytes") {
+		t.Errorf("bounded output must name what it left out, not trim it:\n%s", res.Text[len(res.Text)-500:])
 	}
 }
 

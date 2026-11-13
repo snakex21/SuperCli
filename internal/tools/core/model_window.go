@@ -23,3 +23,21 @@ func ModelWindow(ctx context.Context) int {
 	tokens, _ := ctx.Value(modelWindowKey{}).(int)
 	return tokens
 }
+
+const (
+	readBatchMinBudget = 8 * 1024
+	readBatchMaxBudget = 32 * 1024
+)
+
+// ReadBatchBudget is the byte budget of one batched file read (read_many):
+// about 15% of the active model's context window at ~4 characters per
+// token, within 8-32 KiB. Without a known window it keeps the historical
+// inline batch limit. A batch never trims inside a returned file to meet it;
+// ranges that do not fit are named for a follow-up read instead.
+func ReadBatchBudget(ctx context.Context) int {
+	window := ModelWindow(ctx)
+	if window <= 0 {
+		return ModelReadBatchInlineBytes
+	}
+	return min(max(window*4*15/100, readBatchMinBudget), readBatchMaxBudget)
+}
