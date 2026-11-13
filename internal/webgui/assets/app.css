@@ -53,7 +53,9 @@
   --line-soft: #1e1e24;
   --text: #e8e8ea;
   --muted: #9a9aa2;
-  --faint: #68686f;
+  /* Small secondary text (labels, meta, timestamps): >= 4.4:1 on every
+     dark surface (was 3.0-3.4:1), still a step below --muted. */
+  --faint: #82828a;
   --accent: #e8763d;
   --accent-soft: rgba(232, 118, 61, 0.13);
   --danger: #d05c5c;
@@ -80,7 +82,7 @@
   --line-soft: #e9e9ec;
   --text: #1c1c20;
   --muted: #63636b;
-  --faint: #9a9aa0;
+  --faint: #707078; /* >= 4.3:1 on light surfaces (was 2.5-2.8:1) */
   --accent-soft: rgba(232, 118, 61, 0.10);
   --hl-kw: #8839ef; --hl-str: #2e7d32; --hl-com: #8a8a93; --hl-num: #b5520a;
   --hl-fn: #1e66f5; --hl-type: #9a6700; --hl-lit: #c2410c; --hl-var: #c0283b;
@@ -92,7 +94,7 @@
 :root[data-theme="midnight"] {
   --bg: #090d14; --surface: #101722; --raise: #172131;
   --line: #223047; --line-soft: #172235; --text: #edf3fb;
-  --muted: #9aabc0; --faint: #64758b; --accent: #f08a4b;
+  --muted: #9aabc0; --faint: #7d8ea4; --accent: #f08a4b;
   --accent-soft: rgba(240, 138, 75, .13); color-scheme: dark;
 }
 
