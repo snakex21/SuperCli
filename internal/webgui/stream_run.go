@@ -114,6 +114,7 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	identity, _ := ctx.Value(syncIdentityKey{}).(syncIdentity)
 	syncedRun = e.syncHub.start(sid, prompt, identity, cancelSyncRun, e.syncRunDetails(sid, home, prompt))
 	originalEmit := emit
+	var liveData toolDataTracker
 	emit = func(ev wireEvent) {
 		// Stop may come from a different device while the sender still owns
 		// its HTTP stream. Carry the pause on the terminal event as well as
@@ -133,6 +134,10 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		}
 		e.syncHub.event(syncedRun, observerEvent)
 		originalEmit(ev)
+		// Goal/memory panels in every window follow agent tool writes live.
+		if kind := liveData.observe(ev); kind != "" {
+			e.syncHub.dataChanged(kind)
+		}
 	}
 	// Cross-session memory is persisted from the already-written transcript,
 	// with no summarizer/model call. Do it on every exit: the helper skips

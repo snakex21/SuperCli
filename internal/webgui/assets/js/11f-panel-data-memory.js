@@ -89,12 +89,26 @@ sections.data = async function () {
   panelContent.appendChild(danger);
 };
 
-sections.memory = async function () {
+var memoryPanelSignature = "";
+// opts.live: background refresh after a memory write (agent tool, another
+// window) — silent, skipped for identical data, scroll preserved.
+sections.memory = async function (opts) {
+  var live = !!(opts && opts.live);
   var got;
   try { got = await j("/api/memory?limit=100"); } catch (e) {
+    if (live) return;
     panelContent.innerHTML = '<div class="note">' + escHtml(e.message) + "</div>";
     return;
   }
+  if (live) {
+    if (overlay.hidden || currentSection !== "memory" || JSON.stringify(got || []) === memoryPanelSignature) return;
+    preservePanelState(function () { renderMemoryPanel(got); });
+    return;
+  }
+  renderMemoryPanel(got);
+};
+function renderMemoryPanel(got) {
+  memoryPanelSignature = JSON.stringify(got || []);
   panelContent.innerHTML = "";
   var g = el("div", "group");
   g.appendChild(i18nEl("div", "g-label", "panel.memory"));
@@ -136,7 +150,7 @@ sections.memory = async function () {
     g.appendChild(row);
   });
   panelContent.appendChild(g);
-};
+}
 
 /* ── Goal ── */
 
@@ -144,6 +158,7 @@ function goalStatus(status) { return t("goal.status." + status); }
 
 async function goalMutate(button, body) {
   if (button) button.disabled = true;
+  goalMutationsPending++;
   try {
     if (!body.scope) body.scope = goalPanelScope;
     var got = await jpost("/api/goal", body);
@@ -157,6 +172,8 @@ async function goalMutate(button, body) {
   } catch (e) {
     toast(e.message);
     if (button) button.disabled = false;
+  } finally {
+    goalMutationsPending--;
   }
 }
 
@@ -255,6 +272,8 @@ function renderGoalVerification(got) {
 }
 
 function renderGoalPanel(got) {
+  goalCreateOpen = false;
+  goalPanelSignature = goalPanelDataSignature(got);
   panelContent.innerHTML = "";
   var controls = el("div", "goal-head-actions");
   var scope = el("select", "field-input");
@@ -267,7 +286,7 @@ function renderGoalPanel(got) {
   controls.appendChild(scope);
   var create = i18nEl("button", "btn", "goal.create");
   create.type = "button";
-  create.addEventListener("click", function () { panelContent.innerHTML = ""; panelContent.appendChild(controls); renderGoalCreate(); });
+  create.addEventListener("click", function () { goalCreateOpen = true; panelContent.innerHTML = ""; panelContent.appendChild(controls); renderGoalCreate(); });
   controls.appendChild(create);
   panelContent.appendChild(controls);
   renderUnassignedGoals();

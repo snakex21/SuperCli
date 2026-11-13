@@ -3,16 +3,30 @@
 var goalPanelScope = "project";
 var goalUnassigned = [];
 var goalPaused = [];
-sections.goal = async function () {
+// goalPanelSignature identifies the rendered data; goalCreateOpen marks the
+// user-opened create form, which a live refresh must not replace.
+var goalPanelSignature = "", goalCreateOpen = false, goalMutationsPending = 0;
+function goalPanelDataSignature(got) {
+  return JSON.stringify([goalPanelScope, got || null, goalUnassigned || [], goalPaused || []]);
+}
+// opts.live: background refresh after a data change — silent on errors,
+// no redraw for identical data, and typed input/focus/scroll are preserved.
+sections.goal = async function (opts) {
+  var live = !!(opts && opts.live);
   try {
     var scope = goalPanelScope;
     var data = await Promise.all([j("/api/goal?scope=" + encodeURIComponent(scope)), j("/api/goal?catalog=1&scope=" + encodeURIComponent(scope))]);
     if (scope !== goalPanelScope) return;
+    if (live) {
+      if (overlay.hidden || currentSection !== "goal" || goalCreateOpen || goalMutationsPending > 0) return;
+      if (JSON.stringify([scope, data[0] || null, data[1].unassigned || [], data[1].paused || []]) === goalPanelSignature) return;
+    }
     goalUnassigned = data[1].unassigned;
     goalPaused = data[1].paused;
-    renderGoalPanel(data[0]);
+    if (live) preservePanelState(function () { renderGoalPanel(data[0]); });
+    else renderGoalPanel(data[0]);
   } catch (e) {
-    panelContent.innerHTML = '<div class="note">' + escHtml(e.message) + "</div>";
+    if (!live) panelContent.innerHTML = '<div class="note">' + escHtml(e.message) + "</div>";
   }
 };
 

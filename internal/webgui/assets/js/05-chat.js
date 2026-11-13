@@ -188,7 +188,10 @@ function renderSentAttachments(node, paths, mediaKind, previewPath) {
         open.classList.add("sent-media-attachment");
         open.appendChild(el("span", "attachment-name", attachmentName(path)));
       }, {once: false});
-      image.src = attachmentThumbnailSource(previewPath || path, "transcript");
+      // Server thumbnails are a static first frame; animated GIFs play only
+      // from the original bytes (bounded by the attachment preview limit).
+      image.src = attachmentExtension(previewPath || path) === ".gif" ?
+        attachmentPreviewSource(previewPath || path) : attachmentThumbnailSource(previewPath || path, "transcript");
       open.appendChild(image);
     } else {
       // No media element or source is created before an explicit click.
@@ -1120,10 +1123,11 @@ function renderTaskCenter() {
   });
 }
 
-var sideGoalSeq = 0;
+var sideGoalSeq = 0, sideGoalSignature = "";
 function renderSideGoal(got) {
   var host = $("#side-goal");
   if (!host) return;
+  sideGoalSignature = JSON.stringify(got || null);
   host.innerHTML = "";
   host.removeAttribute("aria-busy");
   if (!got) {
@@ -1187,16 +1191,19 @@ function renderSideGoal(got) {
   });
   if (visible.length > 3) host.appendChild(el("div", "side-goal-more", "+" + (visible.length - 3) + " · " + t("goal.openSteps")));
 }
-async function loadSideGoal() {
+// silent: live refresh — no busy dimming, and identical data is not redrawn.
+async function loadSideGoal(silent) {
   var host = $("#side-goal");
   if (!host) return;
   var seq = ++sideGoalSeq;
-  host.setAttribute("aria-busy", "true");
+  if (!silent) host.setAttribute("aria-busy", "true");
   try {
     var got = await j("/api/goal");
-    if (seq === sideGoalSeq) renderSideGoal(got);
-  } catch (e) {
     if (seq !== sideGoalSeq) return;
+    if (silent && JSON.stringify(got || null) === sideGoalSignature) return;
+    renderSideGoal(got);
+  } catch (e) {
+    if (seq !== sideGoalSeq || silent) return;
     host.removeAttribute("aria-busy");
     host.innerHTML = "";
     host.appendChild(el("div", "side-empty", e.message));
@@ -1703,8 +1710,8 @@ async function sendPrompt(text, attachments, draft, queuedItem, dispatchScope) {
     if (userSeq) rememberSentAttachments(activeSessionID, userSeq, attachments);
     // Presentation refreshes do not block the next model request.
     loadSessions();
-    if (!overlay.hidden && currentSection === "goal" && sections.goal) sections.goal();
-    if ($("#side-tab-goal").classList.contains("active")) loadSideGoal();
+    // Live refresh keeps typed input, focus and scroll of open goal views.
+    if (typeof panelLiveRefresh === "function") panelLiveRefresh("goal");
     renderStats();
     var immediate = pendingImmediate;
     pendingImmediate = null;
@@ -1854,6 +1861,7 @@ function handleEvent(ev, current) {
       addFileChanges(ev.file_changes);
       addTurnMeta(ev, elapsed);
       if (typeof resumeWorkerStatusSync === "function") resumeWorkerStatusSync();
+      if (typeof requestSubscriptionUsageRefresh === "function") requestSubscriptionUsageRefresh(true);
       if (pendingImmediate || (!pauseQueue && promptQueue.length)) {
         setRunState("running", t("composer.sendingQueued"));
       } else {

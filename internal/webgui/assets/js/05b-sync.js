@@ -169,6 +169,10 @@ function syncHandleFrame(frame) {
     if (typeof loadPromptQueue === "function") loadPromptQueue();
     return;
   }
+  if (frame.type === "data_changed") {
+    if (typeof panelLiveRefresh === "function") panelLiveRefresh(frame.kind);
+    return;
+  }
   if (frame.type === "snapshot") {
     if (activeRun && activeRun.remote) syncReleaseView(activeRun);
     Object.keys(detachedRuns).forEach(function (id) { if (detachedRuns[id].remote) delete detachedRuns[id]; });
@@ -188,6 +192,8 @@ function syncHandleFrame(frame) {
     syncLoadProjects();
     syncBackoff = 500;
     if (typeof loadPromptQueue === "function") loadPromptQueue();
+    // Changes published while disconnected were missed; open views re-check.
+    if (typeof panelLiveRefresh === "function") { panelLiveRefresh("goal"); panelLiveRefresh("memory"); }
     if (syncResolveReady) { syncResolveReady(); syncResolveReady = null; }
     syncLoadSessions();
     syncRecoverSession();
