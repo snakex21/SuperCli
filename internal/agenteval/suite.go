@@ -17,7 +17,10 @@ type Suite struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
-	Tasks       []Task `json:"tasks"`
+	// IgnoreChangedFiles are glob patterns (see MatchGlob) for files the
+	// diff scoring never counts, e.g. interpreter caches.
+	IgnoreChangedFiles []string `json:"ignoreChangedFiles,omitempty"`
+	Tasks              []Task   `json:"tasks"`
 }
 
 // Task is evaluated in a fresh copy of WorkspaceFixture.
@@ -32,7 +35,61 @@ type Task struct {
 	ExpectedChangedFiles  []string              `json:"expectedChangedFiles,omitempty"`
 	ForbiddenChangedFiles []string              `json:"forbiddenChangedFiles,omitempty"`
 	RequiredTraceEvents   []string              `json:"requiredTraceEvents,omitempty"`
-	VerificationCommands  []VerificationCommand `json:"verificationCommands"`
+	VerificationCommands  []VerificationCommand `json:"verificationCommands,omitempty"`
+
+	// Category groups tasks in reports (coding, understanding, ...).
+	Category string `json:"category,omitempty"`
+	// Network marks tasks that need internet access.
+	Network bool `json:"network,omitempty"`
+	// TimeoutSeconds overrides the bench-wide per-run timeout.
+	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
+	// AgentConfig is a TOML fragment a runner may write into the
+	// isolated agent config (e.g. a smaller context_window).
+	AgentConfig string `json:"agentConfig,omitempty"`
+	// GraderOverlay is a fixture-relative directory copied over the
+	// workspace after the agent finished and the diff was taken, so
+	// hidden tests stay invisible to the agent.
+	GraderOverlay string `json:"graderOverlay,omitempty"`
+	// StrictDiff makes every changed file that does not match
+	// AllowedChangedFiles (globs) a disallowed change.
+	StrictDiff          bool          `json:"strictDiff,omitempty"`
+	AllowedChangedFiles []string      `json:"allowedChangedFiles,omitempty"`
+	FileChecks          []FileCheck   `json:"fileChecks,omitempty"`
+	AnswerChecks        []AnswerCheck `json:"answerChecks,omitempty"`
+}
+
+// FileCheck asserts the content of one workspace file (Path may be a
+// glob; every match is checked and at least one must exist unless
+// Exists is false).
+type FileCheck struct {
+	ID          string   `json:"id"`
+	Path        string   `json:"path"`
+	Exists      *bool    `json:"exists,omitempty"`
+	Contains    []string `json:"contains,omitempty"`
+	NotContains []string `json:"notContains,omitempty"`
+	Regex       []string `json:"regex,omitempty"`
+	NotRegex    []string `json:"notRegex,omitempty"`
+	// Equals compares after CRLF->LF and trailing-whitespace trimming.
+	Equals *string `json:"equals,omitempty"`
+	// MaxChangedLines bounds added+removed lines against the fixture.
+	MaxChangedLines *int `json:"maxChangedLines,omitempty"`
+	// MaxOccurrences bounds how often a literal may appear.
+	MaxOccurrences map[string]int `json:"maxOccurrences,omitempty"`
+	Weight         float64        `json:"weight,omitempty"`
+	Critical       bool           `json:"critical,omitempty"`
+}
+
+// AnswerCheck grades the agent's final answer text. Patterns are
+// case-insensitive substrings, or case-insensitive regexps when Regex
+// is set. Backslashes in the answer are normalized to slashes.
+type AnswerCheck struct {
+	ID       string   `json:"id"`
+	AnyOf    []string `json:"anyOf,omitempty"`
+	AllOf    []string `json:"allOf,omitempty"`
+	NoneOf   []string `json:"noneOf,omitempty"`
+	Regex    bool     `json:"regex,omitempty"`
+	Weight   float64  `json:"weight,omitempty"`
+	Critical bool     `json:"critical,omitempty"`
 }
 
 // VerificationCommand uses argv rather than a shell string. This keeps the
@@ -41,6 +98,14 @@ type Task struct {
 type VerificationCommand struct {
 	ID   string   `json:"id"`
 	Args []string `json:"args"`
+	// Env adds KEY=VALUE entries to the inherited environment.
+	Env []string `json:"env,omitempty"`
+	// ExpectOutput, when set, must equal the trimmed combined output.
+	ExpectOutput *string `json:"expectOutput,omitempty"`
+	Weight       float64 `json:"weight,omitempty"`
+	// Optional commands only lower the score; by default a failing
+	// verification command fails the run.
+	Optional bool `json:"optional,omitempty"`
 }
 
 // LoadSuite decodes a suite strictly and validates its portable contract.
@@ -105,8 +170,20 @@ func (s Suite) Validate(suiteDir string) error {
 				return fmt.Errorf("eval task %q has unsafe file expectation %q", task.ID, path)
 			}
 		}
-		if len(task.VerificationCommands) == 0 {
-			return fmt.Errorf("eval task %q has no verificationCommands", task.ID)
+		if len(task.VerificationCommands) == 0 && len(task.FileChecks) == 0 && len(task.AnswerChecks) == 0 {
+			return fmt.Errorf("eval task %q has no verificationCommands, fileChecks or answerChecks", task.ID)
+		}
+		if task.GraderOverlay != "" {
+			overlay := filepath.Join(suiteDir, filepath.FromSlash(task.GraderOverlay))
+			if !safeRelative(task.GraderOverlay) {
+				return fmt.Errorf("eval task %q has unsafe graderOverlay %q", task.ID, task.GraderOverlay)
+			}
+			if info, err := os.Stat(overlay); err != nil || !info.IsDir() {
+				return fmt.Errorf("eval task %q grader overlay is unavailable: %s", task.ID, overlay)
+			}
+		}
+		if err := validateGraders(task); err != nil {
+			return fmt.Errorf("eval task %q: %w", task.ID, err)
 		}
 		commandIDs := map[string]bool{}
 		for _, command := range task.VerificationCommands {
