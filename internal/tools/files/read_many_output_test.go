@@ -43,7 +43,7 @@ var readManySummaryRE = regexp.MustCompile(`\[read_many: (\d+) ok, (\d+) failed\
 // named with a follow-up call that reads exactly them.
 func TestReadManyReturnsWholeFilesAndNamesTheRest(t *testing.T) {
 	dir := t.TempDir()
-	names := writeModules(t, dir, 12, 24) // ~3.5 KB each, ~42 KB total
+	names := writeModules(t, dir, 12, 12) // ~2.6 KB each, ~31 KB total
 	args, _ := json.Marshal(map[string]any{"reads": strings.Join(names, " | ")})
 	for _, window := range []int{0, 16384, 32768, 200000} {
 		ctx := core.WithModelWindow(context.Background(), window)
@@ -67,7 +67,7 @@ func TestReadManyReturnsWholeFilesAndNamesTheRest(t *testing.T) {
 		for i, name := range names {
 			if strings.Contains(result.Text, "] "+name+":") {
 				returned++
-				for f := 0; f < 24; f++ {
+				for f := 0; f < 12; f++ {
 					if !strings.Contains(result.Text, fmt.Sprintf("BODY_%02d_%d", i, f)) {
 						t.Fatalf("window=%d: %s returned without function %d", window, name, f)
 					}

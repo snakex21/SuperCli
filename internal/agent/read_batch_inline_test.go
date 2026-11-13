@@ -47,7 +47,8 @@ func TestModerateReadBatchKeepsMiddleEvidenceInBothProtocols(t *testing.T) {
 				call = []llm.Delta{{Content: "«read_many\nreads: " + strings.Join(ranges, " | ") + "\n»", FinishReason: "stop"}}
 			}
 			provider := &stubProvider{name: "batch-middle", scripts: [][]llm.Delta{call, {{Content: "Values found.", FinishReason: "stop"}}}}
-			loop, err := NewLoop(LoopConfig{Provider: provider, Registry: registry, ThinTools: thin, MaxSteps: 3})
+			// A moderate batch on an ordinary (128k) window stays whole.
+			loop, err := NewLoop(LoopConfig{Provider: provider, Registry: registry, ThinTools: thin, MaxSteps: 3, WindowFor: func(string) int { return 131072 }})
 			if err != nil {
 				t.Fatal(err)
 			}

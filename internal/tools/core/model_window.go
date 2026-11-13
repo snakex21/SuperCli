@@ -25,20 +25,20 @@ func ModelWindow(ctx context.Context) int {
 }
 
 const (
-	readBatchMinBudget = 8 * 1024
+	readBatchMinBudget = 4 * 1024
 	readBatchMaxBudget = 32 * 1024
 )
 
 // ReadBatchBudget is the byte budget of one batched file read (read_many):
-// about 15% of the active model's context window at ~4 characters per
-// token, within 8-32 KiB, shared equally by the read_many calls of one step
+// about 8% of the active model's context window at ~4 characters per
+// token, within 4-32 KiB, shared equally by the read_many calls of one step
 // (WithReadBatchShare). Without a known window it keeps the historical
 // inline batch limit. A batch never trims inside a returned file to meet it;
 // ranges that do not fit are named for a follow-up read instead.
 func ReadBatchBudget(ctx context.Context) int {
 	budget := ModelReadBatchInlineBytes
 	if window := ModelWindow(ctx); window > 0 {
-		budget = min(max(window*4*15/100, readBatchMinBudget), readBatchMaxBudget)
+		budget = min(max(window*4*8/100, readBatchMinBudget), readBatchMaxBudget)
 	}
 	if ctx != nil {
 		if calls, _ := ctx.Value(readBatchShareKey{}).(int); calls > 1 {
@@ -52,7 +52,7 @@ type readBatchShareKey struct{}
 
 // readBatchShareMin keeps a shared batch budget large enough for one
 // ordinary source file's worth of lines.
-const readBatchShareMin = 3 * 1024
+const readBatchShareMin = 2 * 1024
 
 // WithReadBatchShare records how many read_many calls one model step issued
 // together. ReadBatchBudget is a per-step allowance: four parallel batches on
