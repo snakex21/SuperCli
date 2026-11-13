@@ -30,13 +30,13 @@ import (
 
 type options struct {
 	suite, bin, provider, model, baseURL, keyEnv string
-	tasks, tags, out, workRoot, agent, refDir   string
-	label, ledger                               string
-	repeats, jobs                               int
-	timeout                                     time.Duration
-	keep, skipNetwork                           bool
-	budgetStop                                  float64
-	priceIn, priceCached, priceOut              float64
+	tasks, tags, out, workRoot, agent, refDir    string
+	label, ledger                                string
+	repeats, jobs                                int
+	timeout                                      time.Duration
+	keep, skipNetwork                            bool
+	budgetStop                                   float64
+	priceIn, priceCached, priceOut               float64
 }
 
 func main() {
