@@ -160,6 +160,7 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	defer codeIntel.Close()
 	processSession := tools.NewProcessSession(home, dataDir)
 	defer processSession.Close()
+	defer tools.CloseBrowsers()
 	// Register the thin file tools so batch mode can actually
 	// exercise them (CI / live tool tests). tool_search makes the
 	// rest reachable; these are the create/edit/move/copy/trash
@@ -194,7 +195,7 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	reg.MustRegister(tools.NewWebFetch().Spec())
 	reg.MustRegister(tools.NewBrowser().Spec())
 	reg.MustRegister(codeIntel.WrapMutation(tools.NewWebDownload(home).Spec()))
-	batchWeb := newConfiguredWebSearch(tomlCfg)
+	batchWeb := tools.NewConfiguredWebSearch(tomlCfg)
 	reg.MustRegister(batchWeb.Spec())
 	reg.MustRegister(batchWeb.LookupSpec())
 	reg.MarkAlwaysOn("web_lookup")

@@ -174,6 +174,8 @@ type (
 	WebSearchResult = web.WebSearchResult
 	// HostedSearchConfig enables optional provider-hosted web search.
 	HostedSearchConfig = web.HostedSearchConfig
+	// Browser is the headless browser tool.
+	Browser = browser.Tool
 )
 
 var (
@@ -182,6 +184,10 @@ var (
 	NewBrowser     = browser.New
 	NewWebDownload = web.NewWebDownload
 	NewWebSearch   = web.NewWebSearch
+	// NewConfiguredWebSearch builds web_search/web_lookup from [web_search].
+	NewConfiguredWebSearch = web.NewConfiguredWebSearch
+	// CloseBrowsers closes every headless browser at application shutdown.
+	CloseBrowsers = browser.CloseAll
 )
 
 // Search/meta tools.

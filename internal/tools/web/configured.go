@@ -1,4 +1,4 @@
-package app
+package web
 
 import (
 	"net/url"
@@ -6,13 +6,12 @@ import (
 	"strings"
 
 	"supercli/internal/system/config"
-	"supercli/internal/tools"
 )
 
-// newConfiguredWebSearch builds web_search/web_lookup from [web_search]:
+// NewConfiguredWebSearch builds web_search/web_lookup from [web_search]:
 // the local engine (keyless DuckDuckGo by default) plus, when explicitly
 // enabled, a provider-hosted search that falls back to it.
-func newConfiguredWebSearch(cfg config.TomlConfig) *tools.WebSearch {
+func NewConfiguredWebSearch(cfg config.TomlConfig) *WebSearch {
 	ws := cfg.WebSearch
 	key := ws.APIKey
 	if key == "" {
@@ -25,7 +24,7 @@ func newConfiguredWebSearch(cfg config.TomlConfig) *tools.WebSearch {
 			key = os.Getenv("EXA_API_KEY")
 		}
 	}
-	searcher := tools.NewWebSearch(ws.Engine, key, ws.BaseURL)
+	searcher := NewWebSearch(ws.Engine, key, ws.BaseURL)
 	if hosted, ok := hostedSearchConfig(cfg, os.Getenv); ok {
 		searcher.WithHosted(hosted)
 	}
@@ -35,7 +34,7 @@ func newConfiguredWebSearch(cfg config.TomlConfig) *tools.WebSearch {
 // hostedSearchConfig resolves [web_search] hosted. It is off unless the
 // user chose "openai", "xai" or "auto": hosted calls are billed per search
 // and send the query to the provider, while the local engines need nothing.
-func hostedSearchConfig(cfg config.TomlConfig, getenv func(string) string) (tools.HostedSearchConfig, bool) {
+func hostedSearchConfig(cfg config.TomlConfig, getenv func(string) string) (HostedSearchConfig, bool) {
 	ws := cfg.WebSearch
 	mode := strings.ToLower(strings.TrimSpace(ws.Hosted))
 	var candidates []string
@@ -45,7 +44,7 @@ func hostedSearchConfig(cfg config.TomlConfig, getenv func(string) string) (tool
 	case "auto":
 		candidates = []string{"openai", "xai"}
 	default:
-		return tools.HostedSearchConfig{}, false
+		return HostedSearchConfig{}, false
 	}
 	for _, provider := range candidates {
 		key := ws.HostedAPIKey
@@ -53,10 +52,10 @@ func hostedSearchConfig(cfg config.TomlConfig, getenv func(string) string) (tool
 			key = hostedProviderKey(cfg, provider, getenv)
 		}
 		if key != "" {
-			return tools.HostedSearchConfig{Provider: provider, Model: ws.HostedModel, APIKey: key, BaseURL: ws.HostedBaseURL}, true
+			return HostedSearchConfig{Provider: provider, Model: ws.HostedModel, APIKey: key, BaseURL: ws.HostedBaseURL}, true
 		}
 	}
-	return tools.HostedSearchConfig{}, false
+	return HostedSearchConfig{}, false
 }
 
 // hostedProviderKey finds a key for the provider's own API: its standard
