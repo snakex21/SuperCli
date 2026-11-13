@@ -1,0 +1,1 @@
+1. Albert Einstein: "The world as we have created it is a process of our thinking." 2. J.K. Rowling: "It is our choices, Harry, that show what we truly are, far more than our abilities." 3. Albert Einstein: "There are only two ways to live your life."

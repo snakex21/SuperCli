@@ -1,0 +1,13 @@
+Reported by a user, client: curl/8.5 behind an HTTP/2 -> HTTP/1.1 proxy.
+
+Traceback (most recent call last):
+  File "/srv/ingest/ingest/server.py", line 7, in handle
+    body = read_body(headers, stream)
+  File "/srv/ingest/ingest/body.py", line 5, in read_body
+    length = int(headers["Content-Length"])
+KeyError: 'Content-Length'
+
+Request headers as received (debug log):
+  host: ingest.internal
+  content-type: application/json
+  content-length: 512

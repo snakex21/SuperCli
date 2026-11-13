@@ -1,0 +1,2 @@
+fixtures/agent-checksums/** -text
+agent-suite-ref/shell-checksums/** -text
