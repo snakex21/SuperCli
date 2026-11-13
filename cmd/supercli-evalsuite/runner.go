@@ -53,6 +53,7 @@ func superCLIRunner(o options) agenteval.AgentRunner {
 		_ = os.WriteFile(filepath.Join(o.out, "logs", base+".err"), []byte(stderr.String()), 0o644)
 		tr := readTranscript(filepath.Join(in.DataDir, "sessions.db"), in.Workspace, in.RunDir)
 		tr.Compactions = strings.Count(stderr.String(), "[compact]")
+		prunes := strings.Count(stderr.String(), "[prune]")
 		md := tr.markdown(in)
 		_ = os.WriteFile(filepath.Join(o.out, "transcripts", base+".md"), []byte(md), 0o644)
 		extra := map[string]any{
@@ -60,6 +61,7 @@ func superCLIRunner(o options) agenteval.AgentRunner {
 			"toolHistogram": tr.Histogram,
 			"toolErrors":    tr.ToolErrors,
 			"compactions":   tr.Compactions,
+			"prunes":        prunes,
 			"messages":      tr.Messages,
 			"transcript":    filepath.ToSlash(filepath.Join("transcripts", base+".md")),
 		}
@@ -183,7 +185,11 @@ type entry struct {
 type call struct{ Name, Args string }
 
 var toolErrorRe = regexp.MustCompile(`(?i)^\s*(error|failed|blocked|denied|refused|tool error|invalid)`)
-var absPathRe = regexp.MustCompile(`(?i)[a-z]:[\\/]{1,2}[^"'\s<>|*?]+`)
+
+// absPathRe finds Windows drive paths in tool arguments (JSON-escaped
+// backslashes included); the drive letter must not follow a letter, so
+// URLs such as https:// never match.
+var absPathRe = regexp.MustCompile(`(?i)(?:^|[^a-z0-9])([a-z]:(?:\\\\|\\|/)[^"'\s<>|*?]+)`)
 
 func readTranscript(dbPath, workspace, runDir string) transcript {
 	tr := transcript{Histogram: map[string]int{}}
@@ -213,8 +219,8 @@ func readTranscript(dbPath, workspace, runDir string) transcript {
 		e.Calls = parseCalls(callsJSON)
 		for _, c := range e.Calls {
 			tr.Histogram[c.Name]++
-			for _, p := range absPathRe.FindAllString(c.Args, -1) {
-				p = strings.ReplaceAll(strings.TrimRight(p, `\/.,;:)`), `\\`, `\`)
+			for _, m := range absPathRe.FindAllStringSubmatch(c.Args, -1) {
+				p := strings.ReplaceAll(strings.TrimRight(m[1], `\/.,;:)`), `\\`, `\`)
 				if !underDir(p, workspace) && !underDir(p, filepath.Join(runDir, "data")) {
 					outside[p] = true
 				}
