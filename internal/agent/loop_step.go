@@ -480,13 +480,13 @@ func (l *Loop) runStep(
 		}
 	}
 	// Edits keep returning to versions that already failed the same check:
-	// stop the tool loop and have the model explain the conflict instead.
+	// stop the tool loop and have the model report where it stands.
 	if repeats, due := l.checkCycles.stopDue(); due {
 		stopText := fmt.Sprintf(checkCycleStopText, repeats)
 		sys := llm.Message{
 			Role: llm.RoleSystem,
-			Content: "[edit loop] " + stopText + " Stop editing. Tell the user which versions you tried, " +
-				"the exact failing check output, and which requirements seem to conflict; ask how to proceed.",
+			Content: "[edit loop] " + stopText + " Stop editing. Tell the user which versions you tried " +
+				"and the exact failing check output; if specific requirements conflict, name them. Ask how to proceed.",
 		}
 		l.Messages = append(l.Messages, sys)
 		l.persist(ctx, sys)
