@@ -101,8 +101,14 @@ https) may be configured as `base_url`; it needs no key.
 Video names are `duration`, `aspect_ratio`, `resolution`, `negative_prompt`
 (strings), `seed`, `num_frames`, `num_inference_steps` (nonnegative 32-bit
 integers), and `generate_audio` (boolean). Only names listed in
-`allowed_parameters` can be used, including defaults. Use the selected model's
-schema to choose valid values; the provider validates model-specific enums.
+`allowed_parameters` can be used. A `default_parameters` entry that is not
+listed there is ignored (not sent) and the tool result says so, instead of
+failing every call; a value the model sends outside the list is still
+rejected. Use the selected model's schema to choose valid values; the
+provider validates model-specific enums and its `error.message` is returned.
+
+An enabled generator's tool description states that it is configured and
+available, so remembered earlier failures do not stop the model from calling it.
 Endpoints, reference URLs, credentials, webhooks, streaming flags, image counts
 and model selectors cannot be smuggled through parameter defaults or arguments.
 
