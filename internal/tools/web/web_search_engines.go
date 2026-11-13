@@ -24,6 +24,8 @@ func (t *WebSearch) search(ctx context.Context, a webSearchArgs) ([]WebSearchRes
 		return t.searchTavily(ctx, a)
 	case "searxng":
 		return t.searchSearXNG(ctx, a)
+	case "exa":
+		return t.searchExa(ctx, a)
 	default:
 		return t.searchDuckDuckGo(ctx, a)
 	}
@@ -55,13 +57,16 @@ func formatSearchResults(query, engine, fallbackFrom string, results []WebSearch
 	if isURLSearchQuery(query) {
 		sb.WriteString(urlSearchResultClarification + "\n")
 	}
-	if fileCandidate {
-		sb.WriteString("\nSome result URLs have file extensions; use web_download directly to save a file. ")
-	} else {
-		sb.WriteString("\nUse web_download for a direct file URL. ")
-	}
-	sb.WriteString("Use web_fetch for known pages, with mode=media when only declared asset URLs are needed. These actions use existing URLs without another lookup; search again when new candidates or external references are needed. Preserve returned URLs; do not guess media IDs.")
+	sb.WriteString(searchResultsFooter(fileCandidate))
 	return sb.String()
+}
+
+func searchResultsFooter(fileCandidate bool) string {
+	head := "\nUse web_download for a direct file URL. "
+	if fileCandidate {
+		head = "\nSome result URLs have file extensions; use web_download directly to save a file. "
+	}
+	return head + "Use web_fetch for known pages, with mode=media when only declared asset URLs are needed. These actions use existing URLs without another lookup; search again when new candidates or external references are needed. Preserve returned URLs; do not guess media IDs."
 }
 
 const urlSearchResultClarification = "These are search hits about the URL, not content fetched from it. To read that page, use web_fetch with url; to save a direct file, use web_download with url and path."

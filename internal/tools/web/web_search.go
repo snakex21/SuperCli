@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -28,6 +29,7 @@ type WebSearch struct {
 	apiKey  string
 	baseURL string
 	cache   *searchCache
+	hosted  *HostedSearchConfig
 }
 
 const (
@@ -41,6 +43,7 @@ const (
 	webSearchMaxDomains     = 10
 	webSearchMaxResultURL   = 4096
 	webSearchMaxTitleRunes  = 200
+	webSearchMaxQueries     = 4
 )
 
 // NewWebSearch builds the tool. Empty engine = "duckduckgo". baseURL is
@@ -49,7 +52,7 @@ const (
 func NewWebSearch(engine, apiKey string, baseURL ...string) *WebSearch {
 	engine = strings.ToLower(strings.TrimSpace(engine))
 	switch engine {
-	case "brave", "tavily", "searxng":
+	case "brave", "tavily", "searxng", "exa":
 		// keyed engines; key checked at call time
 	default:
 		engine = "duckduckgo"
@@ -77,6 +80,7 @@ type WebSearchResult struct {
 
 type webSearchArgs struct {
 	Query          string   `json:"query"`
+	Queries        []string `json:"queries"`
 	MaxResults     int      `json:"max_results"`
 	Freshness      string   `json:"freshness"`
 	IncludeDomains []string `json:"include_domains"`
@@ -129,11 +133,12 @@ func (t *WebSearch) Spec() Tool {
 		NextTools:  []string{"web_fetch", "web_download"},
 		Description: "Search the public web for current facts, new candidate URLs or external references, returning title, URL and snippet. " +
 			"This does not open, inspect or download a supplied URL. Read a known page with web_fetch(url); save a known file URL with web_download(url,path), without another search. Default engine needs no API key. " +
-			"Optional freshness and domain filters narrow results without extra searches. Set refresh=true only when a fresh network search is needed instead of reusing a recent result.",
+			"Several related queries can run in one call (queries). Optional freshness and domain filters narrow results without extra searches. Set refresh=true only when a fresh network search is needed instead of reusing a recent result.",
 		Schema: `{
   "type": "object",
   "properties": {
     "query":           {"type": "string", "description": "Search terms. Use a full URL to find external mentions or references to it; use web_fetch to read a known page or web_download to save a known file."},
+    "queries":         {"type": "array", "items": {"type": "string"}, "maxItems": 3, "description": "Optional extra related queries (up to 3) searched in parallel with query; results are merged and labelled per query."},
     "max_results":     {"type": "integer", "description": "Number of results (default 5, max 10)."},
     "freshness":       {"type": "string", "enum": ["day", "week", "month", "year"], "description": "Optional recency window."},
     "include_domains": {"type": "array", "items": {"type": "string"}, "maxItems": 10, "description": "Optional domains to include."},
@@ -151,9 +156,9 @@ func (t *WebSearch) execute(ctx context.Context, args json.RawMessage) (Result, 
 	if err := json.Unmarshal(args, &a); err != nil {
 		return Result{Err: fmt.Errorf("web_search: bad args: %w", err)}, nil
 	}
-	q := strings.TrimSpace(a.Query)
-	if q == "" {
-		return Result{Err: fmt.Errorf("web_search: query is empty")}, nil
+	queries, err := searchQueries(a.Query, a.Queries)
+	if err != nil {
+		return Result{Err: fmt.Errorf("web_search: %w", err)}, nil
 	}
 	n := a.MaxResults
 	if n <= 0 {
@@ -167,7 +172,6 @@ func (t *WebSearch) execute(ctx context.Context, args json.RawMessage) (Result, 
 	if a.Freshness != "" && a.Freshness != "day" && a.Freshness != "week" && a.Freshness != "month" && a.Freshness != "year" {
 		return Result{Err: fmt.Errorf("web_search: freshness must be day, week, month, or year")}, nil
 	}
-	var err error
 	a.IncludeDomains, err = normalizeDomains(a.IncludeDomains)
 	if err != nil {
 		return Result{Err: fmt.Errorf("web_search: include_domains: %w", err)}, nil
@@ -176,19 +180,86 @@ func (t *WebSearch) execute(ctx context.Context, args json.RawMessage) (Result, 
 	if err != nil {
 		return Result{Err: fmt.Errorf("web_search: exclude_domains: %w", err)}, nil
 	}
-	cacheKey := t.cacheKey(a)
 	if err := ctx.Err(); err != nil {
 		return Result{Err: fmt.Errorf("web_search: %w", err)}, nil
 	}
+	if len(queries) == 1 {
+		a.Query = queries[0]
+		value, err := t.runQuery(ctx, a)
+		if err != nil {
+			return Result{Err: err}, nil
+		}
+		return Result{Text: formatSearchResults(a.Query, value.engine, value.fallbackFrom, value.results)}, nil
+	}
+	// Several related queries run in parallel; each keeps its own label and
+	// a URL already listed by an earlier query is not repeated.
+	values := make([]searchCacheValue, len(queries))
+	errs := make([]error, len(queries))
+	var wg sync.WaitGroup
+	for i, q := range queries {
+		wg.Add(1)
+		go func(i int, q string) {
+			defer wg.Done()
+			one := a
+			one.Query = q
+			values[i], errs[i] = t.runQuery(ctx, one)
+		}(i, q)
+	}
+	wg.Wait()
+	return Result{Text: formatMultiSearchResults(queries, values, errs)}, nil
+}
+
+// searchQueries merges the required query with up to three extra queries,
+// dropping blanks and case-insensitive duplicates.
+func searchQueries(query string, extra []string) ([]string, error) {
+	var out []string
+	seen := map[string]bool{}
+	for _, q := range append([]string{query}, extra...) {
+		q = strings.TrimSpace(q)
+		key := strings.ToLower(strings.Join(strings.Fields(q), " "))
+		if q == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, q)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("query is empty")
+	}
+	if len(out) > webSearchMaxQueries {
+		return nil, fmt.Errorf("at most %d queries per call (query plus %d in queries)", webSearchMaxQueries, webSearchMaxQueries-1)
+	}
+	return out, nil
+}
+
+// runQuery answers one normalized query: cache, then the hosted engine when
+// enabled, then the configured engine and the keyless public fallbacks.
+func (t *WebSearch) runQuery(ctx context.Context, a webSearchArgs) (searchCacheValue, error) {
+	n := a.MaxResults
+	cacheKey := t.cacheKey(a)
 	cacheGeneration := t.cache.currentGeneration()
 	if a.Refresh {
 		// A failed fresh request must not silently restore older evidence on
 		// the next ordinary call. Invalidate before making the HTTP request.
 		cacheGeneration = t.cache.remove(cacheKey)
-	} else {
-		if cached, ok := t.cache.get(cacheKey, time.Now()); ok {
-			return Result{Text: formatSearchResults(q, cached.engine, cached.fallbackFrom, cached.results)}, nil
+	} else if cached, ok := t.cache.get(cacheKey, time.Now()); ok {
+		return cached, nil
+	}
+
+	hostedFrom := ""
+	if t.hosted != nil {
+		hostedCtx, cancel := context.WithTimeout(ctx, hostedSearchTimeout)
+		results, err := t.searchHosted(hostedCtx, a)
+		cancel()
+		results = filterAndDedupeResults(results, a.IncludeDomains, a.ExcludeDomains, n)
+		if err == nil && len(results) > 0 {
+			value := searchCacheValue{results: results, engine: t.HostedEngine()}
+			t.cache.setIfCurrent(cacheKey, value, searchCacheTTL(a), time.Now(), cacheGeneration)
+			return value, nil
 		}
+		// Any hosted failure (quota, unsupported model, outage, no hits)
+		// silently degrades to the local engines below.
+		hostedFrom = t.HostedEngine()
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, webSearchTimeout)
@@ -203,7 +274,7 @@ func (t *WebSearch) execute(ctx context.Context, args json.RawMessage) (Result, 
 	cancelPrimary()
 	results = filterAndDedupeResults(results, a.IncludeDomains, a.ExcludeDomains, n)
 	usedEngine := t.engine
-	fallbackFrom := ""
+	fallbackFrom := hostedFrom
 	if t.engine == "duckduckgo" && (err != nil || len(results) == 0) {
 		duckErr := err
 		results, err = t.searchBraveHTML(ctx, a)
@@ -213,10 +284,10 @@ func (t *WebSearch) execute(ctx context.Context, args json.RawMessage) (Result, 
 			results, err = t.searchBingRSS(ctx, a)
 			usedEngine = "bing-rss"
 			if err != nil || len(results) == 0 {
-				return Result{Err: fmt.Errorf("web_search public fallbacks failed: duckduckgo: %v; brave-web: %v; bing-rss: %v", searchAttemptErr(duckErr, nil), braveErr, searchAttemptErr(err, results))}, nil
+				return searchCacheValue{}, fmt.Errorf("web_search public fallbacks failed: duckduckgo: %v; brave-web: %v; bing-rss: %v", searchAttemptErr(duckErr, nil), braveErr, searchAttemptErr(err, results))
 			}
 		}
-		fallbackFrom = "duckduckgo"
+		fallbackFrom = joinFallback(hostedFrom, "duckduckgo")
 	}
 	if t.engine != "duckduckgo" && ((err != nil && shouldFallbackSearch(err)) || (err == nil && len(results) == 0)) {
 		primaryErr := err
@@ -231,20 +302,30 @@ func (t *WebSearch) execute(ctx context.Context, args json.RawMessage) (Result, 
 				results, err = t.searchBingRSS(ctx, a)
 				fallbackEngine = "bing-rss"
 				if err != nil || len(results) == 0 {
-					return Result{Err: fmt.Errorf("web_search (%s failed; public fallbacks failed): primary: %v; duckduckgo: %v; brave-web: %v; bing-rss: %v", t.engine, searchAttemptErr(primaryErr, nil), searchAttemptErr(duckErr, nil), braveErr, searchAttemptErr(err, results))}, nil
+					return searchCacheValue{}, fmt.Errorf("web_search (%s failed; public fallbacks failed): primary: %v; duckduckgo: %v; brave-web: %v; bing-rss: %v", t.engine, searchAttemptErr(primaryErr, nil), searchAttemptErr(duckErr, nil), braveErr, searchAttemptErr(err, results))
 				}
 			}
 		}
 		usedEngine = fallbackEngine
-		fallbackFrom = t.engine
+		fallbackFrom = joinFallback(hostedFrom, t.engine)
 	}
 	if err != nil {
-		return Result{Err: fmt.Errorf("web_search (%s): %w", t.engine, err)}, nil
+		return searchCacheValue{}, fmt.Errorf("web_search (%s): %w", t.engine, err)
 	}
 	results = filterAndDedupeResults(results, a.IncludeDomains, a.ExcludeDomains, n)
 	value := searchCacheValue{results: results, engine: usedEngine, fallbackFrom: fallbackFrom}
 	t.cache.setIfCurrent(cacheKey, value, searchCacheTTL(a), time.Now(), cacheGeneration)
-	return Result{Text: formatSearchResults(q, usedEngine, fallbackFrom, results)}, nil
+	return value, nil
+}
+
+func joinFallback(parts ...string) string {
+	var out []string
+	for _, p := range parts {
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return strings.Join(out, ", ")
 }
 
 func searchAttemptErr(err error, results []WebSearchResult) error {
