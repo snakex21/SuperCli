@@ -31,7 +31,7 @@ func TestOversizedBatchReachesModelInBothProtocols(t *testing.T) {
 				calls = []llm.Delta{{Content: "«read_many\nreads: netplay.go:1-300 | netplay.go:300-600\n»", FinishReason: "stop"}}
 			}
 			p := &stubProvider{name: "batch-range", scripts: [][]llm.Delta{calls, {{Content: "Read the bounded ranges.", FinishReason: "stop"}}}}
-			loop, err := NewLoop(LoopConfig{Provider: p, Registry: reg, BaseDir: root, ThinTools: thin, MaxSteps: 3, WindowFor: func(string) int { return 131072 }})
+			loop, err := NewLoop(LoopConfig{Provider: p, Registry: reg, BaseDir: root, ThinTools: thin, MaxSteps: 3})
 			if err != nil {
 				t.Fatal(err)
 			}
