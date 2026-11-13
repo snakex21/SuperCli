@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
+
+	core "supercli/internal/tools/core"
 )
 
 // OutlookMail talks to the locally installed desktop Outlook via
@@ -53,7 +56,7 @@ func (t *OutlookMail) Spec() Tool {
 			"For search/count, scope:'account' searches the entire default Outlook account recursively (including Gmail subfolders) instead of only one folder; search also supports scope:'all_stores' to find matching mail across every Outlook store/PST without listing unrelated messages. " +
 			"'draft' creates a DRAFT and never sends; 'trash' moves matching messages from a folder to Outlook's default Deleted Items/Trash folder; " +
 			"'purge' permanently deletes matching messages that are already in Outlook's default Deleted Items/Trash folder. " +
-			"For trash/purge, at least one filter (from/subject/since/until) is required and confirm:true is mandatory; only use confirm:true after the user explicitly approved that exact cleanup. " +
+			"For trash/purge, at least one filter (from/subject/since/until) is required; SuperCli asks the user to approve each trash/purge itself (do not set confirm, it is ignored and set by the host after approval). " +
 			"Purge cannot be undone. There is no send operation.",
 		Schema: `{
   "type": "object",
@@ -71,14 +74,57 @@ func (t *OutlookMail) Spec() Tool {
     "to":       {"type": "string", "description": "draft: recipient address(es), semicolon-separated."},
     "cc":       {"type": "string", "description": "draft: CC address(es), semicolon-separated."},
     "body":     {"type": "string", "description": "draft: plain-text body."},
-    "confirm":  {"type": "boolean", "description": "trash/purge only: must be true after explicit user approval. purge is permanent."},
+    "confirm":  {"type": "boolean", "description": "Ignored: set by SuperCli only after the user approves trash/purge in its approval prompt."},
     "all":      {"type": "boolean", "description": "trash/purge only: process all matching messages in one call after explicit approval. Prefer this for bulk cleanup to avoid repeated tool calls."},
     "scope":    {"type": "string", "enum": ["folder", "account", "all_stores"], "description": "search/count. 'folder' (default) searches the selected folder; 'account' searches all mail folders in the default Outlook account recursively and deduplicates messages; 'all_stores' is supported by search and scans all Outlook stores/PSTs while returning only matching mail."}
   },
   "required": ["op"]
 }`,
-		Fn: t.execute,
+		Fn:          t.execute,
+		Approval:    outlookApproval,
+		ApprovalArg: "confirm",
 	}
+}
+
+// outlookApproval gates trash/purge behind the host approval prompt: the
+// model's confirm is discarded and set only after the user approves.
+func outlookApproval(_ context.Context, raw json.RawMessage) (*core.ApprovalRequest, error) {
+	var a outlookArgs
+	if json.Unmarshal(raw, &a) != nil {
+		return nil, nil
+	}
+	op := strings.ToLower(strings.TrimSpace(a.Op))
+	folder := strings.TrimSpace(a.Folder)
+	var req core.ApprovalRequest
+	switch op {
+	case "trash":
+		if folder == "" {
+			folder = "Inbox"
+		}
+		req = core.ApprovalRequest{Risk: core.RiskWriteReversible, Reversible: true,
+			Summary: fmt.Sprintf("Move matching Outlook messages from %q to Deleted Items.", folder)}
+	case "purge":
+		folder = "Deleted Items"
+		req = core.ApprovalRequest{Risk: core.RiskDestructive, NoSessionGrant: true,
+			Summary: "PERMANENTLY delete matching Outlook messages from Deleted Items."}
+	default:
+		return nil, nil
+	}
+	filters := []string{}
+	for name, v := range map[string]string{"from": a.From, "subject": a.Subject, "since": a.Since, "until": a.Until} {
+		if strings.TrimSpace(v) != "" {
+			filters = append(filters, name+"="+strings.TrimSpace(v))
+		}
+	}
+	sort.Strings(filters)
+	req.Tool, req.Operation, req.Folder = "outlook_mail", op, folder
+	req.Target = strings.Join(filters, ", ")
+	if a.All {
+		req.Target += " (all matches)"
+	}
+	req.Scope = []string{"outlook_mail", op, "outlook", folder}
+	req.Count = -1
+	return &req, nil
 }
 
 func (t *OutlookMail) execute(ctx context.Context, args json.RawMessage) (Result, error) {

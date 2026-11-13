@@ -218,6 +218,46 @@ can be changed live with `/allow-all on|off` in the TUI or with the
 to file reads and writes, code search, `@file` mentions, images, Office
 documents, and ZIP extraction targets.
 
+### Approvals for risky actions
+
+Tools declare a risk level per operation (`read`, `write_reversible`,
+`destructive`, `external_side_effect`). Every non-read operation of
+`thunderbird_mail` (folder create/rename/delete/compact/repair, copy, move,
+import, trash, restore, purge, empty Trash, address-book and contact writes),
+`outlook_mail` trash/purge, and `trash` of a path outside the workspace waits
+for the user's answer. The host owns the tool's `confirm` argument: a value the
+model sends is discarded, and the host sets `confirm:true` only after approval.
+Ordinary edits inside the workspace are not gated.
+
+- Web GUI: an approval card in the conversation shows the operation, account,
+  folder, destination, message count with a few senders/subjects (never
+  bodies) and whether it can be undone. Buttons: Approve, Deny, and Approve
+  similar in this session (same tool, operation, account, folder and
+  destination; expires after 30 minutes; not offered for irreversible
+  operations). Esc denies. Branded overlays that render generic questions
+  (NestCafe) get the same request as a question with those three options.
+- TUI: the same details with `y` approve, `n`/Esc deny, `a` approve similar.
+- `--batch`, SuperBot and scripts: there is nobody to ask, so the call is
+  refused with a tool error telling the model that the user's approval is
+  needed. Allow specific scopes in the global `<data-dir>/config.toml` only
+  (project configs cannot pre-approve):
+
+  ```toml
+  [approvals]
+  # tool:operation[:account[:folder[:destination]]]; "*" = any segment
+  auto_approve = ["thunderbird_mail:copy:account2"]
+  session_grant_minutes = 30
+  ```
+
+  The explicit `--allow-all` command-line flag of a batch run approves every
+  gated action without asking. This is risky: a model can then delete mail or
+  empty Trash on its own. Prefer a narrow `auto_approve` entry. `allow_all` in
+  config.toml and the GUI switch keep their filesystem meaning only and never
+  approve gated actions; interactive GUI/TUI runs always ask.
+
+Each decision is appended to `<data-dir>/approvals.jsonl` (time, session,
+tool, operation, scope, risk, decision; no message content).
+
 ## For agents changing defaults
 
 1. Edit the resolver (`internal/app/*.go`) *and*

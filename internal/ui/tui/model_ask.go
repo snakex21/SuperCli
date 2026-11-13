@@ -30,6 +30,7 @@ func (m Model) beginAsk(req tools.AskRequest) (tea.Model, tea.Cmd) {
 		MultiSelect:  req.MultiSelect,
 		AllowCustom:  req.AllowCustom,
 		Confirmation: req.Confirmation,
+		Approval:     req.Approval,
 		cursor:       0,
 		toggled:      make(map[int]bool),
 		respond:      req.Respond,
@@ -160,7 +161,7 @@ func (m *Model) endAsk() {
 		// The queued request already has a completion subscription.
 		m.pendingAsk = &pendingAsk{ID: req.ID, done: req.Done, Question: m.trustedQuestion(req),
 			Header: req.Header, Options: req.Options, MultiSelect: req.MultiSelect,
-			AllowCustom: req.AllowCustom, Confirmation: req.Confirmation, toggled: make(map[int]bool), respond: req.Respond}
+			AllowCustom: req.AllowCustom, Confirmation: req.Confirmation, Approval: req.Approval, toggled: make(map[int]bool), respond: req.Respond}
 		m.mode = modeAsking
 		m.input.Blur()
 		return

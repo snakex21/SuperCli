@@ -60,5 +60,9 @@ func (r *Registry) ExecutePrepared(ctx context.Context, invocation PreparedInvoc
 	if !invocation.argsNil {
 		args = json.RawMessage(invocation.args)
 	}
+	args, ctx, refused := gateInvocation(ctx, t, args)
+	if refused != nil {
+		return *refused, nil
+	}
 	return t.Fn(ctx, args)
 }

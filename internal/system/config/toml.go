@@ -386,6 +386,8 @@ type TomlConfig struct {
 	MediaGeneration MediaGenerationConf `toml:"media_generation"`
 	// Headless scope is loaded only by LoadHeadless, never merged from projects.
 	Headless HeadlessConf `toml:"headless"`
+	// Approvals policy is loaded only by LoadApprovals, never merged from projects.
+	Approvals ApprovalsConf `toml:"approvals"`
 
 	// Council configures the /council roster (F12).
 	// Empty = fall back to the auto-assembled

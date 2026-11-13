@@ -40,7 +40,11 @@ func renderConfirmationView(a *pendingAsk, width, height int) string {
 	end := min(len(rows), start+slots)
 	lines := []string{"┌" + strings.Repeat("─", inner+2) + "┐"}
 	row := func(s string) { lines = append(lines, "│ "+padTo(s, inner)+" │") }
-	row("Confirm action")
+	if a.Approval != nil {
+		row(approvalTitle(a))
+	} else {
+		row("Confirm action")
+	}
 	for _, s := range rows[start:end] {
 		row(s)
 	}
@@ -48,6 +52,13 @@ func renderConfirmationView(a *pendingAsk, width, height int) string {
 		row("")
 	}
 	row(fmt.Sprintf("Details %d-%d/%d", start+1, end, len(rows)))
+	if a.Approval != nil {
+		for _, line := range approvalChoiceRows(a, end == len(rows)) {
+			row(line)
+		}
+		lines = append(lines, "└"+strings.Repeat("─", inner+2)+"┘")
+		return strings.Join(lines, "\n")
+	}
 	cancel, allow := "> Cancel", "  Allow once"
 	if a.cursor == 1 && end == len(rows) {
 		cancel, allow = "  Cancel", "> Allow once"
@@ -72,6 +83,9 @@ func (m Model) handleConfirmationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Resizing or scrolling back never leaves an invisible approval selected.
 	if !canAllow {
 		a.cursor = 0
+	}
+	if a.Approval != nil {
+		return m.handleApprovalKey(msg, a, canAllow, last, slots, len(rows))
 	}
 	switch msg.String() {
 	case "esc", "ctrl+c":

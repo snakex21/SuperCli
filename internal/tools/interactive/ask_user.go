@@ -75,6 +75,9 @@ type AskRequest struct {
 	AllowCustom bool `json:"allowCustom"`
 	// Confirmation marks a trusted action gate, never a model-supplied question.
 	Confirmation bool `json:"confirmation,omitempty"`
+	// Approval carries the structured approval card of a host approval gate.
+	// Set only by ApprovalGate together with Confirmation.
+	Approval *ApprovalCard `json:"approval,omitempty"`
 	// Respond is the channel the TUI sends the answer to. The
 	// tool's goroutine is blocked reading from this channel;
 	// the TUI is the only writer.
