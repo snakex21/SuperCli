@@ -50,7 +50,15 @@ func renderReadMany(outcomes []readManyOutcome, overflow []readManyRequest, budg
 	avail := budget - summaryReserve
 	fitsAll := total <= avail && len(overflow) == 0
 	if !fitsAll {
-		avail -= readManyNoteReserve
+		// Reserve what the note would take if every range were left out
+		// (it names at most one follow-up batch), not a fixed block: on a
+		// small shared budget a fixed reserve left room for four lines.
+		all := make([]readManyRequest, 0, len(outcomes)+len(overflow))
+		for _, outcome := range outcomes {
+			all = append(all, wholeRequest(outcome))
+		}
+		all = append(all, overflow...)
+		avail -= min(len(readManyContinuation(all, budget)), readManyNoteReserve)
 	}
 	used := 0
 	anyIncluded := false
