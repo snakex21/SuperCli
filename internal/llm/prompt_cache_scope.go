@@ -47,3 +47,15 @@ func promptCacheSessionID(ctx context.Context, fallback string) string {
 	sum := sha256.Sum256([]byte(base + "\x00" + scope + "\x00" + purpose))
 	return fmt.Sprintf("%x-%x-%x-%x-%x", sum[:4], sum[4:6], sum[6:8], sum[8:10], sum[10:16])
 }
+
+// standardResponsesCacheKey is promptCacheSessionID without the conversation
+// ID: standard Responses endpoints route by key + shared prompt prefix, so
+// the foreground key is the provider's stable account/endpoint/model key
+// (responsesPromptCacheKey) while worker scopes and helper purposes keep
+// their own derived keys.
+func standardResponsesCacheKey(ctx context.Context, providerKey string) string {
+	if ctx != nil {
+		ctx = context.WithValue(ctx, openCodeSessionCtxKey{}, "")
+	}
+	return promptCacheSessionID(ctx, providerKey)
+}

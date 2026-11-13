@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -97,14 +98,14 @@ func TestResponsesCacheKeySeparatesHelpersAndInstances(t *testing.T) {
 		keys = append(keys, key)
 		return anthropicOwnedBodyResponse(req, http.StatusOK, "data: {\"type\":\"response.completed\",\"response\":{}}\n\n"), nil
 	})}
-	newProvider := func() *ResponsesProvider {
-		p, err := NewResponses(ResponsesConfig{BaseURL: "https://api.openai.com/v1", Model: "cache-fixture", HTTPClient: client})
+	newProvider := func(apiKey string) *ResponsesProvider {
+		p, err := NewResponses(ResponsesConfig{BaseURL: "https://api.openai.com/v1", APIKey: apiKey, Model: "cache-fixture", HTTPClient: client})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return p
 	}
-	p := newProvider()
+	p := newProvider("synthetic-a")
 	for _, purpose := range []string{PurposeMain, PurposeCompact, PurposeTask} {
 		ch, err := p.Complete(WithPurpose(context.Background(), purpose), []Message{{Role: RoleUser, Content: purpose}}, nil)
 		if err != nil {
@@ -116,17 +117,28 @@ func TestResponsesCacheKeySeparatesHelpersAndInstances(t *testing.T) {
 			}
 		}
 	}
-	other := newProvider()
-	ch, err := other.Complete(context.Background(), []Message{{Role: RoleUser, Content: "other provider instance"}}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, d := range drainDeltas(t, ch) {
-		if d.Err != nil {
-			t.Fatal(d.Err)
+	// A new instance (and a new conversation) for the same account, endpoint
+	// and model shares the foreground key: OpenAI routes by key + prefix, and
+	// all conversations share the instructions + tools prefix. A different
+	// account never shares it.
+	for _, other := range []*ResponsesProvider{newProvider("synthetic-a"), newProvider("synthetic-b")} {
+		ctx := WithOpenCodeSession(context.Background(), "another-conversation")
+		ch, err := other.Complete(ctx, []Message{{Role: RoleUser, Content: "other provider instance"}}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range drainDeltas(t, ch) {
+			if d.Err != nil {
+				t.Fatal(d.Err)
+			}
 		}
 	}
-	if calls != 4 || len(keys) != 4 || keys[0] == "" || keys[0] == keys[1] || keys[0] != keys[2] || keys[0] == keys[3] {
-		t.Fatal("foreground key must remain stable; helpers and separate provider instances need independent cache scopes")
+	if calls != 5 || len(keys) != 5 || keys[0] == "" || keys[0] == keys[1] || keys[0] != keys[2] || keys[0] != keys[3] || keys[0] == keys[4] {
+		t.Fatalf("foreground key must be stable per account/endpoint/model and helpers separate: %q", keys)
+	}
+	for _, k := range keys {
+		if strings.Contains(k, "synthetic") {
+			t.Fatal("cache key leaked the credential")
+		}
 	}
 }
