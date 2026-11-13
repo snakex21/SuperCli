@@ -318,6 +318,7 @@
   "chat.stopped": "oprit de utilizator",
   "chat.connError": "eroare de conectare",
   "chat.streamEnded": "Fluxul de răspuns s-a încheiat în mod neașteptat. Răspunsul poate fi incomplet.",
+  "chat.jumpLatest": "Salt la cele mai recente",
   "chat.noProvider": "{n} nu are niciun furnizor de AI activ: modul ecou de testare a fost blocat. Alege din nou un model din Setări.",
   "stats.model": "model",
   "stats.provider": "furnizor",

@@ -318,6 +318,7 @@
   "chat.stopped": "vom Benutzer gestoppt",
   "chat.connError": "Verbindungsfehler",
   "chat.streamEnded": "Der Antwortstream wurde unerwartet beendet. Die Antwort ist möglicherweise unvollständig.",
+  "chat.jumpLatest": "Zum Neuesten springen",
   "chat.noProvider": "Für {n} ist kein KI-Dienst aktiv. Der Test-Echomodus wurde gesperrt. Wählen Sie in den Einstellungen erneut ein Modell aus.",
   "stats.model": "Modell",
   "stats.provider": "Anbieter",

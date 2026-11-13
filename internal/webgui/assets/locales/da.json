@@ -318,6 +318,7 @@
   "chat.stopped": "stoppet af brugeren",
   "chat.connError": "forbindelsesfejl",
   "chat.streamEnded": "Svarstrømmen sluttede uventet. Svaret kan være ufuldstændigt.",
+  "chat.jumpLatest": "Gå til det nyeste",
   "chat.noProvider": "{n} har ingen aktiv AI-tjeneste, så ekkotilstanden er deaktiveret. Vælg en model igen under Indstillinger.",
   "stats.model": "model",
   "stats.provider": "AI-tjeneste",

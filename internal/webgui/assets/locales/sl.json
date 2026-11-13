@@ -318,6 +318,7 @@
   "chat.stopped": "ustavil uporabnik",
   "chat.connError": "napaka pri povezavi",
   "chat.streamEnded": "Tok odgovorov se je nepričakovano končal. Odgovor je lahko nepopoln.",
+  "chat.jumpLatest": "Skoči na najnovejše",
   "chat.noProvider": "{n} nima aktivnega ponudnika umetne inteligence: način testnega odmeva je bil blokiran. Ponovno izberite model v nastavitvah.",
   "stats.model": "model",
   "stats.provider": "ponudnik",

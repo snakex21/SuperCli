@@ -318,6 +318,7 @@
   "chat.stopped": "zastavil užívateľ",
   "chat.connError": "chyba pripojenia",
   "chat.streamEnded": "Stream odpovedí sa neočakávane skončil. Odpoveď môže byť neúplná.",
+  "chat.jumpLatest": "Prejsť na najnovšie",
   "chat.noProvider": "{n} nemá aktívneho poskytovateľa AI: režim testovacej odozvy bol zablokovaný. Znova vyberte model v Nastaveniach.",
   "stats.model": "model",
   "stats.provider": "poskytovateľa",

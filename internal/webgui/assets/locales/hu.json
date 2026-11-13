@@ -318,6 +318,7 @@
   "chat.stopped": "A felhasználó leállította",
   "chat.connError": "Kapcsolódási hiba",
   "chat.streamEnded": "A válaszfolyam váratlanul véget ért. Lehet, hogy a válasz hiányos.",
+  "chat.jumpLatest": "Ugrás a legújabbra",
   "chat.noProvider": "A(z) {n} nem rendelkezik aktív AI-szolgáltatóval: a teszt-visszhang mód nem használható. Válassz új modellt a Beállításokban.",
   "stats.model": "modell",
   "stats.provider": "szolgáltató",

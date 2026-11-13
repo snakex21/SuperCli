@@ -318,6 +318,7 @@
   "chat.stopped": "stoppet av bruker",
   "chat.connError": "tilkoblingsfeil",
   "chat.streamEnded": "Svarstrømmen ble avsluttet uventet. Svaret kan være ufullstendig.",
+  "chat.jumpLatest": "Gå til det nyeste",
   "chat.noProvider": "{n} har ingen aktiv AI-leverandør: testekkomodusen ble blokkert. Velg en modell på nytt i Innstillinger.",
   "stats.model": "modell",
   "stats.provider": "AI-tjeneste",
