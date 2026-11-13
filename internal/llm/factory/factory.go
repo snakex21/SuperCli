@@ -190,6 +190,16 @@ func DefaultContext(ctx context.Context, cfg config.Config, dataDir string, caps
 		cfg.Provider = protocol
 		cfg.BaseURL = llm.NormalizeAnyRouterBaseURL(cfg.BaseURL)
 	}
+	if UseResponsesForOpenAI(cfg, dataDir) {
+		return llm.NewResponses(llm.ResponsesConfig{
+			BaseURL:        OpenAIResponsesBaseURL(cfg.BaseURL),
+			APIKey:         cfg.APIKey,
+			Model:          cfg.Model,
+			Timeout:        cfg.Timeout,
+			ConnectTimeout: cfg.ConnectTimeout,
+			Capabilities:   caps,
+		})
+	}
 	switch cfg.Provider {
 	case config.ProviderResponses:
 		return llm.NewResponses(llm.ResponsesConfig{

@@ -9,6 +9,7 @@ import (
 
 	"supercli/internal/account/pricing"
 	"supercli/internal/llm"
+	"supercli/internal/llm/factory"
 	"supercli/internal/llm/shuffler"
 	"supercli/internal/system/config"
 )
@@ -123,6 +124,18 @@ func buildProvider(cfg config.Config, dataDir string, caps *llm.CapabilityRegist
 			APIKey:         cfg.APIKey,
 			Model:          cfg.Model,
 			MaxTokens:      cfg.MaxTokens,
+			Timeout:        cfg.Timeout,
+			ConnectTimeout: cfg.ConnectTimeout,
+			Capabilities:   caps,
+		})
+	}
+	// Official OpenAI reasoning models: only the Responses API keeps the
+	// selected reasoning level together with function tools.
+	if factory.UseResponsesForOpenAI(cfg, dataDir) {
+		return llm.NewResponses(llm.ResponsesConfig{
+			BaseURL:        factory.OpenAIResponsesBaseURL(cfg.BaseURL),
+			APIKey:         cfg.APIKey,
+			Model:          cfg.Model,
 			Timeout:        cfg.Timeout,
 			ConnectTimeout: cfg.ConnectTimeout,
 			Capabilities:   caps,

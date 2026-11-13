@@ -908,6 +908,10 @@ func openAIErrorMessage(raw json.RawMessage) string {
 // isOpenAIReasoningFamily names direct OpenAI reasoning models whose Chat
 // Completions contract differs from classic chat models (token cap field and
 // sampling). Claude ids also use the effort control but keep max_tokens.
+// IsOpenAIReasoningModel reports whether model belongs to the direct OpenAI
+// reasoning families (gpt-5*, gpt-6*, o1/o3/o4*, codex*).
+func IsOpenAIReasoningModel(model string) bool { return isOpenAIReasoningFamily(model) }
+
 func isOpenAIReasoningFamily(model string) bool {
 	m := reasoningModelFamily(model)
 	switch {
