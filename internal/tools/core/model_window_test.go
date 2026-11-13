@@ -38,7 +38,7 @@ func TestReadBatchBudgetIsSharedByParallelCalls(t *testing.T) {
 	if one != 16384*4*8/100 {
 		t.Fatalf("budget=%d", one)
 	}
-	if got := ReadBatchBudget(WithReadBatchShare(ctx, 2)); got != max(one/2, readBatchShareMin) {
+	if got := ReadBatchBudget(WithReadBatchShare(ctx, 2)); got != one/2 {
 		t.Fatalf("two calls: %d", got)
 	}
 	if got := ReadBatchBudget(WithReadBatchShare(ctx, 4)); got != readBatchShareMin {
