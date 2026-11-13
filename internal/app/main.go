@@ -160,6 +160,9 @@ func Main() {
 
 	// --batch short-circuits: run prompt without TUI.
 	if flags.Batch != "" {
+		// No UI can answer an approval: gated actions are denied unless the
+		// [approvals] allowlist or the explicit --allow-all flag allows them.
+		installApprovalGate(dataDir, nil, uiLanguage, "batch mode (--batch)", flags.Unsandboxed)
 		runBatch(flags.Batch, home, dataDir, flags.Provider, flags.Key, flags.BaseURL, flags.Model, flags.Echo, flags.Debug, flags.DraftMode, flags.DraftModel, flags.TraceJSONL, tomlCfg)
 		return
 	}
@@ -297,7 +300,7 @@ func Main() {
 	}
 	// wrap.diagnostic is set inside registerMediaAndOfficeTools once
 	// codeIntel exists; late file tools below use wrap.mut.
-	_ = askCh
+	installApprovalGate(dataDir, askCh, uiLanguage, "", false)
 
 	if err := toolSearcher.RebuildIndex(); err != nil {
 		log.Printf("rebuild fts index: %v", err)

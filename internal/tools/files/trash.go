@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	core "supercli/internal/tools/core"
 	"supercli/internal/tools/fileops"
 	"supercli/internal/tools/sandbox"
 )
@@ -51,8 +52,32 @@ func (t *Trash) Spec() Tool {
 		Schema: `{
 			"path": {"type": "string", "description": "File or folder to remove, relative to the project folder"}
 		}`,
-		Fn: t.execute,
+		Fn:       t.execute,
+		Approval: t.approval,
 	}
+}
+
+// approval asks the user before trashing anything outside the workspace. That
+// is only reachable in allow-all mode; workspace edits stay ungated.
+func (t *Trash) approval(_ context.Context, args json.RawMessage) (*core.ApprovalRequest, error) {
+	var a trashArgs
+	if json.Unmarshal(args, &a) != nil || a.Path == "" {
+		return nil, nil
+	}
+	if _, err := sandbox.ResolveWithin(t.BaseDir, a.Path); err == nil {
+		return nil, nil
+	}
+	full, err := sandbox.ResolveSafe(t.BaseDir, a.Path)
+	if err != nil {
+		return nil, nil // execute reports the sandbox refusal
+	}
+	return &core.ApprovalRequest{
+		Tool: "trash", Operation: "trash_outside_workspace", Risk: core.RiskWriteReversible, Reversible: true,
+		Target:  full,
+		Summary: fmt.Sprintf("Remove %s, which is OUTSIDE the workspace (it is moved to the project's .supercli/trash folder).", full),
+		Scope:   []string{"trash", "trash_outside_workspace", "filesystem", filepath.Dir(full)},
+		Count:   -1,
+	}, nil
 }
 
 func (t *Trash) execute(ctx context.Context, args json.RawMessage) (Result, error) {

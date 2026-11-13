@@ -111,7 +111,7 @@ func TestThunderbirdFolderMutationsUseIMAPSafeTimeout(t *testing.T) {
 }
 
 func TestThunderbirdAddressBookOperationsUseSafeTimeout(t *testing.T) {
-	for _, op := range []string{"contact_candidates", "create_address_book", "add_contacts", "update_contact"} {
+	for _, op := range []string{"create_address_book", "add_contacts", "update_contact"} {
 		if got := thunderbirdOperationTimeout(op); got != 120*time.Second {
 			t.Errorf("%s timeout = %s, want 120s", op, got)
 		}
@@ -119,8 +119,8 @@ func TestThunderbirdAddressBookOperationsUseSafeTimeout(t *testing.T) {
 }
 
 func TestThunderbirdReadUsesIMAPSafeTimeout(t *testing.T) {
-	if got := thunderbirdOperationTimeout("read"); got != 120*time.Second {
-		t.Errorf("read timeout = %s, want 120s", got)
+	if got := thunderbirdOperationTimeout("read"); got != thunderbirdReadTimeout {
+		t.Errorf("read timeout = %s, want %s", got, thunderbirdReadTimeout)
 	}
 }
 

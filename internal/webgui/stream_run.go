@@ -104,6 +104,8 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	if err != nil {
 		return err
 	}
+	// "Approve similar in this session" grants are scoped to this conversation.
+	ctx = tools.WithApprovalSession(ctx, sid)
 	if strings.TrimSpace(sessionID) == "" {
 		release, claimErr := e.claimSessionRun(ctx, sid, 0)
 		if claimErr != nil {

@@ -147,6 +147,14 @@ type Tool struct {
 	// repeating the effect. False declines replay and permits normal execution;
 	// true returns either a verified Inert success or a concrete failure.
 	ReplaySuccess func(context.Context, json.RawMessage, Result) (Result, bool) `json:"-"`
+	// Approval classifies one prepared call. It returns nil for operations
+	// that need no approval (reads), or a request the host must approve
+	// before Fn runs. It must not perform side effects. See approval.go.
+	Approval func(context.Context, json.RawMessage) (*ApprovalRequest, error) `json:"-"`
+	// ApprovalArg names a boolean argument owned by the host: the registry
+	// removes any model-supplied value before Approval runs and sets it to
+	// true only after the user (or explicit policy) approved the call.
+	ApprovalArg string `json:"-"`
 }
 
 // Validate returns nil if the tool has the minimum required fields
@@ -519,6 +527,10 @@ func (r *Registry) Execute(ctx context.Context, name string, args json.RawMessag
 	prepared, err := prepareRegisteredArgs(t, schema, args)
 	if err != nil {
 		return Result{Err: err}, nil
+	}
+	prepared, ctx, refused := gateInvocation(ctx, t, prepared)
+	if refused != nil {
+		return *refused, nil
 	}
 	return t.Fn(ctx, prepared)
 }
