@@ -23,6 +23,7 @@ require (
 	github.com/muesli/termenv v0.16.0
 	github.com/pkoukk/tiktoken-go v0.1.8
 	github.com/refraction-networking/utls v1.8.2
+	golang.org/x/net v0.38.0
 	golang.org/x/sys v0.42.0
 	modernc.org/sqlite v1.52.0
 )
