@@ -57,7 +57,7 @@ func (t *WebFetch) Spec() Tool {
 		RefreshArg: "refresh",
 		NextTools:  []string{"web_download"},
 		Description: "Read a public http(s) web page (HTML, text, JSON, PDF) as clean main text with title, structured data (prices, dates) and links. " +
-			"Use it directly when the user gives a URL. Long pages: continue with the offset shown at the end. " +
+			"When the user gives a URL, call web_fetch alone first (no parallel search). Long pages: continue with the offset shown at the end. " +
 			"mode=links lists all links, mode=media lists media/download links; refresh=true skips a recent cached read. " +
 			"JavaScript is not run: for script-rendered pages or clicking use the browser tool; to save files use web_download. Not for local files, private addresses or authenticated APIs.",
 		Schema: `{

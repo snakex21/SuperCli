@@ -240,7 +240,26 @@ func compactDiscoverySchema(schema string) string {
 // exactToolNameHit returns a single perfect hit when the query is exactly
 // a registered tool name (case-insensitive). Skips meta-tools.
 func exactToolNameHit(reg *Registry, query string) *SearchResult {
-	return uniqueListedToolNameHit(reg, strings.TrimSpace(query))
+	if hit := uniqueListedToolNameHit(reg, strings.TrimSpace(query)); hit != nil {
+		return hit
+	}
+	// "browser tool" / "use the browser" / "narzędzie browser": a tool name
+	// wrapped only in generic words is still an exact request for that tool.
+	var rest []string
+	for _, word := range strings.Fields(query) {
+		if !genericToolWords[strings.ToLower(strings.Trim(word, ".,:;!?\"'`()"))] {
+			rest = append(rest, word)
+		}
+	}
+	if len(rest) == 1 {
+		return uniqueListedToolNameHit(reg, strings.Trim(rest[0], ".,:;!?\"'`()"))
+	}
+	return nil
+}
+
+var genericToolWords = map[string]bool{
+	"tool": true, "tools": true, "the": true, "a": true, "use": true,
+	"narzędzie": true, "narzedzie": true, "narzędzia": true, "użyj": true,
 }
 
 // Discovery uses names and capability descriptions as relevance evidence, never
