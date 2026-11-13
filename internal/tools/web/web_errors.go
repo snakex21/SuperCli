@@ -60,12 +60,30 @@ func httpFailedErr(resp *http.Response, host string) error {
 			b.WriteString("\npage_text:\n")
 			b.WriteString(core.HeadTail(readable, errBodyHead/2, errBodyTail/2))
 		}
-		b.WriteString("\nThis URL did not return an available page. Use web_lookup to find an existing page URL, then web_fetch. Do not guess page paths or API endpoints.")
+		if botChallenge(resp, title) {
+			b.WriteString("\nThe site blocked automated access with a bot-protection challenge. Do not retry this URL; use another source (web_lookup) or ask the user.")
+		} else {
+			b.WriteString("\nThis URL did not return an available page. Use web_lookup to find an existing page URL, then web_fetch. Do not guess page paths or API endpoints.")
+		}
 	} else if text != "" {
 		b.WriteString("\nbody:\n")
 		b.WriteString(core.HeadTail(text, errBodyHead, errBodyTail))
 	}
 	return core.SelfContainedErr(errors.New(b.String()))
+}
+
+// botChallenge recognises bot-protection interstitials (Cloudflare and
+// similar) so the model does not retry or treat them as missing pages.
+func botChallenge(resp *http.Response, title string) bool {
+	if resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusServiceUnavailable && resp.StatusCode != http.StatusTooManyRequests {
+		return false
+	}
+	if resp.Header.Get("Cf-Mitigated") != "" {
+		return true
+	}
+	t := strings.ToLower(title)
+	return strings.Contains(t, "just a moment") || strings.Contains(t, "attention required") ||
+		strings.Contains(t, "captcha") || strings.Contains(t, "access denied")
 }
 
 // requestFailedErr renders a transport-level failure (no HTTP

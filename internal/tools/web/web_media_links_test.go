@@ -101,7 +101,7 @@ func TestWebFetchMediaModeContractAndInvalidModeBeforeNetwork(t *testing.T) {
 			Enum []string `json:"enum"`
 		} `json:"properties"`
 	}
-	if err := json.Unmarshal([]byte(tool.Spec().Schema), &schema); err != nil || strings.Join(schema.Properties["mode"].Enum, ",") != "text,media" || !strings.Contains(tool.Spec().Description, "mode=media") {
+	if err := json.Unmarshal([]byte(tool.Spec().Schema), &schema); err != nil || strings.Join(schema.Properties["mode"].Enum, ",") != "text,links,media" || !strings.Contains(tool.Spec().Description, "mode=media") {
 		t.Fatalf("media mode not exposed in exact contract: %+v %v", schema, err)
 	}
 	result, err := tool.execute(context.Background(), []byte(`{"url":"https://example.org/page","mode":"html"}`))
