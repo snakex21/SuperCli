@@ -2,8 +2,6 @@ package app
 
 import (
 	"log"
-	"os"
-	"strings"
 
 	"supercli/internal/agent"
 	"supercli/internal/llm"
@@ -179,17 +177,7 @@ func registerFileWebAndLineTools(
 	// browser: headless Chrome/Edge for JS pages and clicking; discoverable.
 	registry.MustRegister(tools.NewBrowser().Spec())
 	registry.MustRegister(wrap.mut(tools.NewWebDownload(home).Spec()))
-	wsEngine := tomlCfg.WebSearch.Engine
-	wsKey := tomlCfg.WebSearch.APIKey
-	if wsKey == "" {
-		switch strings.ToLower(wsEngine) {
-		case "brave":
-			wsKey = os.Getenv("BRAVE_API_KEY")
-		case "tavily":
-			wsKey = os.Getenv("TAVILY_API_KEY")
-		}
-	}
-	webSearcher := tools.NewWebSearch(wsEngine, wsKey, tomlCfg.WebSearch.BaseURL)
+	webSearcher := newConfiguredWebSearch(tomlCfg)
 	registry.MustRegister(webSearcher.Spec())
 	registry.MustRegister(webSearcher.LookupSpec())
 	registry.MarkAlwaysOn("web_lookup")

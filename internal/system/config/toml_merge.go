@@ -225,6 +225,18 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.WebSearch.BaseURL != "" {
 		dst.WebSearch.BaseURL = src.WebSearch.BaseURL
 	}
+	if src.WebSearch.Hosted != "" {
+		dst.WebSearch.Hosted = src.WebSearch.Hosted
+	}
+	if src.WebSearch.HostedModel != "" {
+		dst.WebSearch.HostedModel = src.WebSearch.HostedModel
+	}
+	if src.WebSearch.HostedAPIKey != "" {
+		dst.WebSearch.HostedAPIKey = src.WebSearch.HostedAPIKey
+	}
+	if src.WebSearch.HostedBaseURL != "" {
+		dst.WebSearch.HostedBaseURL = src.WebSearch.HostedBaseURL
+	}
 	if src.Mcp.ImageMode != "" {
 		dst.Mcp.ImageMode = src.Mcp.ImageMode
 	}

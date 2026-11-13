@@ -172,6 +172,8 @@ type (
 	WebDownload     = web.WebDownload
 	WebSearch       = web.WebSearch
 	WebSearchResult = web.WebSearchResult
+	// HostedSearchConfig enables optional provider-hosted web search.
+	HostedSearchConfig = web.HostedSearchConfig
 )
 
 var (

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 	"time"
 
 	"supercli/internal/account/usagecost"
@@ -195,17 +194,7 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	reg.MustRegister(tools.NewWebFetch().Spec())
 	reg.MustRegister(tools.NewBrowser().Spec())
 	reg.MustRegister(codeIntel.WrapMutation(tools.NewWebDownload(home).Spec()))
-	batchWebEngine := tomlCfg.WebSearch.Engine
-	batchWebKey := tomlCfg.WebSearch.APIKey
-	if batchWebKey == "" {
-		switch strings.ToLower(batchWebEngine) {
-		case "brave":
-			batchWebKey = os.Getenv("BRAVE_API_KEY")
-		case "tavily":
-			batchWebKey = os.Getenv("TAVILY_API_KEY")
-		}
-	}
-	batchWeb := tools.NewWebSearch(batchWebEngine, batchWebKey, tomlCfg.WebSearch.BaseURL)
+	batchWeb := newConfiguredWebSearch(tomlCfg)
 	reg.MustRegister(batchWeb.Spec())
 	reg.MustRegister(batchWeb.LookupSpec())
 	reg.MarkAlwaysOn("web_lookup")
