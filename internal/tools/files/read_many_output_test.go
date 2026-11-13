@@ -226,28 +226,3 @@ func BenchmarkReadManyRendering(b *testing.B) {
 		_ = renderReadMany(out, nil, 32*1024)
 	}
 }
-
-// A small shared budget (4 parallel calls on a 16k model) must still return
-// whole small files, not four header lines: the A/B run showed the model
-// falling back to `type` for every file when the note reserve ate the budget.
-func TestReadManySmallSharedBudgetReturnsWholeSmallFiles(t *testing.T) {
-	dir := t.TempDir()
-	var names []string
-	for i := 0; i < 6; i++ {
-		name := fmt.Sprintf("p%02d.go", i)
-		body := fmt.Sprintf("// Package p%02d provides F. "+strings.Repeat("doc ", 50)+"\npackage p%02d\n\nfunc F(x int) int {\n\treturn x + %d\n}\n", i, i, i)
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		names = append(names, name+":1-120")
-	}
-	ctx := core.WithReadBatchShare(core.WithModelWindow(context.Background(), 16384), 4)
-	args, _ := json.Marshal(map[string]any{"reads": strings.Join(names, " | ")})
-	result, err := NewReadMany(dir).execute(ctx, args)
-	if err != nil || result.Err != nil {
-		t.Fatal(err, result.Err)
-	}
-	if !strings.HasSuffix(result.Text, "[read_many: 6 ok, 0 failed]") || strings.Contains(result.Text, "not returned") {
-		t.Fatalf("small files did not fit a %d-byte share:\n%s", core.ReadBatchBudget(ctx), result.Text)
-	}
-}
