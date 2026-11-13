@@ -105,14 +105,6 @@ func (l *Loop) invokeToolCallsBatch(ctx context.Context, toolCalls []llm.ToolCal
 	// BEFORE any registry lookup, so allReadOnlyCalls / toolConflictWaves
 	// / dispatch all see names that actually exist.
 	toolCalls = l.rewritePlaceholderToolCalls(toolCalls, messages)
-	// Parallel read_many calls share one step's read budget.
-	batchReads := 0
-	for _, tc := range toolCalls {
-		if tc.Name == "read_many" {
-			batchReads++
-		}
-	}
-	ctx = core.WithReadBatchShare(ctx, batchReads)
 	// Independent reads do not touch the model backend and cannot conflict
 	// with one another. Run them concurrently on both local and cloud setups;
 	// the results are still appended in call order for a stable prompt.
