@@ -136,6 +136,82 @@ func TestImageSuccessRequiresConfirmationAndPersistsMetadata(t *testing.T) {
 	}
 }
 
+func TestImageReusesProviderKeyOnlyForSameBaseURL(t *testing.T) {
+	var auth atomic.Value
+	tool := configuredTool(t, "image", func(w http.ResponseWriter, r *http.Request) {
+		auth.Store(r.Header.Get("Authorization"))
+		imageResponse(w, tinyPNG)
+	})
+	tool.cfg.APIKeyEnv, tool.cfg.APIKeyProvider = "", "openai"
+	tool.lookupEnv = func(string) string { t.Error("env read"); return "" }
+	base := tool.cfg.BaseURL
+	tool.WithProviderKeys(func(name string) (string, string, bool) { return base + "/", "provider-key", name == "openai" })
+	if _, err := run(t, tool, `{"prompt":"x"}`); err != nil || auth.Load() != "Bearer provider-key" {
+		t.Fatalf("err=%v auth=%v", err, auth.Load())
+	}
+	auth.Store("")
+	tool.WithProviderKeys(func(string) (string, string, bool) { return "https://other.example/v1", "provider-key", true })
+	if _, err := run(t, tool, `{"prompt":"x"}`); err == nil || auth.Load() != "" {
+		t.Fatalf("key sent to mismatched base: err=%v auth=%v", err, auth.Load())
+	}
+}
+
+func TestImageAcceptsAnimatedGIFOutput(t *testing.T) {
+	gif := []byte("GIF89a\x01\x00\x01\x00\x00\x00\x00;")
+	var body map[string]any
+	tool := configuredTool(t, "image", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		imageResponse(w, gif)
+	})
+	tool.cfg.AllowedParameters = []string{"output_format", "frame_count", "frame_duration_ms"}
+	res, err := run(t, tool, `{"prompt":"x","parameters":{"output_format":"gif","frame_count":9,"frame_duration_ms":200}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var meta Output
+	_ = json.Unmarshal([]byte(res.Text), &meta)
+	if meta.MediaType != "image/gif" || !strings.HasSuffix(meta.Path, ".gif") || body["frame_count"] != float64(9) {
+		t.Fatalf("meta=%+v body=%v", meta, body)
+	}
+}
+
+func TestImageModelOverrideLocalServerAndErrorMessage(t *testing.T) {
+	var body map[string]any
+	var auth string
+	fail := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth = r.Header.Get("Authorization")
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if fail {
+			w.WriteHeader(400)
+			fmt.Fprint(w, `{"error":{"message":"Invalid size for key local-secret\nline"}}`)
+			return
+		}
+		imageResponse(w, tinyPNG)
+	}))
+	defer server.Close()
+	// Real local transport: no test HTTP switch, no injected client.
+	cfg := &config.MediaGenerationProviderConf{Enabled: true, Provider: "openai", BaseURL: server.URL, Model: "local-default"}
+	tool := newTool(t.TempDir(), "image", cfg, func(context.Context, string) error { return nil })
+	if _, err := run(t, tool, `{"prompt":"x","model":"gpt-image-2.6-flare"}`); err != nil {
+		t.Fatal(err)
+	}
+	if body["model"] != "gpt-image-2.6-flare" || auth != "" {
+		t.Fatalf("body=%v auth=%q", body, auth)
+	}
+	if _, err := run(t, tool, `{"prompt":"x","model":"https://evil.test/x"}`); err == nil {
+		t.Fatal("URL model accepted")
+	}
+	fail = true
+	cfg.APIKeyEnv = "LOCAL_KEY"
+	tool = newTool(t.TempDir(), "image", cfg, func(context.Context, string) error { return nil })
+	tool.lookupEnv = func(string) string { return "local-secret" }
+	_, err := run(t, tool, `{"prompt":"x"}`)
+	if err == nil || !strings.Contains(err.Error(), "Invalid size for key [redacted] line") || strings.Contains(err.Error(), "local-secret") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestGenerationDisabledOrUnconfirmedNeverSends(t *testing.T) {
 	for _, mode := range []string{"disabled", "nil-config", "missing-confirm", "denied", "missing-key", "invalid-provider", "invalid-url", "model-url"} {
 		t.Run(mode, func(t *testing.T) {
@@ -155,7 +231,7 @@ func TestGenerationDisabledOrUnconfirmedNeverSends(t *testing.T) {
 			case "invalid-provider":
 				tool.cfg.Provider = "sora"
 			case "invalid-url":
-				tool.cfg.BaseURL = "http://localhost"
+				tool.cfg.BaseURL = "http://example.com"
 				tool.allowTestHTTP = false
 			case "model-url":
 				tool.cfg.Model = "https://evil.test/steal"

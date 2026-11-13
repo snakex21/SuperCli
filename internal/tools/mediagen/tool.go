@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"regexp"
@@ -43,6 +44,13 @@ type Tool struct {
 	timeoutOverride time.Duration
 	pollOverride    time.Duration
 	lookupEnv       func(string) string
+	providerKey     func(string) (string, string, bool)
+}
+
+// WithProviderKeys lets api_key_provider reuse a configured chat provider key.
+func (t *Tool) WithProviderKeys(lookup func(string) (string, string, bool)) *Tool {
+	t.providerKey = lookup
+	return t
 }
 
 func NewImage(baseDir string, cfg *config.MediaGenerationProviderConf, confirm func(context.Context, string) error) *Tool {
@@ -76,18 +84,27 @@ func (t *Tool) Spec() core.Tool {
 			}
 		}
 	}
+	fields := map[string]any{
+		"prompt":     map[string]any{"type": "string", "description": "Describe the single output to generate."},
+		"parameters": map[string]any{"type": "object", "additionalProperties": false, "properties": props, "description": "Optional explicitly configured generation parameters. Animated GIF (gpt-image-2.6 models): output_format \"gif\", frame_count 2-64, frame_duration_ms; keep frames small (e.g. 512x512)."},
+	}
+	if t.kind == "image" {
+		def := ""
+		if t.cfg != nil {
+			def = t.cfg.Model
+		}
+		fields["model"] = map[string]any{"type": "string", "description": "Optional model id; only when the user names one. Default: " + def + "."}
+	}
 	schema, _ := json.Marshal(map[string]any{
 		"type": "object", "additionalProperties": false, "required": []string{"prompt"},
-		"properties": map[string]any{
-			"prompt":     map[string]any{"type": "string", "description": "Describe the single output to generate."},
-			"parameters": map[string]any{"type": "object", "additionalProperties": false, "properties": props, "description": "Optional explicitly configured generation parameters."},
-		},
+		"properties": fields,
 	})
 	return core.Tool{Name: "generate_" + t.kind, Description: "Generate one " + t.kind + " using an explicitly configured provider after interactive confirmation. Saves a local file and returns preview metadata without attaching bytes to the model. No automatic paid fallback.", Schema: string(schema), Fn: t.Execute}
 }
 
 type arguments struct {
 	Prompt     string         `json:"prompt"`
+	Model      string         `json:"model"`
 	Parameters map[string]any `json:"parameters"`
 }
 
@@ -96,6 +113,7 @@ type runtimeConfig struct {
 	endpoint string
 	model    string
 	token    string
+	local    bool // explicitly configured loopback/private server
 	maxBytes int64
 	timeout  time.Duration
 	poll     time.Duration
@@ -133,6 +151,15 @@ func (t *Tool) execute(ctx context.Context, raw json.RawMessage) (core.Result, e
 	if strings.TrimSpace(args.Prompt) == "" || len(args.Prompt) > maxPromptBytes {
 		return core.Result{}, errors.New("prompt must contain 1–16000 bytes")
 	}
+	if m := strings.TrimSpace(args.Model); m != "" {
+		if t.kind != "image" {
+			return core.Result{}, errors.New("model override is supported only for images")
+		}
+		if err = validModel(m); err != nil {
+			return core.Result{}, err
+		}
+		rc.model = m
+	}
 	params, err := t.parameters(args.Parameters)
 	if err != nil {
 		return core.Result{}, err
@@ -140,7 +167,10 @@ func (t *Tool) execute(ctx context.Context, raw json.RawMessage) (core.Result, e
 	if t.confirm == nil {
 		return core.Result{}, errors.New("interactive generation confirmation is unavailable; no provider request was sent")
 	}
-	if rc.token == "" {
+	if rc.token == "" && !rc.local {
+		if t.cfg.APIKeyProvider != "" {
+			return core.Result{}, fmt.Errorf("provider %q has no API key", t.cfg.APIKeyProvider)
+		}
 		return core.Result{}, fmt.Errorf("configured API key environment variable %s is empty", t.cfg.APIKeyEnv)
 	}
 	encoded, _ := json.Marshal(params)
@@ -154,7 +184,10 @@ func (t *Tool) execute(ctx context.Context, raw json.RawMessage) (core.Result, e
 	ctx, cancel := context.WithTimeout(ctx, rc.timeout)
 	defer cancel()
 	client := t.client
-	if client == nil {
+	if client == nil && rc.local {
+		client = newLocalHTTPClient()
+		defer client.CloseIdleConnections()
+	} else if client == nil {
 		client = newHTTPClient()
 		defer client.CloseIdleConnections()
 	}
@@ -188,24 +221,39 @@ func (t *Tool) validateConfig() (runtimeConfig, error) {
 	if c.Provider != expected {
 		return rc, fmt.Errorf("%s generation requires provider %q", t.kind, expected)
 	}
-	u, err := strictURL(c.BaseURL, t.allowTestHTTP)
+	u, local, err := t.baseURL(c.BaseURL)
 	if err != nil || u.RawQuery != "" {
-		return rc, errors.New("base_url must be an explicit HTTPS API root without credentials, query or fragment")
+		return rc, errors.New("base_url must be an explicit HTTPS API root (or a local http server) without credentials, query or fragment")
 	}
-	if strings.TrimSpace(c.Model) == "" || len(c.Model) > 200 || !modelPath.MatchString(c.Model) {
-		return rc, errors.New("model must be an explicitly configured model identifier")
+	if err = validModel(c.Model); err != nil {
+		return rc, err
 	}
-	for _, part := range strings.Split(c.Model, "/") {
-		if part == "" || part == "." || part == ".." {
-			return rc, errors.New("invalid model path")
-		}
-	}
-	if !envName.MatchString(c.APIKeyEnv) {
-		return rc, errors.New("api_key_env must explicitly name an environment variable")
+	rc.local = local && t.kind == "image"
+	if local && !rc.local {
+		return rc, errors.New("local media servers are supported only for images")
 	}
 	rc.base = u
 	rc.model = c.Model
-	rc.token = strings.TrimSpace(t.lookupEnv(c.APIKeyEnv))
+	if name := strings.TrimSpace(c.APIKeyProvider); name != "" {
+		if t.providerKey == nil {
+			return rc, errors.New("api_key_provider is unavailable here")
+		}
+		base, key, ok := t.providerKey(name)
+		if !ok {
+			return rc, fmt.Errorf("api_key_provider %q is not a configured global provider", name)
+		}
+		if strings.TrimRight(strings.TrimSpace(base), "/") != strings.TrimRight(u.String(), "/") {
+			return rc, fmt.Errorf("api_key_provider %q base_url must equal media base_url %s", name, u.String())
+		}
+		rc.token = strings.TrimSpace(key)
+	} else if rc.local && c.APIKeyEnv == "" {
+		// Local servers commonly need no key.
+	} else {
+		if !envName.MatchString(c.APIKeyEnv) {
+			return rc, errors.New("api_key_env or api_key_provider is required")
+		}
+		rc.token = strings.TrimSpace(t.lookupEnv(c.APIKeyEnv))
+	}
 	if strings.ContainsAny(rc.token, "\r\n\x00") {
 		return rc, errors.New("configured API key contains invalid characters")
 	}
@@ -263,12 +311,43 @@ func (t *Tool) validateConfig() (runtimeConfig, error) {
 	return rc, nil
 }
 
+func validModel(m string) error {
+	if strings.TrimSpace(m) == "" || len(m) > 200 || !modelPath.MatchString(m) {
+		return errors.New("model must be a plain model identifier")
+	}
+	for _, part := range strings.Split(m, "/") {
+		if part == "" || part == "." || part == ".." {
+			return errors.New("invalid model path")
+		}
+	}
+	return nil
+}
+
+// baseURL accepts public HTTPS roots, or an explicitly configured local server
+// (localhost, loopback or private IP literal) over http or https.
+func (t *Tool) baseURL(raw string) (*url.URL, bool, error) {
+	if u, err := url.Parse(raw); err == nil && u.Host != "" && u.User == nil && u.Fragment == "" && u.Opaque == "" &&
+		(u.Scheme == "http" || u.Scheme == "https") && localHost(u.Hostname()) && !t.allowTestHTTP {
+		return u, true, nil
+	}
+	u, err := strictURL(raw, t.allowTestHTTP)
+	return u, false, err
+}
+
+func localHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip, err := netip.ParseAddr(host)
+	return err == nil && ip.Zone() == "" && (ip.IsLoopback() || ip.IsPrivate())
+}
+
 func parameterType(kind, name string) string {
 	if kind == "image" {
 		switch name {
 		case "size", "quality", "background", "output_format":
 			return "string"
-		case "output_compression":
+		case "output_compression", "frame_count", "frame_duration_ms":
 			return "integer"
 		}
 	}
