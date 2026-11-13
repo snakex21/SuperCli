@@ -666,6 +666,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) (r
 			l.recordPhase("tool:"+tc.Name, time.Since(execStart))
 			return l.cancelledToolResult(tc, tools.Result{}, cause, false, out)
 		}
+		dispatchCtx = core.WithModelWindow(dispatchCtx, l.window())
 		dispatchCtx, stopProgress := withToolProgress(dispatchCtx, tc.ID, out)
 		defer stopProgress()
 		if havePreparedInvocation {

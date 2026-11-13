@@ -20,6 +20,9 @@ const (
 	// A bounded batch replaces multiple independent reads. Avoid truncating a
 	// modest batch only because their combined output exceeds a single read.
 	ModelReadBatchInlineBytes = 12 * 1024
+	// ModelWebFetchInlineBytes covers web_fetch's largest default window
+	// (14000 characters of mostly two-byte text) plus its link/data footer.
+	ModelWebFetchInlineBytes = 24 * 1024
 	// ModelOutputPreviewBytes is shared by structured and generic previews.
 	ModelOutputPreviewBytes = outputPreviewHead + outputPreviewTail
 	outputPreviewHead       = 3 * 1024
@@ -279,8 +282,14 @@ func (s *OutputStore) ReadOutputTool() Tool {
 
 // Other tool families keep their existing output limits.
 func modelInlineLimit(toolName string) int {
-	if toolName == "read_many" {
+	switch toolName {
+	case "read_many":
 		return ModelReadBatchInlineBytes
+	case "web_fetch":
+		// web_fetch sizes its own default page window from the model's
+		// context window and offers offset paging; only an explicit large
+		// max_chars should fall back to a stored preview.
+		return ModelWebFetchInlineBytes
 	}
 	return outputInlineBytes
 }
