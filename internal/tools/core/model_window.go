@@ -52,7 +52,7 @@ type readBatchShareKey struct{}
 
 // readBatchShareMin keeps a shared batch budget large enough for one
 // ordinary source file's worth of lines.
-const readBatchShareMin = 2 * 1024
+const readBatchShareMin = 3 * 1024
 
 // WithReadBatchShare records how many read_many calls one model step issued
 // together. ReadBatchBudget is a per-step allowance: four parallel batches on
