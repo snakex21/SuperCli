@@ -422,6 +422,9 @@ type Loop struct {
 	// non-blocking claim check on the final answer.
 	verifyTrail verificationTrail
 
+	// checkCycles notices edits that return to versions already shown to
+	// fail the same check, and stops such a loop after a few repeats.
+	checkCycles checkCycles
 
 	// identicalWrites blocks an identical successful mutation that has
 	// already been applied repeatedMutationLimit times in a Run.
@@ -1011,6 +1014,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	l.concreteFailure.Store(false)
 	l.failedChecks.reset()
 	l.verifyTrail.reset()
+	l.checkCycles.reset()
 	l.emptyReplyNudges = 0
 	l.resetPostReview(prompt)
 	l.finalReplyOnly = false
