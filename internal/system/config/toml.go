@@ -435,14 +435,24 @@ type CouncilConf struct {
 }
 
 // WebSearchConf is the [web_search] section of config.toml.
-// Engine: "duckduckgo" (default, no key), "brave", "tavily", or
+// Engine: "duckduckgo" (default, no key), "brave", "tavily", "exa" or
 // "searxng". BaseURL is required only for SearXNG.
-// APIKey is required for brave/tavily; env vars BRAVE_API_KEY /
-// TAVILY_API_KEY are used as fallbacks by main.go.
+// APIKey is required for brave/tavily/exa; env vars BRAVE_API_KEY /
+// TAVILY_API_KEY / EXA_API_KEY are used as fallbacks.
+//
+// Hosted optionally answers searches with a provider's own web search tool
+// and falls back to the engines above on any failure: "off" (default),
+// "openai", "xai" or "auto" (the first of those with a key). HostedAPIKey
+// defaults to OPENAI_API_KEY / XAI_API_KEY, then to a configured provider
+// for that API; HostedModel and HostedBaseURL default per provider.
 type WebSearchConf struct {
-	Engine  string `toml:"engine"`
-	APIKey  string `toml:"api_key"`
-	BaseURL string `toml:"base_url"`
+	Engine        string `toml:"engine"`
+	APIKey        string `toml:"api_key"`
+	BaseURL       string `toml:"base_url"`
+	Hosted        string `toml:"hosted,omitempty"`
+	HostedModel   string `toml:"hosted_model,omitempty"`
+	HostedAPIKey  string `toml:"hosted_api_key,omitempty"`
+	HostedBaseURL string `toml:"hosted_base_url,omitempty"`
 }
 
 // CodexAuthConf is the [codex_auth] section of config.toml.
