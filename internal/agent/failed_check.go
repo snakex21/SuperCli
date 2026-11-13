@@ -331,6 +331,7 @@ func (l *Loop) recordCheckResult(tc llm.ToolCall, result tools.Result) {
 		}
 	}
 	l.failedChecks.record(observation)
+	l.verifyTrail.observe(args.Command, failed)
 	if l.verificationObserver != nil {
 		l.verificationObserver(observation)
 	}
