@@ -10,6 +10,7 @@ import (
 
 	"supercli/internal/account/codexauth"
 	"supercli/internal/llm"
+	"supercli/internal/system/config"
 )
 
 type codexAccountView struct {
@@ -53,7 +54,30 @@ func (s *Server) handleCodexAccounts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out, labels := s.codexUsageViews(accounts)
-	writeJSON(w, map[string]any{"accounts": out, "usage_summary": summary, "pending_logins": s.codexPendingLogins(labels)})
+	result := map[string]any{"accounts": out, "usage_summary": summary, "pending_logins": s.codexPendingLogins(labels)}
+	for k, v := range s.codexProviderView() {
+		result[k] = v
+	}
+	writeJSON(w, result)
+}
+
+// codexProviderView names the configured ChatGPT provider and its models so the
+// GUI can offer the same "connected → start chatting" step as Claude.
+func (s *Server) codexProviderView() map[string]any {
+	out := map[string]any{}
+	for _, p := range s.eng.providerManager().ListConfigured(s.eng.caps) {
+		if p.Type != config.ProviderCodex {
+			continue
+		}
+		models := []string{}
+		for _, m := range p.Models {
+			models = append(models, m.ID)
+		}
+		_, active, _ := s.eng.RuntimeSelection()
+		out["provider"], out["models"], out["active_model"] = p.Name, models, active
+		break
+	}
+	return out
 }
 
 // handleCodexUsage is an explicit manual refresh. Cached GETs never call it.

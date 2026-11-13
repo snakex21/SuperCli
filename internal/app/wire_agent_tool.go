@@ -67,6 +67,7 @@ func wireAgentTool(w agentToolWiring) (*agent.AgentTool, error) {
 		at.WorkerProfile = &profile
 		if u := w.taskWorkerCfg.BaseURL; u != "" &&
 			w.taskWorkerCfg.Provider != config.ProviderAnthropic &&
+			w.taskWorkerCfg.Provider != config.ProviderClaude &&
 			w.taskWorkerCfg.Provider != config.ProviderCodex {
 			key := w.taskWorkerCfg.APIKey
 			at.WorkerPing = func(pctx context.Context) error {

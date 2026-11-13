@@ -61,6 +61,30 @@ test('browser login can be reloaded manually from cached accounts without usage 
  assert.equal(reads,1);assert.match(h.c.panelContent.text(),/logging in/);
  await reload.click();assert.equal(reads,2);assert.equal(h.requests.length,0);
 });
+test('browser login is watched until done, then confirmed and models reloaded',async()=>{
+ const h=fixture(),timers=[],toasts=[];let reads=0,models=0,stats=0;
+ h.c.setTimeout=fn=>{timers.push(fn);return timers.length;};h.c.toast=m=>toasts.push(m);h.c.loadModels=()=>{models++;};h.c.renderStats=()=>{stats++;};
+ h.c.j=async()=>{reads++;return {accounts:[{label:'default',login_in_progress:reads<2,logged_in:reads>=2}]};};
+ h.c.watchCodexLogin('default');assert.equal(timers.length,1);
+ await timers.shift()();assert.equal(toasts.length,0);assert.equal(timers.length,1,'still in progress keeps watching');
+ await timers.shift()();assert.equal(timers.length,0);
+ assert.deepEqual(toasts,[copy['acct.loginDone']]);assert.equal(models,1);assert.equal(stats,1);
+ h.c.j=async()=>({accounts:[{label:'default',login_in_progress:false,logged_in:false,login_error:'denied'}]});
+ h.c.watchCodexLogin('default');await timers.shift()();assert.match(toasts[1],/denied/);
+});
+test('finished browser login opens the same connected screen as Claude and starts chatting',async()=>{
+ const h=fixture(),timers=[];let closed=0,models=0;
+ h.c.setTimeout=fn=>{timers.push(fn);return 1;};h.c.loadModels=async()=>{models++;};h.c.renderStats=async()=>{};h.c.closePanel=()=>{closed++;};
+ h.c.document={createElement:tag=>new Node(tag),getElementById:()=>null};
+ h.c.j=async()=>({accounts:[{label:'default',logged_in:true,email:'a@b.c'}],provider:'chatgpt',models:['gpt-a','gpt-b'],active_model:'gpt-b'});
+ h.c.watchCodexLogin('default');await timers.shift()();
+ const screen=h.c.panelContent.all('codex-auth')[0];assert.ok(screen,'connected screen shown');
+ assert.match(screen.text(),new RegExp(copy['acct.loginDone']));assert.match(screen.text(),/a@b\.c/);
+ const select=screen.all('field-select')[0];assert.equal(select.children.length,2);select.value='gpt-a';
+ await screen.all('claude-auth-primary')[0].click();
+ assert.deepEqual(JSON.parse(JSON.stringify(h.requests.at(-1))),{url:'/api/model',body:{provider:'chatgpt',model:'gpt-a'}});
+ assert.equal(closed,1);assert.ok(models>=2);
+});
 test('limits renderer never schedules automatic refresh or exposes raw limits JSON',()=>{
  assert.doesNotMatch(source,/setTimeout\(sections\.accounts|setInterval\(/);assert.doesNotMatch(source,/JSON\.stringify\(a\.limits/);
 });
