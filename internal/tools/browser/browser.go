@@ -497,7 +497,8 @@ func formatSnapshot(snap snapshot, before string, a args) string {
 	}
 	b.WriteString(web.FenceUntrusted("page-elements", list.String()))
 	if snap.More > 0 {
-		fmt.Fprintf(&b, "\n(%d more elements not listed; use action=read for the full text)", snap.More)
+		fmt.Fprintf(&b, "\n(%d more elements not listed; call browser with action=read for the full text)", snap.More)
 	}
+	b.WriteString("\nWhen finished with the page, call browser with action=close.")
 	return b.String()
 }
