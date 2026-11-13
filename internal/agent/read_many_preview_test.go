@@ -13,7 +13,7 @@ import (
 	"supercli/internal/tools"
 )
 
-func TestReadManyBudgetedBatchReachesBothModelRoutes(t *testing.T) {
+func TestReadManyBalancedPreviewReachesBothModelRoutes(t *testing.T) {
 	for _, thin := range []bool{false, true} {
 		name := "native"
 		if thin {
@@ -67,15 +67,13 @@ func TestReadManyBudgetedBatchReachesBothModelRoutes(t *testing.T) {
 					preview = message.Content
 				}
 			}
-			// Whole ranges up to the budget, the missing file's error, and a
-			// ready continuation for the rest; never a trimmed middle.
-			if len(preview) > 32*1024+512 || !strings.Contains(preview, "error: not_found") ||
-				!strings.Contains(preview, "[incomplete: ") || !strings.Contains(preview, "Next: read_many reads=") ||
-				strings.Contains(preview, "omitted") {
+			if len(preview) > 4400 || !strings.Contains(preview, "error: not_found") || !strings.Contains(preview, "handle=out_") {
 				t.Fatalf("bad provider payload (%d): %s", len(preview), preview)
 			}
-			if !strings.Contains(preview, "source11.txt:1-100") {
-				t.Fatalf("model lost the last file: %s", preview)
+			for i := 0; i < 12; i++ {
+				if !strings.Contains(preview, fmt.Sprintf("== [%d] source%d.txt:1-100 ==", i+1, i)) {
+					t.Fatalf("model lost file %d: %s", i, preview)
+				}
 			}
 		})
 	}

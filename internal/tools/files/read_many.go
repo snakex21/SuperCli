@@ -10,13 +10,14 @@ import (
 	"strings"
 	"sync"
 
-	"supercli/internal/tools/core"
 	"supercli/internal/tools/fileops"
 )
 
 const (
 	maxReadManyRequests = 12
 	maxReadManyRange    = 300
+	maxReadManyBytes    = 32 * 1024
+	maxReadManyItem     = 8 * 1024
 )
 
 // ReadMany reads independent line ranges in one tool call. It is useful on
@@ -68,15 +69,12 @@ func (t *ReadMany) execute(ctx context.Context, args json.RawMessage) (Result, e
 	if len(requests) == 0 {
 		return Result{Err: fmt.Errorf("read_many: reads is empty")}, nil
 	}
+	if len(requests) > maxReadManyRequests {
+		return Result{Err: fmt.Errorf("read_many: %d reads exceeds cap %d", len(requests), maxReadManyRequests)}, nil
+	}
 	work := expandReadManyRequests(t.BaseDir, requests)
-	// Ranges past the cap are not an error: they are named in the result as
-	// not returned, so the model continues instead of resending everything.
-	var overflow []readManyRequest
 	if len(work) > maxReadManyRequests {
-		for _, item := range work[maxReadManyRequests:] {
-			overflow = append(overflow, item.request)
-		}
-		work = work[:maxReadManyRequests]
+		return Result{Err: fmt.Errorf("read_many: glob expansion produced %d reads, exceeds cap %d", len(work), maxReadManyRequests)}, nil
 	}
 
 	outcomes := make([]readManyOutcome, len(work))
@@ -123,10 +121,11 @@ func (t *ReadMany) execute(ctx context.Context, args json.RawMessage) (Result, e
 		for j := range lines {
 			lines[j].Content = strings.TrimSuffix(lines[j].Content, "\r")
 		}
-		outcomes[i].lines, outcomes[i].eof = lines, eof
+		outcomes[i].text = renderLinesWithEOF(lines, eof)
 		request, requestedTo := outcomes[i].request, work[i].request.To
 		if request.To < requestedTo && !eof {
-			outcomes[i].capped = requestedTo
+			outcomes[i].text += fmt.Sprintf("[range capped at %d lines; requested lines %d-%d not read]\n",
+				maxReadManyRange, request.To+1, requestedTo)
 		}
 	}
 	var wg sync.WaitGroup
@@ -160,16 +159,13 @@ func (t *ReadMany) execute(ctx context.Context, args json.RawMessage) (Result, e
 	}
 	wg.Wait()
 
-	return renderReadMany(outcomes, overflow, core.ReadBatchBudget(ctx)), nil
+	return renderReadMany(outcomes), nil
 }
 
 type readManyOutcome struct {
 	request readManyRequest
-	lines   []fileops.LineRange
-	eof     bool
-	// capped is the originally requested end line when the range cap cut it.
-	capped int
-	err    error
+	text    string
+	err     error
 }
 
 type readManyWork struct {
