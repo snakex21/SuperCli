@@ -100,7 +100,7 @@ func (t *WebSearch) LookupSpec() Tool {
 		ReuseTTL:    2 * time.Minute,
 		RefreshArg:  "refresh",
 		NextTools:   []string{"web_fetch", "web_download"},
-		Description: "Search the live public web for current facts, new candidate URLs or external references. This does not open, inspect or download a supplied URL. Returns search hits and snippets. Read a known page with web_fetch(url); save a known file URL with web_download(url,path), without another search. Set refresh=true only when a fresh network search is needed instead of reusing a recent result.",
+		Description: "Search the live public web for current facts, new candidate URLs or external references. This does not open, inspect or download a supplied URL: when the user already gave a URL, call web_fetch(url) alone instead of searching. Returns search hits and snippets. Read a known page with web_fetch(url); save a known file URL with web_download(url,path), without another search. Set refresh=true only when a fresh network search is needed instead of reusing a recent result.",
 		Schema:      `{"type":"object","properties":{"query":{"type":"string","description":"Search terms. Use a full URL to find external mentions or references to it; use web_fetch to read a known page or web_download to save a known file."},"refresh":{"type":"boolean","description":"Bypass recent result reuse and the search cache to make a fresh network search (default false)."}},"required":["query"]}`,
 		Fn:          t.lookup,
 	}
