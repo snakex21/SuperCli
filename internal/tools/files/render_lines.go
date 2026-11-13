@@ -39,7 +39,14 @@ func renderLines(lines []fileops.LineRange) string {
 func renderLinesWithEOF(lines []fileops.LineRange, eof bool) string {
 	var b strings.Builder
 	for i, l := range lines {
-		row := renderLineRow(l)
+		content := l.Content
+		lineTrunc := ""
+		if len(content) > maxReadLineChars {
+			over := len(content) - maxReadLineChars
+			content = content[:maxReadLineChars]
+			lineTrunc = fmt.Sprintf(" …[+%d chars on this line truncated; use ctx_execute for the full line]", over)
+		}
+		row := fmt.Sprintf("%4d | %s%s\n", l.Number, content, lineTrunc)
 		if b.Len()+len(row) > maxReadOutputBytes && b.Len() > 0 {
 			remaining := len(lines) - i
 			fmt.Fprintf(&b, "... (output truncated at %d KB; %d more line(s) not shown — request line %d onward, or a smaller range)\n",
@@ -53,16 +60,4 @@ func renderLinesWithEOF(lines []fileops.LineRange, eof bool) string {
 		fmt.Fprintf(&b, "[end of file at line %d]\n", lines[len(lines)-1].Number)
 	}
 	return b.String()
-}
-
-// renderLineRow formats one numbered line with the per-line cap.
-func renderLineRow(l fileops.LineRange) string {
-	content := l.Content
-	lineTrunc := ""
-	if len(content) > maxReadLineChars {
-		over := len(content) - maxReadLineChars
-		content = content[:maxReadLineChars]
-		lineTrunc = fmt.Sprintf(" …[+%d chars on this line truncated; use ctx_execute for the full line]", over)
-	}
-	return fmt.Sprintf("%4d | %s%s\n", l.Number, content, lineTrunc)
 }

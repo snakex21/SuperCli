@@ -62,7 +62,7 @@ func (s *OutputStore) Compact(toolName, text string) string {
 }
 
 func (s *OutputStore) CompactContext(ctx context.Context, toolName, text string) string {
-	if s == nil || toolName == "read_output" || len(text) <= modelInlineLimit(ctx, toolName) {
+	if s == nil || toolName == "read_output" || len(text) <= modelInlineLimit(toolName) {
 		return text
 	}
 	handle, ok, saved := s.retain(ctx, text)
@@ -87,7 +87,7 @@ func (s *OutputStore) ModelContent(toolName string, result Result) string {
 func (s *OutputStore) ModelContentContext(ctx context.Context, toolName string, result Result) string {
 	if result.Err == nil && toolName != "read_output" && result.ModelText != "" &&
 		result.ModelPreview == "" && result.RetainedText == "" &&
-		len(result.Text) <= modelInlineLimit(ctx, toolName) && len(result.ModelText) <= modelInlineLimit(ctx, toolName) {
+		len(result.Text) <= modelInlineLimit(toolName) && len(result.ModelText) <= modelInlineLimit(toolName) {
 		// This view is complete; storing the original merely to expose a different
 		// format would add I/O and an unnecessary read_output hint.
 		return result.ModelText
@@ -106,7 +106,7 @@ func (s *OutputStore) ModelContentContext(ctx context.Context, toolName string, 
 	}
 	if s != nil && toolName != "read_output" && result.RetainedText != "" {
 		content := result.ModelContent()
-		if result.Err == nil && len(content) > modelInlineLimit(ctx, toolName) {
+		if result.Err == nil && len(content) > modelInlineLimit(toolName) {
 			content = HeadTail(content, outputPreviewHead, outputPreviewTail)
 		}
 		return s.retainBehind(ctx, content, result.RetainedText)
@@ -281,12 +281,10 @@ func (s *OutputStore) ReadOutputTool() Tool {
 }
 
 // Other tool families keep their existing output limits.
-func modelInlineLimit(ctx context.Context, toolName string) int {
+func modelInlineLimit(toolName string) int {
 	switch toolName {
 	case "read_many":
-		// read_many packs whole ranges up to ReadBatchBudget and names the
-		// rest; a generic head/tail here would cut the middle of a file.
-		return max(ModelReadBatchInlineBytes, ReadBatchBudget(ctx))
+		return ModelReadBatchInlineBytes
 	case "web_fetch":
 		// web_fetch sizes its own default page window from the model's
 		// context window and offers offset paging; only an explicit large

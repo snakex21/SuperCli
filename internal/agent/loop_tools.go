@@ -759,7 +759,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) (r
 	// attempt is read after recordFailure above, so it is the number
 	// of the failure just seen (1 = first).
 	l.logToolFailure(tc, raw, attributed, l.identicalFails.attempts(tc.Name, tc.Arguments, l.failedChecks.stateRevision()))
-	modelContent := l.registry.ModelResultContentContext(core.WithModelWindow(ctx, l.window()), tc.Name, attributed)
+	modelContent := l.registry.ModelResultContentContext(ctx, tc.Name, attributed)
 	outputHandle := retainedToolOutputHandle(tc.Name, attributed, modelContent)
 	if note := l.checkCycles.note(tc.ID); note != "" {
 		// A fact about this result (flip-flopping edits), not an instruction.
