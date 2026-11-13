@@ -340,3 +340,15 @@ func minimalPDF(line1, line2 string) []byte {
 	fmt.Fprintf(&b, "trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", len(objects)+1, xref)
 	return b.Bytes()
 }
+
+func TestWebFetchCleansSiteMarkdown(t *testing.T) {
+	md := "---\ntitle: Raspberry Pi 5 8GB\ndescription: \"Minikomputer\"\n---\n\nFast delivery and 30 days to return\n\nFast delivery and 30 days to return\n\n" +
+		strings.Repeat("![Pi 5](https://cdn.example.org/pi.jpg \"Pi 5\")\n\n", 40) + "- ![icon](https://cdn.example.org/i.png)\n\n## Cena\n\n856,90 zł brutto"
+	tool, _ := fetchFixture(t, "text/markdown; charset=utf-8", []byte(md), 200)
+	result := runFetch(t, tool, context.Background(), map[string]any{"url": "https://shop.example.org/pi5"})
+	text := result.Text
+	if result.Err != nil || strings.Contains(text, "cdn.example.org") || strings.Count(text, "Fast delivery") != 1 ||
+		!strings.Contains(text, "Title: Raspberry Pi 5 8GB") || !strings.Contains(text, "Description: Minikomputer") || !strings.Contains(text, "856,90 zł brutto") {
+		t.Fatalf("site markdown not cleaned:\n%s", text)
+	}
+}

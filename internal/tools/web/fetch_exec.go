@@ -125,14 +125,16 @@ func (t *WebFetch) execute(ctx context.Context, args json.RawMessage) (Result, e
 // fetchBudget returns the character window and its byte cap. An explicit
 // max_chars is honoured as given (large results are then retained for
 // read_output by the generic spill); the default derives from the active
-// model's context window: roughly a tenth of it, within fixed bounds.
+// model's context window: about 7% of it (models often read two pages per
+// turn, and a 16k local model must keep room for its answer), within fixed
+// bounds. Text is counted at roughly four characters per token.
 func fetchBudget(ctx context.Context, maxChars int) (chars, maxBytes int) {
 	if maxChars > 0 {
 		return min(maxChars, webFetchMaxChars), 0
 	}
 	budget := webFetchFallbackBudget
 	if window := core.ModelWindow(ctx); window > 0 {
-		budget = min(max(window*4/10, webFetchMinBudget), webFetchMaxBudget)
+		budget = min(max(window*4*7/100, webFetchMinBudget), webFetchMaxBudget)
 	}
 	return budget, budget
 }
@@ -159,9 +161,10 @@ func (t *WebFetch) get(ctx context.Context, u *url.URL) (*http.Response, error) 
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "SuperCli/1.0 (web_fetch tool)")
-	// Prefer compact Markdown/plain representations when a site exposes them;
-	// falling back to HTML keeps compatibility with ordinary pages.
-	req.Header.Set("Accept", "text/markdown;q=1.0,text/x-markdown;q=0.95,text/plain;q=0.9,text/html;q=0.8,application/xhtml+xml;q=0.7,application/pdf;q=0.6,*/*;q=0.1")
+	// Prefer HTML: the readable extractor drops boilerplate and keeps JSON-LD
+	// facts (prices, dates), which CDN-generated Markdown renderings of whole
+	// pages lose. Markdown-only and plain-text resources are still accepted.
+	req.Header.Set("Accept", "text/html;q=1.0,application/xhtml+xml;q=0.95,text/markdown;q=0.9,text/x-markdown;q=0.85,text/plain;q=0.8,application/pdf;q=0.6,*/*;q=0.1")
 	resp, err := t.client.Do(req)
 	if err != nil {
 		return nil, requestFailedErr(err, u.Host)
@@ -253,6 +256,10 @@ func (t *WebFetch) fetchDocument(ctx context.Context, u *url.URL) (*fetchedDoc, 
 		}
 	} else {
 		doc.text = strings.TrimSpace(page)
+		if fetchedMarkdown(contentType) {
+			doc.kind = "markdown"
+			doc.title, doc.description, doc.text = cleanMarkdown(page)
+		}
 	}
 	return doc, nil
 }
@@ -462,6 +469,8 @@ func (d *fetchedDoc) render(mode string, offset, budget, maxBytes int) string {
 		fmt.Fprintf(&sb, "Type: PDF, %d pages, %d characters of text\n", d.pages, total)
 	case "html":
 		fmt.Fprintf(&sb, "Type: HTML, main content extracted (menus, footers and scripts removed), %d characters\n", total)
+	case "markdown":
+		fmt.Fprintf(&sb, "Type: Markdown served by the site (images and repeated blocks removed), %d characters\n", total)
 	}
 	for _, note := range d.notes {
 		fmt.Fprintf(&sb, "Note: %s.\n", note)
