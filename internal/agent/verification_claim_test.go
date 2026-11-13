@@ -33,6 +33,8 @@ func TestClaimsVerification(t *testing.T) {
 		"Nie zweryfikowano zmian.",
 		"Summary of the project structure.",
 		"This file is unverified.",
+		"I verified this by running go test ./..., and each possible behavior fails one of the tests.",
+		"<thinking>verify that all tests pass</thinking>The tests contradict each other.",
 	} {
 		if claimsVerification(text) {
 			t.Errorf("false claim: %q", text)
@@ -43,7 +45,7 @@ func TestClaimsVerification(t *testing.T) {
 func TestVerificationClaimWarningFollowsLastCheck(t *testing.T) {
 	l := &Loop{baseDir: t.TempDir()}
 	claim := "Fixed and verified."
-	if w := l.verificationClaimWarning(claim); !strings.Contains(w, "no test or build command ran") {
+	if w := l.verificationClaimWarning(claim); !strings.Contains(w, "no command ran") {
 		t.Fatalf("no-check claim not flagged: %q", w)
 	}
 	call := llm.ToolCall{Name: "ctx_execute", Arguments: `{"command":["go","test","./..."]}`}
@@ -59,6 +61,22 @@ func TestVerificationClaimWarningFollowsLastCheck(t *testing.T) {
 	l.recordCheckResult(llm.ToolCall{Name: "ctx_execute", Arguments: `{"command":["git","status"]}`}, tools.Result{Err: errors.New("x")})
 	if w := l.verificationClaimWarning(claim); w != "" {
 		t.Fatalf("non-check command counted: %q", w)
+	}
+	// Checks inside compound shell lines count (seen with a local model).
+	compound := llm.ToolCall{Name: "ctx_execute", Arguments: `{"command":["cmd","/c","cd /d x && go test ./..."]}`}
+	l.recordCheckResult(compound, tools.Result{Text: `{"exit_code":1}`})
+	if w := l.verificationClaimWarning(claim); !strings.Contains(w, "failed: cmd /c cd /d x && go test ./...") {
+		t.Fatalf("compound check failure missed: %q", w)
+	}
+	l.recordCheckResult(llm.ToolCall{Name: "ctx_execute", Arguments: `{"command":["cmd","/c","node","--test"]}`}, tools.Result{Text: `{"exit_code":0}`})
+	if w := l.verificationClaimWarning(claim); w != "" {
+		t.Fatalf("passing node --test flagged: %q", w)
+	}
+	// A command that is not a recognisable check may be the verification.
+	other := &Loop{baseDir: t.TempDir()}
+	other.recordCheckResult(llm.ToolCall{Name: "ctx_execute", Arguments: `{"command":["go","run",".","--help"]}`}, tools.Result{Text: `{"exit_code":0}`})
+	if w := other.verificationClaimWarning(claim); w != "" {
+		t.Fatalf("unrecognised command treated as no evidence: %q", w)
 	}
 	if w := l.verificationClaimWarning("The file legacy/billing_v1.go does not exist. Which file did you mean?"); w != "" {
 		t.Fatalf("honest answer flagged: %q", w)
