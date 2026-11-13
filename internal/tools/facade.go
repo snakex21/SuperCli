@@ -8,6 +8,7 @@
 package tools
 
 import (
+	"supercli/internal/tools/browser"
 	"supercli/internal/tools/codeintel"
 	"supercli/internal/tools/core"
 	"supercli/internal/tools/files"
@@ -174,7 +175,9 @@ type (
 )
 
 var (
-	NewWebFetch    = web.NewWebFetch
+	NewWebFetch = web.NewWebFetch
+	// NewBrowser is the single headless-browser tool (open/click/type/read).
+	NewBrowser     = browser.New
 	NewWebDownload = web.NewWebDownload
 	NewWebSearch   = web.NewWebSearch
 )
