@@ -42,6 +42,10 @@ type codexRespMeta struct {
 	Usage  *codexUsage   `json:"usage,omitempty"`
 	Error  *codexError   `json:"error,omitempty"`
 	Output []codexItemEv `json:"output,omitempty"`
+	// IncompleteDetails is set on response.incomplete (e.g. max_output_tokens).
+	IncompleteDetails *struct {
+		Reason string `json:"reason"`
+	} `json:"incomplete_details,omitempty"`
 }
 
 type codexUsage struct {

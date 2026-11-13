@@ -375,7 +375,11 @@ func (p *CodexProvider) streamCodexSSE(ctx context.Context, r io.Reader, out cha
 				emit(Delta{Err: err})
 				return
 			}
-		case "response.completed":
+		case "response.completed", "response.incomplete":
+			// response.incomplete is a normal terminal event when the output
+			// budget or a content filter cut the answer short. Keep its text,
+			// tool calls and usage and report the truncation, instead of
+			// "stream ended before response.completed".
 			if ev.Response != nil {
 				for index, item := range ev.Response.Output {
 					if item.Type == "function_call" {
@@ -406,6 +410,12 @@ func (p *CodexProvider) streamCodexSSE(ctx context.Context, r io.Reader, out cha
 				}
 			}
 			d := Delta{FinishReason: "stop"}
+			if ev.Type == "response.incomplete" {
+				d.FinishReason = "length"
+				if ev.Response != nil && ev.Response.IncompleteDetails != nil && ev.Response.IncompleteDetails.Reason == "content_filter" {
+					d.FinishReason = "content_filter"
+				}
+			}
 			if usage != nil {
 				d.Usage = usage
 			}
