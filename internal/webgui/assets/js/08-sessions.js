@@ -288,7 +288,10 @@ async function exportSession(id) {
 }
 
 async function deleteSession(id) {
-  if ((streaming && id === activeSessionID) || backgroundRunIDs()[id]) {
+  // A detached run that already saw done/error only waits for its HTTP EOF;
+  // the server's session gate (409) is authoritative for that short tail.
+  var background = backgroundRunIDs()[id];
+  if ((streaming && id === activeSessionID) || (background && !background.terminal)) {
     toast(t("session.stopRun"));
     return;
   }
