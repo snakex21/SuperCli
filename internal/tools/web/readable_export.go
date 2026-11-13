@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // RenderReadableHTML renders already-loaded HTML (for example a browser's
@@ -55,4 +56,12 @@ func PublicHTTPURL(ctx context.Context, raw string) (*url.URL, error) {
 func FenceUntrusted(label, body string) string {
 	id := fenceID(label, body)
 	return "<<<" + label + " " + id + ">>>\n" + body + "<<<end " + label + " " + id + ">>>"
+}
+
+// PublicDialContext dials addr only when its host resolves to public
+// addresses, connecting to the verified IP (no second resolution, so DNS
+// rebinding cannot redirect the connection). The browser tool's local proxy
+// uses it for every request the headless browser makes.
+func PublicDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	return safeDial(ctx, &net.Dialer{Timeout: 10 * time.Second}, network, addr)
 }
