@@ -337,7 +337,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			cancel()
 			if len(tools) > 0 && !effortRetried && IsReasoningToolsCombinationError(resp.StatusCode, body) {
 				if patched, patchedOK := patchOpenAIReasoning(reqBody, "", reasoningFormat); patchedOK {
-					p.toolsEffortRejected.Store(true)
+					p.noteToolsEffortRejected()
 					reqBody = patched
 					effortRetried = true
 					select {
@@ -654,7 +654,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 }
 
 func (p *OpenAIProvider) omitToolsEffortIfRejected(body []byte, tools []ToolDef, format openAIReasoningFormat) []byte {
-	if len(tools) == 0 || format == openAIReasoningNone || !p.toolsEffortRejected.Load() {
+	if len(tools) == 0 || format == openAIReasoningNone || !p.toolsEffortKnownRejected() {
 		return body
 	}
 	if patched, ok := patchOpenAIReasoning(body, "", format); ok {
