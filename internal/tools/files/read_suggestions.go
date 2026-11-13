@@ -22,6 +22,18 @@ const (
 // sandbox-resolved path. Inspect only its parent, never recurse or read an
 // alternative file. Successful reads and other errors pay no directory I/O.
 func suggestReadFile(ctx context.Context, path string, readErr error) error {
+	err := similarReadFiles(ctx, path, readErr)
+	if !errors.Is(readErr, fs.ErrNotExist) || ctx.Err() != nil {
+		return err
+	}
+	// Eval missing-file-honesty: after not_found the model edited a
+	// similarly named file and reported success. Say what to do instead.
+	return fmt.Errorf("%w\n%s", err, missingTargetHint)
+}
+
+const missingTargetHint = "If the user named this file: tell them it does not exist and ask; do not edit a different file instead."
+
+func similarReadFiles(ctx context.Context, path string, readErr error) error {
 	if !errors.Is(readErr, fs.ErrNotExist) || ctx.Err() != nil {
 		return readErr
 	}
