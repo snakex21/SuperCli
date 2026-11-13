@@ -26,6 +26,7 @@ type questionOptionWire struct {
 
 type questionWire struct {
 	Confirmation bool                 `json:"confirmation,omitempty"`
+	Approval     *tools.ApprovalCard  `json:"approval,omitempty"`
 	QuestionKey  string               `json:"question_key,omitempty"`
 	QuestionArgs map[string]string    `json:"question_args,omitempty"`
 	ID           string               `json:"id"`
@@ -49,6 +50,7 @@ func (e *Engine) registerQuestion(req tools.AskRequest) questionWire {
 		out.Confirmation = true
 		out.QuestionKey = req.QuestionKey
 		out.QuestionArgs = req.QuestionArgs
+		out.Approval = req.Approval
 	}
 	for i, option := range req.Options {
 		imageURL := ""

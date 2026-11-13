@@ -270,6 +270,18 @@ var (
 	WithAskChannel      = interactive.WithAskChannel
 )
 
+// Host approval gate for risky tool operations (see core/approval.go).
+type (
+	ApprovalGate    = interactive.ApprovalGate
+	ApprovalCard    = interactive.ApprovalCard
+	ApprovalRequest = core.ApprovalRequest
+)
+
+var (
+	SetDefaultApprover  = core.SetDefaultApprover
+	WithApprovalSession = core.WithApprovalSession
+)
+
 // Workflow / agent-facing tools.
 type (
 	CheckLibraryAlternatives = workflow.CheckLibraryAlternatives

@@ -1893,6 +1893,7 @@ function closeQuestionOverlay(id) {
 }
 
 function showQuestion(q) {
+  if (q.approval && typeof showApprovalCard === "function") { showApprovalCard(q); return; }
   closeQuestionOverlay(q.id);
   var overlay = el("div", "question-inline");
   var panel = el("form", "question-panel");

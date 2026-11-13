@@ -241,6 +241,8 @@ type SlashHandler func(ctx context.Context, args string) (string, error)
 // pendingAsk is the live state of an active ask_user interaction.
 type pendingAsk struct {
 	Confirmation bool
+	// Approval is set for a host approval gate request (y/n/a prompt).
+	Approval     *tools.ApprovalCard
 	detailOffset int
 	ID           string
 	done         <-chan struct{}
