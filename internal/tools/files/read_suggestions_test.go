@@ -78,7 +78,7 @@ func TestReadSuggestionsAreShortLocalAndBestEffort(t *testing.T) {
 	}
 	path := filepath.Join(dir, "source.go")
 	original := fileops.FileErr(os.ErrNotExist, path)
-	got := suggestReadFile(context.Background(), path, original)
+	got := similarReadFiles(context.Background(), path, original)
 	want := "Similar files (same directory): \"source_a.go\", \"source_b.go\", \"source_c.go\""
 	if !strings.HasSuffix(got.Error(), want) || !errors.Is(got, os.ErrNotExist) {
 		t.Fatalf("suggestions: %v", got)
@@ -96,7 +96,7 @@ func TestReadSuggestionsAreShortLocalAndBestEffort(t *testing.T) {
 	for _, missing := range []string{"unknown.go", "source.json", "missing/source.go"} {
 		full := filepath.Join(dir, missing)
 		err := fileops.FileErr(os.ErrNotExist, full)
-		if suggestReadFile(context.Background(), full, err) != err {
+		if similarReadFiles(context.Background(), full, err) != err {
 			t.Fatalf("irrelevant or recursive suggestion for %s", missing)
 		}
 	}
@@ -142,7 +142,27 @@ func TestReadSuggestionsSkipSymlinks(t *testing.T) {
 	}
 	path := filepath.Join(dir, "source.go")
 	original := fileops.FileErr(os.ErrNotExist, path)
-	if suggestReadFile(context.Background(), path, original) != original {
+	if similarReadFiles(context.Background(), path, original) != original {
 		t.Fatal("suggested symlink")
+	}
+}
+
+// A missing file the user named must not be quietly replaced by another one:
+// every not_found read error says so, with or without similar names.
+func TestMissingFileErrorTellsModelNotToSubstitute(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "fees.go"), []byte("package billing\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"billing_v1.go", "fees_v1.go"} {
+		path := filepath.Join(dir, name)
+		got := suggestReadFile(context.Background(), path, fileops.FileErr(os.ErrNotExist, path))
+		if !errors.Is(got, os.ErrNotExist) || !strings.Contains(got.Error(), "do not edit a different file") {
+			t.Fatalf("%s: %v", name, got)
+		}
+	}
+	result, _ := NewReadMany(dir).execute(context.Background(), []byte(`{"reads":"legacy/billing_v1.go"}`))
+	if result.Err == nil || !strings.Contains(result.Err.Error(), "tell them it does not exist and ask") {
+		t.Fatalf("read_many lost the hint: %v", result.Err)
 	}
 }
