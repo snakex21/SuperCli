@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"supercli/internal/account/claudeauth"
+	"supercli/internal/account/codexauth"
 	"supercli/internal/llm"
 )
 
@@ -130,4 +131,46 @@ func (m Model) subscriptionRemainingLabel() string {
 		return m.tr("tui.menu_usage.8c7eadf499") + " · —"
 	}
 	return strings.ReplaceAll(m.tr("subscription.remaining"), "{value}", strings.Join(labels, " · "))
+}
+
+// tuiSubscriptionRefresher is process-wide: Model is a value type, while the
+// throttle and single-flight state must survive menu reopenings.
+var tuiSubscriptionRefresher llm.SubscriptionUsageRefresher
+
+// subscriptionAccountLoggedIn reads only local account metadata.
+func subscriptionAccountLoggedIn(dataDir string) bool {
+	if dataDir == "" {
+		return false
+	}
+	if claudeauth.NewManager(dataDir, claudeauth.Options{}).LoggedIn() {
+		return true
+	}
+	accounts, _, _ := llm.ListCodexAccountUsage(dataDir)
+	for _, a := range accounts {
+		if a.LoggedIn {
+			return true
+		}
+	}
+	return false
+}
+
+// subscriptionAutoRefreshCmd refreshes due quota snapshots in the background
+// (throttled, single-flight, silent on failure) and, only when something
+// changed, re-runs then so the usage menu shows the new snapshot.
+func (m Model) subscriptionAutoRefreshCmd(then tea.Cmd) tea.Cmd {
+	if !subscriptionAccountLoggedIn(m.dataDir) {
+		return nil
+	}
+	dataDir := m.dataDir
+	opts := codexauth.Options{}
+	if m.providerMgr != nil {
+		opts = m.providerMgr.CodexAuthOptions()
+	}
+	return func() tea.Msg {
+		refreshed, _ := tuiSubscriptionRefresher.RefreshDue(context.Background(), dataDir, opts, "")
+		if !refreshed || then == nil {
+			return nil
+		}
+		return then()
+	}
 }

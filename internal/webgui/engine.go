@@ -56,6 +56,7 @@ type Engine struct {
 	hostPowerClosed bool
 	syncHub         syncHub
 	chatLifetime    chatLifetime
+	subUsage        llm.SubscriptionUsageRefresher
 	mu              sync.RWMutex
 	cfg             config.Config
 	dataDir         string

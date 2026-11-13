@@ -60,6 +60,7 @@ document.addEventListener("keydown", function (e) {
 	loadPromptQueue();
 	loadWorkers();
   renderStats();
+  if (typeof startSubscriptionUsageAutoRefresh === "function") startSubscriptionUsageAutoRefresh();
   setInterval(checkHealth, 30000);
 	setInterval(function () {
 	  var tasksTab = $("#side-tabs button[data-tab='tasks']");

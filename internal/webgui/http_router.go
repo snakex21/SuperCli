@@ -92,6 +92,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/codex/logout", s.handleCodexLogout)
 	mux.HandleFunc("/api/codex/refresh", s.handleCodexRefresh)
 	mux.HandleFunc("/api/codex/usage", s.handleCodexUsage)
+	mux.HandleFunc("/api/subscription/usage/auto", s.handleSubscriptionUsageAuto)
 	mux.Handle("/api/claude/account", s.withSecretLocalOnly(http.HandlerFunc(s.handleClaudeAccount)))
 	mux.Handle("/api/claude/login", s.withSecretLocalOnly(http.HandlerFunc(s.handleClaudeLogin)))
 	mux.Handle("/api/claude/logout", s.withSecretLocalOnly(http.HandlerFunc(s.handleClaudeLogout)))

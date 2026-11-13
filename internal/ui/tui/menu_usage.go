@@ -40,7 +40,11 @@ type usageLoadedMsg struct {
 
 func (m Model) openUsageMenu() (tea.Model, tea.Cmd) {
 	m.enterMenu(interactiveMenu{kind: menuUsage})
-	return m, m.loadUsage()
+	load := m.loadUsage()
+	if refresh := m.subscriptionAutoRefreshCmd(load); refresh != nil {
+		return m, tea.Batch(load, refresh)
+	}
+	return m, load
 }
 func (m Model) loadUsage() tea.Cmd {
 	selected := m.menu.category

@@ -82,6 +82,7 @@ function closePanel(){chatClosed=true;finishChat();}function openPanel(){}
  check(old.includes('64%')&&old.includes(t('acct.usage.stale')),'saved unexpired snapshot hidden after restart: '+old);
  var gone=subscriptionCostPrimary({subscriptionUsage:[{provider:'Claude',windows:[{id:'five_hour',window_seconds:18000,remaining_percent:64,stale:true,resets_at:past}]}]});
  check(!gone.includes('64%')&&gone.includes('—'),'expired window shown as current: '+gone);
+ check(subscriptionUsageNeedsRefresh([{windows:[]}])&&subscriptionUsageNeedsRefresh([{windows:[{stale:true,resets_at:future}]}])&&!subscriptionUsageNeedsRefresh([{windows:[{stale:false,resets_at:future}]}]),'refresh need misdetected');
  return '';
  }catch(e){return e.stack||String(e);}})()`, &failure)
 	if err != nil || failure != "" {
