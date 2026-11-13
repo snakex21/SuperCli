@@ -56,17 +56,17 @@ func (t *WebFetch) Spec() Tool {
 		ReuseTTL:   2 * time.Minute,
 		RefreshArg: "refresh",
 		NextTools:  []string{"web_download"},
-		Description: "Read a public http(s) URL (HTML, text, JSON or PDF) as clean text: main content without menus and footers, plus title, prices/dates from structured data, and next-page links. " +
-			"When the user gives a URL, call web_fetch directly (no search needed). Long pages are paged: continue with the offset shown at the end. " +
-			"mode=links lists the page's links (to follow one, fetch its URL); mode=media lists media/download links; refresh=true skips a recent cached read. " +
-			"JavaScript is not run: for script-rendered pages or clicking use the browser tool. To save files use web_download. Not for local files, private addresses or authenticated APIs.",
+		Description: "Read a public http(s) URL (HTML, text, JSON, PDF) as clean main text with title, structured data (prices, dates) and links. " +
+			"Use it directly when the user gives a URL. Long pages: continue with the offset shown at the end. " +
+			"mode=links lists all links, mode=media lists media/download links; refresh=true skips a recent cached read. " +
+			"JavaScript is not run: for script-rendered pages or clicking use the browser tool; to save files use web_download. Not for local files, private addresses or authenticated APIs.",
 		Schema: `{
   "type": "object",
   "properties": {
     "url":       {"type": "string", "description": "Full http(s) URL to read."},
-    "offset":    {"type": "integer", "description": "Character offset to continue a long page (from the previous result)."},
-    "max_chars": {"type": "integer", "description": "Max characters to return (default sized to the model context, max 100000)."},
-    "mode":      {"type": "string", "enum": ["text", "links", "media"], "description": "text (default), links (all page links) or media (media/download links)."},
+    "offset":    {"type": "integer", "description": "Continue a long page from this character offset."},
+    "max_chars": {"type": "integer", "description": "Max characters (default fits the model context)."},
+    "mode":      {"type": "string", "enum": ["text", "links", "media"], "description": "text (default), links or media."},
     "refresh":   {"type": "boolean", "description": "Skip reuse of a recent result (default false)."}
   },
   "required": ["url"]

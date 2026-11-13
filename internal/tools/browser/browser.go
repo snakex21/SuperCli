@@ -83,7 +83,7 @@ type args struct {
 func (t *Tool) Spec() core.Tool {
 	return core.Tool{
 		Name: "browser",
-		Description: "Headless browser for pages that need JavaScript or interaction (clicking, forms). Prefer web_fetch for ordinary pages: it is faster. " +
+		Description: "Headless browser automation for pages that need JavaScript or interaction (clicking links, filling forms). Prefer web_fetch for ordinary pages: it is faster. " +
 			"open(url) loads a page and returns its text plus interactive elements with refs like [e3]; click(ref), type(ref,text,submit) act on a ref and return the updated page; " +
 			"read(offset) returns more page text; back; close. Refs stay valid while the page is open.",
 		Schema: `{
