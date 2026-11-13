@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -109,33 +110,24 @@ func Probe(ctx context.Context, baseURL, apiKey, model string) (ProbeResult, err
 		"messages": []map[string]any{
 			{"role": "user", "content": "Reply with the single token OK."},
 		},
-		"max_tokens":       8,
 		"reasoning_effort": "low",
 	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return ProbeResult{}, err
+	// OpenAI reasoning families reject max_tokens; give them room for a
+	// little hidden reasoning so the usage report can show it.
+	if isOpenAIReasoningFamily(model) {
+		payload["max_completion_tokens"] = 64
+	} else {
+		payload["max_tokens"] = 8
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
-	if err != nil {
-		return ProbeResult{}, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if key := CleanAPIKey(apiKey); key != "" {
-		req.Header.Set("Authorization", "Bearer "+key)
-	}
-	ApplyOpenCodeZenHeaders(req, baseURL)
 	client := &http.Client{Timeout: probeTimeout}
-	resp, err := client.Do(req)
-	if err != nil {
-		return ProbeResult{
-			ProbedAt:  time.Now(),
-			LatencyMS: time.Since(start).Milliseconds(),
-			Error:     err.Error(),
-		}, nil
+	resp, raw, err := probeOnce(ctx, client, u, apiKey, baseURL, payload)
+	// Classic chat models (gpt-4o, gpt-4.1, many local servers) reject the
+	// reasoning control. That says nothing about whether the model is
+	// reachable, so check again without it instead of reporting a failure.
+	if err == nil && resp.StatusCode == http.StatusBadRequest && strings.Contains(strings.ToLower(string(raw)), "reasoning") {
+		delete(payload, "reasoning_effort")
+		resp, raw, err = probeOnce(ctx, client, u, apiKey, baseURL, payload)
 	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, probeMaxBody))
 	if err != nil {
 		return ProbeResult{
 			ProbedAt:  time.Now(),
@@ -153,6 +145,10 @@ func Probe(ctx context.Context, baseURL, apiKey, model string) (ProbeResult, err
 	var parsed struct {
 		Usage struct {
 			ReasoningTokens int `json:"reasoning_tokens"`
+			// OpenAI reports hidden reasoning here, not at the top level.
+			CompletionTokensDetails struct {
+				ReasoningTokens int `json:"reasoning_tokens"`
+			} `json:"completion_tokens_details"`
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal(raw, &parsed); err != nil {
@@ -163,7 +159,7 @@ func Probe(ctx context.Context, baseURL, apiKey, model string) (ProbeResult, err
 		}, nil
 	}
 	return ProbeResult{
-		Reasoning: parsed.Usage.ReasoningTokens > 0,
+		Reasoning: parsed.Usage.ReasoningTokens > 0 || parsed.Usage.CompletionTokensDetails.ReasoningTokens > 0,
 		LatencyMS: time.Since(start).Milliseconds(),
 		ProbedAt:  time.Now(),
 	}, nil
@@ -222,4 +218,27 @@ ON CONFLICT(model_id) DO UPDATE SET
     error      = excluded.error
 `, modelID, r.Reasoning, r.Vision, r.LatencyMS, r.ProbedAt.UnixNano(), r.Error)
 	return err
+}
+
+func probeOnce(ctx context.Context, client *http.Client, u, apiKey, baseURL string, payload map[string]any) (*http.Response, []byte, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
+	if err != nil {
+		return nil, nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if key := CleanAPIKey(apiKey); key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	ApplyOpenCodeZenHeaders(req, baseURL)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, probeMaxBody))
+	return resp, raw, err
 }
