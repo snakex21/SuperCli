@@ -1016,6 +1016,10 @@ async function renderStats() {
     appendActiveContext(box, stats.activeContext, stats.context, stats.session);
     appendSidebarCost(box, stats.cost, [stats.session.providerType, stats.activeContext ? stats.activeContext.providerType : ""]);
     costSnapshot = stats.cost;
+    // Missing/old quota snapshot: refresh in the background (throttled), never
+    // blocking this render; a successful refresh re-renders statistics.
+    if (typeof subscriptionUsageNeedsRefresh === "function" && subscriptionUsageNeedsRefresh(stats.cost.subscriptionUsage))
+      requestSubscriptionUsageRefresh(false);
   } catch (e) {
     if (!current()) return;
     var liveTurn = statsLiveTurnForSession(requestSession);

@@ -36,6 +36,35 @@ function subscriptionPrimaryWindow(account) {
     windows.find(function (w) { return primary(w) && subscriptionWindowUsable(w); }) ||
     windows.find(function (w) { return subscriptionWindowUsable(w); });
 }
+// True when any logged-in account lacks a current snapshot.
+function subscriptionUsageNeedsRefresh(accounts) {
+  return (accounts || []).some(function (a) {
+    var windows = a.windows || [];
+    return !windows.length || windows.some(function (w) { return !subscriptionWindowFresh(w); });
+  });
+}
+// Background quota refresh: single-flight in the page, throttled on the server
+// (per account), silent on failure. Statistics re-render only when a snapshot
+// actually changed, so rendering never waits for a provider request.
+var subscriptionAutoRefresh = {inflight: null, lastAttempt: 0};
+function requestSubscriptionUsageRefresh(force) {
+  if (subscriptionAutoRefresh.inflight) return subscriptionAutoRefresh.inflight;
+  if (!force && Date.now() - subscriptionAutoRefresh.lastAttempt < 60000) return Promise.resolve(false);
+  subscriptionAutoRefresh.lastAttempt = Date.now();
+  subscriptionAutoRefresh.inflight = jpost("/api/subscription/usage/auto", {force: !!force}).then(function (res) {
+    var refreshed = !!(res && res.refreshed);
+    if (refreshed) {
+      if (typeof renderStats === "function") renderStats();
+      if (typeof refreshCostDetails === "function") refreshCostDetails();
+    }
+    return refreshed;
+  }).catch(function () { return false; }).finally(function () { subscriptionAutoRefresh.inflight = null; });
+  return subscriptionAutoRefresh.inflight;
+}
+function startSubscriptionUsageAutoRefresh() {
+  requestSubscriptionUsageRefresh(false);
+  setInterval(function () { requestSubscriptionUsageRefresh(false); }, 5 * 60000);
+}
 function subscriptionCostPrimary(cost) {
   var accounts = cost.subscriptionUsage || [];
   if (!accounts.length) return t("cost.subscriptionValue");
