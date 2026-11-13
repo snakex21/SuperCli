@@ -318,6 +318,7 @@
   "chat.stopped": "interrompido pelo usuário",
   "chat.connError": "erro de conexão",
   "chat.streamEnded": "O fluxo de resposta terminou inesperadamente. A resposta pode estar incompleta.",
+  "chat.jumpLatest": "Ir para o mais recente",
   "chat.noProvider": "{n} não tem provedor de IA ativo: o modo de eco de teste foi bloqueado. Escolha um modelo novamente em Configurações.",
   "stats.model": "modelo",
   "stats.provider": "Provedor de IA",

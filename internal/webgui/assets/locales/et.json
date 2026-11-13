@@ -318,6 +318,7 @@
   "chat.stopped": "kasutaja poolt peatatud",
   "chat.connError": "ühenduse viga",
   "chat.streamEnded": "Vastuste voog lõppes ootamatult. Vastus võib olla puudulik.",
+  "chat.jumpLatest": "Mine uusimale",
   "chat.noProvider": "Rakendusel {n} pole aktiivset AI-teenust: testkaja režiim on blokeeritud. Vali seadetes uuesti mudel.",
   "stats.model": "mudel",
   "stats.provider": "AI-teenus",

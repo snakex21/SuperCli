@@ -318,6 +318,7 @@
   "chat.stopped": "sustabdė naudotojas",
   "chat.connError": "ryšio klaida",
   "chat.streamEnded": "Atsakymų srautas netikėtai baigėsi. Atsakymas gali būti neišsamus.",
+  "chat.jumpLatest": "Pereiti prie naujausių",
   "chat.noProvider": "{n} neturi aktyvaus DI teikėjo, todėl bandomasis aido režimas užblokuotas. Nustatymuose dar kartą pasirinkite modelį.",
   "stats.model": "modelis",
   "stats.provider": "DI teikėjas",

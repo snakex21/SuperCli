@@ -318,6 +318,7 @@
   "chat.stopped": "apturēja lietotājs",
   "chat.connError": "savienojuma kļūda",
   "chat.streamEnded": "Atbilžu straume negaidīti beidzās. Atbilde var būt nepilnīga.",
+  "chat.jumpLatest": "Pāriet uz jaunāko",
   "chat.noProvider": "{n} nav aktīva AI pakalpojuma: testa atbalss režīms ir bloķēts. Iestatījumos vēlreiz izvēlieties modeli.",
   "stats.model": "modelis",
   "stats.provider": "AI pakalpojums",

@@ -318,6 +318,7 @@
   "chat.stopped": "arrêté par l'utilisateur",
   "chat.connError": "erreur de connexion",
   "chat.streamEnded": "Le flux de réponses s'est terminé de manière inattendue. La réponse est peut-être incomplète.",
+  "chat.jumpLatest": "Aller au plus récent",
   "chat.noProvider": "{n} n'a pas de fournisseur d'IA actif : le mode d'écho de test a été bloqué. Choisissez à nouveau un modèle dans Paramètres.",
   "stats.model": "modèle",
   "stats.provider": "fournisseur",

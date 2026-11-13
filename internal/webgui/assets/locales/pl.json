@@ -318,6 +318,7 @@
   "chat.stopped": "zatrzymane przez użytkownika",
   "chat.connError": "błąd połączenia",
   "chat.streamEnded": "Strumień odpowiedzi zakończył się nieoczekiwanie. Odpowiedź może być niepełna.",
+  "chat.jumpLatest": "Przejdź do najnowszych",
   "chat.noProvider": "{n} nie ma aktywnego dostawcy AI: testowy tryb echo został zablokowany. Wybierz ponownie model w Ustawieniach.",
   "stats.model": "model",
   "stats.provider": "dostawca",

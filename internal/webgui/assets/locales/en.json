@@ -318,6 +318,7 @@
   "chat.stopped": "stopped by user",
   "chat.connError": "connection error",
   "chat.streamEnded": "The response stream ended unexpectedly. The answer may be incomplete.",
+  "chat.jumpLatest": "Jump to latest",
   "chat.noProvider": "{n} has no active AI provider: the test echo mode was blocked. Pick a model again in Settings.",
   "stats.model": "model",
   "stats.provider": "provider",

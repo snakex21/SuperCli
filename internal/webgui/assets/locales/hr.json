@@ -318,6 +318,7 @@
   "chat.stopped": "zaustavio korisnik",
   "chat.connError": "pogreška veze",
   "chat.streamEnded": "Tok odgovora je neočekivano završio. Odgovor može biti nepotpun.",
+  "chat.jumpLatest": "Idi na najnovije",
   "chat.noProvider": "{n} nema aktivnog pružatelja umjetne inteligencije: način testne jeke je blokiran. Ponovno odaberite model u Postavkama.",
   "stats.model": "model",
   "stats.provider": "AI usluga",

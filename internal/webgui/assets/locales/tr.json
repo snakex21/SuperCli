@@ -318,6 +318,7 @@
   "chat.stopped": "Kullanıcı tarafından durduruldu",
   "chat.connError": "bağlantı hatası",
   "chat.streamEnded": "Yanıt akışı beklenmedik bir şekilde sona erdi. Cevap eksik olabilir.",
+  "chat.jumpLatest": "En yeniye git",
   "chat.noProvider": "{n}'nin etkin bir AI sağlayıcısı yok: test yankı modu engellendi. Ayarlar'da tekrar bir model seçin.",
   "stats.model": "modeli",
   "stats.provider": "sağlayıcı",

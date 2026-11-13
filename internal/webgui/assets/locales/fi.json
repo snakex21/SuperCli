@@ -318,6 +318,7 @@
   "chat.stopped": "käyttäjän pysäyttämä",
   "chat.connError": "yhteysvirhe",
   "chat.streamEnded": "Vastausvirta päättyi odottamatta. Vastaus voi olla epätäydellinen.",
+  "chat.jumpLatest": "Siirry uusimpaan",
   "chat.noProvider": "Kohteelle {n} ei ole aktiivista AI-palvelua: testikaikutila estettiin. Valitse malli uudelleen asetuksista.",
   "stats.model": "malli",
   "stats.provider": "AI-palvelu",

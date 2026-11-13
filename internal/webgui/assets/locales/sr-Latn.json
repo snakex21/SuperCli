@@ -318,6 +318,7 @@
   "chat.stopped": "zaustavio korisnik",
   "chat.connError": "greška u vezi",
   "chat.streamEnded": "Stream odgovora se neočekivano završio. Odgovor može biti nepotpun.",
+  "chat.jumpLatest": "Idi na najnovije",
   "chat.noProvider": "{n} nema aktivnog AI provajdera: režim test eho je blokiran. Ponovo izaberite model u podešavanjima.",
   "stats.model": "model",
   "stats.provider": "AI usluga",

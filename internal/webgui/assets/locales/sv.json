@@ -318,6 +318,7 @@
   "chat.stopped": "stoppas av användaren",
   "chat.connError": "anslutningsfel",
   "chat.streamEnded": "Svarsströmmen avslutades oväntat. Svaret kan vara ofullständigt.",
+  "chat.jumpLatest": "Gå till det senaste",
   "chat.noProvider": "{n} har ingen aktiv AI-tjänst: testläget med eko blockerades. Välj en modell igen under Inställningar.",
   "stats.model": "modell",
   "stats.provider": "AI-tjänst",

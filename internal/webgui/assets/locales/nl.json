@@ -318,6 +318,7 @@
   "chat.stopped": "gestopt door gebruiker",
   "chat.connError": "verbindingsfout",
   "chat.streamEnded": "De responsstroom is onverwacht beëindigd. Het antwoord is mogelijk onvolledig.",
+  "chat.jumpLatest": "Naar het nieuwste",
   "chat.noProvider": "Voor {n} is geen AI-dienst actief. De test-echomodus is geblokkeerd. Kies opnieuw een model via Instellingen.",
   "stats.model": "model",
   "stats.provider": "aanbieder",

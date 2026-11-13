@@ -154,7 +154,46 @@ function releaseLiveTranscriptBlocks() {
 function nearBottom() { return stage.scrollHeight - stage.scrollTop - stage.clientHeight < 120; }
 stage.addEventListener("scroll", function () {
   if (!initialTranscriptTail && !savedTranscriptScroll()) transcriptFollowTail = nearBottom();
+  queueJumpLatestUpdate();
 }, { passive: true });
+
+// "Jump to latest": reading older output while an answer streams must not be
+// interrupted, but the way back should be one click/keypress. The zero-height
+// sticky dock keeps the button over the visible bottom of the transcript
+// column without adding layout height or moving any message.
+var jumpLatestDock = el("div", "jump-latest-dock");
+var jumpLatestBtn = el("button", "jump-latest");
+jumpLatestBtn.type = "button";
+jumpLatestBtn.hidden = true;
+jumpLatestBtn.appendChild(el("span", "jump-latest-arrow", "↓")).setAttribute("aria-hidden", "true");
+var jumpLatestLabel = el("span");
+jumpLatestLabel.setAttribute("data-i18n", "chat.jumpLatest");
+jumpLatestLabel.textContent = typeof t === "function" ? t("chat.jumpLatest") : "";
+jumpLatestBtn.appendChild(jumpLatestLabel);
+jumpLatestDock.appendChild(jumpLatestBtn);
+stage.appendChild(jumpLatestDock);
+var jumpLatestFrame = null;
+function updateJumpLatest() {
+  jumpLatestFrame = null;
+  // Hide while restoring/settling: those owners scroll programmatically.
+  var away = stage.scrollHeight - stage.scrollTop - stage.clientHeight > Math.max(240, stage.clientHeight * 0.5);
+  var show = away && !initialTranscriptTail && !!stream.firstElementChild;
+  if (jumpLatestBtn.hidden === !show) return;
+  if (!show && document.activeElement === jumpLatestBtn && typeof promptEl !== "undefined" && promptEl) promptEl.focus({ preventScroll: true });
+  jumpLatestBtn.hidden = !show;
+}
+function queueJumpLatestUpdate() {
+  if (jumpLatestFrame === null) jumpLatestFrame = requestAnimationFrame(updateJumpLatest);
+}
+function jumpToLatest() {
+  cancelTranscriptResumeScroll();
+  transcriptFollowTail = true;
+  stage.scrollTop = stage.scrollHeight;
+  smartScroll(true);
+  if (typeof promptEl !== "undefined" && promptEl) promptEl.focus({ preventScroll: true });
+  queueJumpLatestUpdate();
+}
+jumpLatestBtn.addEventListener("click", jumpToLatest);
 ["wheel", "touchstart", "pointerdown", "keydown"].forEach(function (name) {
   stage.addEventListener(name, cancelTranscriptResumeScroll, { passive: true });
 });
@@ -178,6 +217,9 @@ function flushSmartScroll() {
   if (!streamAppendTarget && (!saved || saved.followTail) && (smartScrollForced || transcriptFollowTail)) stage.scrollTop = stage.scrollHeight;
   smartScrollPending = false;
   smartScrollForced = false;
+  // Streamed growth below a reader who scrolled up changes no scroll offset,
+  // so no scroll event announces that the latest output moved away.
+  if (!transcriptFollowTail) queueJumpLatestUpdate();
 }
 function smartScroll(force) {
   if (streamAppendTarget) return;
@@ -190,7 +232,7 @@ function smartScroll(force) {
     transcriptFollowTail = true;
     smartScrollForced = true;
   }
-  if (!transcriptFollowTail && !smartScrollForced) return;
+  if (!transcriptFollowTail && !smartScrollForced) { queueJumpLatestUpdate(); return; }
   smartScrollPending = true;
   if (smartScrollFrame !== null) return;
   // Batch tool/SSE bursts, and let a pending paced paint own the scroll read.
