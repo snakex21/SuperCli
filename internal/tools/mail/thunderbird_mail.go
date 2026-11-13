@@ -83,6 +83,8 @@ func thunderbirdHasMutationSelector(args thunderbirdToolArgs) bool {
 		strings.TrimSpace(args.HeaderMessageID) != "" ||
 		len(args.HeaderMessageIDs) > 0 ||
 		strings.TrimSpace(args.From) != "" ||
+		strings.TrimSpace(args.To) != "" ||
+		strings.TrimSpace(args.Address) != "" ||
 		strings.TrimSpace(args.Subject) != "" ||
 		strings.TrimSpace(args.Text) != "" ||
 		strings.TrimSpace(args.Since) != "" ||
@@ -97,7 +99,7 @@ func validateThunderbirdMoveArgs(args thunderbirdToolArgs) error {
 		return fmt.Errorf("thunderbird_mail: move requires destination")
 	}
 	if !args.All && !thunderbirdHasMutationSelector(args) {
-		return fmt.Errorf("thunderbird_mail: move requires at least one filter or exact identifier (from/subject/text/since/until/message_ids/header_message_id/header_message_ids) or all:true for an explicitly approved whole-folder move")
+		return fmt.Errorf("thunderbird_mail: move requires at least one filter or exact identifier (from/to/address/subject/text/since/until/message_ids/header_message_id/header_message_ids) or all:true for an explicitly approved whole-folder move")
 	}
 	return nil
 }
@@ -113,6 +115,9 @@ type thunderbirdBridgeResponse struct {
 	OK    bool            `json:"ok"`
 	Data  json.RawMessage `json:"data"`
 	Error string          `json:"error"`
+	// NotExecuted marks an explicit refusal before execution (for example a
+	// full extension result cache): safe to retry later with a new request.
+	NotExecuted bool `json:"notExecuted,omitempty"`
 }
 
 type thunderbirdBridgeState struct {
@@ -144,19 +149,19 @@ func (t *ThunderbirdMail) Spec() Tool {
 		Name: "thunderbird_mail",
 		Description: "Use the locally running Thunderbird through the SuperCLI Thunderbird Bridge extension. " +
 			"Thunderbird owns the real Gmail IMAP/OAuth connection, so prefer this over Outlook COM for Gmail mailbox state. " +
-			"Read operations: 'status', 'accounts', 'folders', 'count', 'search', 'read', 'attachments', 'get_attachment', 'senders', 'largest', 'address_books', 'contacts', and 'contact_candidates'. search/count can filter by sender (from), recipient (to), sender-or-recipient email address (address), subject substring, text and date. 'contact_candidates' aggregates sender and recipient addresses from message headers without loading bodies, excluding the mailbox owner's own address. 'largest' scans message headers locally and returns only the largest 1-100 messages with byte sizes and stable Message-ID headers, avoiding large AI context. Use 'read' with a message_id returned by search to retrieve the decoded body without changing read/unread state. read returns at most max_chars (default 12000); when hasMore:true, repeat with nextStartChar as start_char instead of loading a huge email into a small local model at once. search results include hasAttachments, attachmentCount and attachment metadata (full filename including extension, extension, MIME type, size, partName); 'attachments' lists the same metadata for one message_id. 'get_attachment' fetches the actual attachment bytes. For PNG/JPEG/GIF/WebP it returns a real image to the agent loop so a vision-capable model receives the pixels on the next model turn; for PDF/Office/other files it returns a temporary localPath so the appropriate document tool can read it. count/search/senders/largest default to Inbox to avoid Gmail label duplicates; use scope:'account' only when an explicit whole-account search is needed. 'senders' is the preferred fast first step for newsletter/junk cleanup because it aggregates frequent Inbox senders without repeated full-text scans. " +
-			"Write operations: 'create_folder', 'rename_folder' and 'delete_folder' manage Thunderbird folders after confirm:true; system/special folders are protected from rename/delete. 'compact_folder' runs Thunderbird's native maintenance on one folder after confirm:true, physically reclaiming local mbox space from messages already removed without deleting current messages; run it once after cleanup, not after every batch. 'move' moves messages between ANY Thunderbird folders/labels (for example Inbox -> Ważne or Ważne -> another folder); source is 'folder' and target is 'destination'. 'import_msg' uses the installed classic Outlook COM reader to convert one local Outlook .msg file to RFC 822/MIME .eml locally (including body and attachments) and imports it into an explicitly selected Thunderbird folder. 'trash' moves filtered messages from Inbox (or an explicitly selected folder) to Thunderbird's real Trash; 'restore' moves filtered messages from Thunderbird's default Trash back to Inbox by default (or to an explicitly selected destination folder); 'purge'/'delete_permanently' permanently deletes only filtered messages already in Thunderbird's default Trash; 'empty_trash' permanently empties the entire default Trash using Thunderbird core's native IMAP EmptyTrash/DeleteAllMessages operation. " +
+			"Read operations: 'status', 'accounts', 'folders', 'count', 'search', 'read', 'attachments', 'get_attachment', 'senders', 'largest', 'address_books', 'contacts', and 'contact_candidates'. search/count can filter by sender (from), recipient (to, covers To and Cc), sender-or-recipient email address (address), subject substring, text and date. from/to/address also accept a domain: '@example.com' matches mailboxes at example.com or its subdomains only, a bare 'example.com' additionally matches display names; domain filters scan every header of the folder, so keep the Inbox scope or add dates. count/search/senders/largest count each RFC Message-ID once (Gmail labels, All Mail and duplicate index records are merged; see deduplicatedByMessageId, duplicatesSkipped, duplicateRecords, crossFolderDuplicates), so totals can be lower than Thunderbird's raw counts; pass include_duplicates:true only when raw per-record results are needed. search results are newest-first. 'contact_candidates' aggregates sender and recipient addresses from message headers without loading bodies, excluding the mailbox owner's own address. 'largest' scans message headers locally and returns only the largest 1-100 messages with byte sizes and stable Message-ID headers, avoiding large AI context. Use 'read' with a message_id returned by search to retrieve the decoded body without changing read/unread state. read returns at most max_chars (default 12000); when hasMore:true, repeat with nextStartChar as start_char instead of loading a huge email into a small local model at once. search does NOT return attachment metadata by default (attachmentsIncluded:false, no hasAttachments/attachmentCount/attachments fields) because it costs one MIME parse per result; pass include_attachments:true when attachments matter, or call 'attachments' (full filename including extension, extension, MIME type, size, partName) or 'read' for one message_id. 'get_attachment' fetches the actual attachment bytes. For PNG/JPEG/GIF/WebP it returns a real image to the agent loop so a vision-capable model receives the pixels on the next model turn; for PDF/Office/other files it returns a temporary localPath so the appropriate document tool can read it. count/search/senders/largest default to Inbox to avoid Gmail label duplicates; use scope:'account' only when an explicit whole-account search is needed. 'senders' is the preferred fast first step for newsletter/junk cleanup because it aggregates frequent Inbox senders without repeated full-text scans. Account selection: without 'account', a folder id such as 'account2://INBOX' selects its own account, and a folder name that exists on several mail accounts is an error, not a silent choice of the first IMAP account; then pass folder as the exact folder.id (or full path) returned by 'folders', or name the account. 'folders' returns totalMessageCount/unreadMessageCount; include_unique_counts:true (optionally with folder) adds messageRecords, uniqueMessageCount and duplicateRecords but scans every header. " +
+			"Write operations: 'create_folder', 'rename_folder' and 'delete_folder' manage Thunderbird folders after confirm:true; system/special folders are protected from rename/delete. 'compact_folder' runs Thunderbird's native maintenance on one folder after confirm:true, physically reclaiming local mbox space from messages already removed without deleting current messages; run it once after cleanup, not after every batch. 'move' moves messages between ANY Thunderbird folders/labels (for example Inbox -> Ważne or Ważne -> another folder); source is 'folder' and target is 'destination'. On Gmail, trash/move from a label other than Inbox/Trash/Spam/All Mail is refused without changes when a selected message also carries Inbox or another label; for move, allow_other_labels:true accepts removing only the source label. Every move is verified: status 'verified_moved' or 'moved_but_unverified' (movedButUnverified, missingInDestination; no continuation is returned then) - never report an unverified batch as done. IMAP moves also return recheckAfterMs and a ready 'recheck' request: send it as op 'verify_move' after that delay (read-only; reports locations, onlyInAllMail when Gmail dropped the label). 'repair_folder' (confirm:true, folder) runs Thunderbird's Repair Folder to rebuild an index with duplicate records without deleting messages; it refuses busy/offline/open folders (try again later, no automatic retry), Gmail All Mail needs allow_all_mail:true, and status.nativeRepairFolderAvailable tells whether it is installed. 'delete_folder' may report deleted:false, movedToTrash:true with newPath when Thunderbird (Local Folders) moved the folder into Trash instead. 'import_msg' uses the installed classic Outlook COM reader to convert one local Outlook .msg file to RFC 822/MIME .eml locally (including body and attachments) and imports it into an explicitly selected Thunderbird folder. 'trash' moves filtered messages from Inbox (or an explicitly selected folder) to Thunderbird's real Trash; 'restore' moves filtered messages from Thunderbird's default Trash back to Inbox by default (or to an explicitly selected destination folder); 'purge'/'delete_permanently' permanently deletes only filtered messages already in Thunderbird's default Trash; 'empty_trash' permanently empties the entire default Trash using Thunderbird core's native IMAP EmptyTrash/DeleteAllMessages operation. " +
 			"Address-book writes: 'create_address_book' creates a separate local book, 'add_contacts' adds an explicit list of name/email pairs, and 'update_contact' corrects one existing card after confirm:true. add_contacts deduplicates email addresses inside the selected destination book and is safe to retry while still allowing a complete dedicated book. Filter automated/noreply/store addresses out of contact_candidates before importing. " +
 			"Bulk filtered writes are intentionally paged: one call processes up to batch_size messages (default 250, max 500). If the result has more:true, immediately repeat the SAME approved operation and filters with the returned continuation token; this avoids timeouts and loop protection. No new user confirmation is needed for continuation of the exact same approved cleanup. " +
 			"For whole-Trash cleanup, prefer empty_trash instead of simulating 'all' with date filters. empty_trash is one server-side operation and only counts as success when it returns serverVerified:true. For purge/delete_permanently, intermediate IMAP batches are not server-confirmed and MUST NOT be reported as final success; the final IMAP batch must return serverVerified:true, while Local Folders use localVerified:true because no mail server exists. " +
-			"move/trash/restore/import_msg and filtered purge require confirm:true after explicit user approval. move requires destination and either at least one filter or all:true; all:true is only for an explicitly approved whole-folder move. import_msg requires path to a local .msg file plus destination; because importing to an IMAP folder can upload the historical message to the mail server, never guess the target folder. empty_trash requires confirm:true and is irreversible. restore is recoverable and only reads from the default Trash. Use count before destructive cleanup when the local Trash count is trustworthy, but empty_trash can still repair a diverged Gmail Trash when Thunderbird's local cache incorrectly shows 0. The bridge extension must be installed and Thunderbird must be running for mailbox operations.",
+			"move/trash/restore/import_msg and filtered purge require confirm:true after explicit user approval. move requires destination and either at least one filter or all:true; all:true is only for an explicitly approved whole-folder move. import_msg requires path to a local .msg file plus destination; because importing to an IMAP folder can upload the historical message to the mail server, never guess the target folder. empty_trash requires confirm:true and is irreversible. restore is recoverable and only reads from the default Trash. Use count before destructive cleanup when the local Trash count is trustworthy, but empty_trash can still repair a diverged Gmail Trash when Thunderbird's local cache incorrectly shows 0. An error with notExecuted:true / 'NOT executed' means Thunderbird refused before running anything: it is safe to call again later (a new request id is used). An 'outcome unknown' error means it may have executed: check mailbox state before repeating a mutation. The bridge extension must be installed and Thunderbird must be running for mailbox operations.",
 		Schema: `{
   "type": "object",
   "properties": {
-    "op":       {"type": "string", "enum": ["status", "accounts", "folders", "count", "search", "read", "attachments", "get_attachment", "senders", "largest", "address_books", "contacts", "contact_candidates", "create_address_book", "add_contacts", "update_contact", "create_folder", "rename_folder", "delete_folder", "compact_folder", "copy", "move", "import_msg", "trash", "restore", "purge", "delete_permanently", "empty_trash"], "description": "Operation to perform. search/count/largest support address, from, to, subject, text and date filters. contact_candidates aggregates sender/recipient addresses from message headers. address_books/contacts inspect Thunderbird contacts. create_address_book/add_contacts/update_contact maintain a local address book after confirmation. largest returns a compact top list by message size. copy safely archives matching messages to another folder and verifies Message-ID. read retrieves a decoded message body by message_id without changing read state. folders reports folder capabilities. create_folder/rename_folder/delete_folder manage folders. compact_folder reclaims local mbox space for one folder without deleting current messages. get_attachment retrieves actual attachment content and directly attaches common image formats for vision-capable models; non-image files return a temporary localPath."}, 
-    "account":  {"type": "string", "description": "Optional Thunderbird account id or part of account name. Defaults to the first IMAP account."},
-    "folder":   {"type": "string", "description": "Optional source folder id/name/path. Required by compact_folder. move can use any Thunderbird folder/label (for example Odebrane, Ważne, a custom folder). For restore, source must be the default Trash."},
-    "destination": {"type": "string", "description": "move/import_msg: required destination folder id/name/path. restore: optional destination, default Inbox/Odebrane."},
+    "op":       {"type": "string", "enum": ["status", "accounts", "folders", "count", "search", "read", "attachments", "get_attachment", "senders", "largest", "verify_move", "address_books", "contacts", "contact_candidates", "create_address_book", "add_contacts", "update_contact", "create_folder", "rename_folder", "delete_folder", "compact_folder", "repair_folder", "copy", "move", "import_msg", "trash", "restore", "purge", "delete_permanently", "empty_trash"], "description": "Operation to perform. search/count/largest support address, from, to, subject, text and date filters. contact_candidates aggregates sender/recipient addresses from message headers. address_books/contacts inspect Thunderbird contacts. create_address_book/add_contacts/update_contact maintain a local address book after confirmation. largest returns a compact top list by message size. copy safely archives matching messages to another folder and verifies Message-ID. read retrieves a decoded message body by message_id without changing read state. folders reports folder capabilities. create_folder/rename_folder/delete_folder manage folders. compact_folder reclaims local mbox space for one folder without deleting current messages. repair_folder rebuilds one folder index (confirm:true). verify_move re-checks a finished move (read-only). get_attachment retrieves actual attachment content and directly attaches common image formats for vision-capable models; non-image files return a temporary localPath."}, 
+    "account":  {"type": "string", "description": "Optional Thunderbird account id or name (exact name first, then a unique substring). When omitted, a folder id selects its own account; a folder name present on several accounts is an error (use folder.id from 'folders'); otherwise the first IMAP account."},
+    "folder":   {"type": "string", "description": "Optional source folder id/name/path; prefer the exact folder.id returned by 'folders' when a name is ambiguous. Required by compact_folder and repair_folder. move can use any Thunderbird folder/label (for example Odebrane, Ważne, a custom folder). For restore, source must be the default Trash."},
+    "destination": {"type": "string", "description": "move/import_msg/verify_move: required destination folder id/name/path. restore: optional destination, default Inbox/Odebrane."},
     "destination_account": {"type": "string", "description": "copy: destination account id/name, for example Local Folders."},
     "path":     {"type": "string", "description": "import_msg only: absolute or working-directory-relative path to one local Microsoft Outlook .msg file. Current converter uses classic desktop Outlook COM on Windows."},
     "message_id": {"type": "integer", "description": "read/attachments/get_attachment: Thunderbird message id returned by search."},
@@ -165,13 +170,20 @@ func (t *ThunderbirdMail) Spec() Tool {
     "start_char": {"type": "integer", "minimum": 0, "description": "read only: character offset. When hasMore:true, repeat with nextStartChar."},
     "part_name": {"type": "string", "description": "get_attachment: attachment partName returned by search/attachments. If omitted, attachment_name may be used; if the message has exactly one attachment, both may be omitted."},
     "attachment_name": {"type": "string", "description": "get_attachment: full attachment filename including extension, used when part_name is not supplied."},
-    "from":     {"type": "string", "description": "Sender name or full sender email address."},
-    "to":       {"type": "string", "description": "search/count: recipient name or full recipient email address."},
+    "from":     {"type": "string", "description": "Sender name, full sender email address, or a domain ('@example.com' = that domain and subdomains)."},
+    "to":       {"type": "string", "description": "Recipient (To or Cc) name, full email address, or domain; also a valid mutation filter."},
     "email":    {"type": "string", "description": "update_contact: corrected email address; omit to retain the current address."},
-    "address":  {"type": "string", "description": "search/count: email address or name matched against sender OR To recipient. Useful when the user only knows an address and not the direction."},
+    "address":  {"type": "string", "description": "Email address, name or domain matched against sender OR recipient (overrides from/to). Useful when the user only knows an address and not the direction; also a valid mutation filter."},
+    "include_attachments": {"type": "boolean", "description": "search only: also return hasAttachments/attachmentCount/attachments per result. Default false (slow: one MIME parse per result)."},
+    "include_duplicates": {"type": "boolean", "description": "count/search/senders/largest: return one entry per Thunderbird record instead of one per Message-ID. Default false."},
+    "include_unique_counts": {"type": "boolean", "description": "folders only: add messageRecords, uniqueMessageCount and duplicateRecords (scans every header; combine with folder to limit it)."},
+    "allow_other_labels": {"type": "boolean", "description": "move only (Gmail): accept removing just the source label when selected messages also carry Inbox or other labels."},
+    "allow_all_mail": {"type": "boolean", "description": "repair_folder only: required to repair Gmail All Mail."},
+    "source":   {"type": "string", "description": "verify_move only: the move's source folder (taken from the recheck request)."},
+    "refresh":  {"type": "boolean", "description": "verify_move only: refresh both folders from the server first. Default true."},
     "subject":  {"type": "string", "description": "search/count and filtered writes: case-insensitive subject substring."},
     "header_message_id": {"type": "string", "description": "Stable RFC Message-ID header; preferred for exact copy/offload and cleanup."},
-    "header_message_ids": {"type": "array", "items": {"type": "string"}, "maxItems": 100, "description": "Up to 100 exact RFC Message-ID values for one bounded verified cleanup."},
+    "header_message_ids": {"type": "array", "items": {"type": "string"}, "maxItems": 500, "description": "Exact RFC Message-ID values: up to 100 for one bounded verified mutation; verify_move (required there) accepts up to 500."},
     "address_book": {"type": "string", "description": "contacts/add_contacts: Thunderbird address-book id or exact name."},
     "contact_id": {"type": "string", "description": "update_contact: exact contact id returned by contacts."},
     "contacts": {"type": "array", "maxItems": 200, "items": {"type": "object", "properties": {"name": {"type": "string"}, "email": {"type": "string"}}, "required": ["email"]}, "description": "add_contacts: explicit filtered name/email pairs. Remove automated senders before import."},
@@ -185,7 +197,7 @@ func (t *ThunderbirdMail) Spec() Tool {
     "until":    {"type": "string", "description": "Only messages on/before YYYY-MM-DD."},
     "limit":    {"type": "integer", "description": "search: maximum previews; senders/contact_candidates: maximum groups. contact_candidates supports up to 500; search/senders up to 100."},
     "scope":    {"type": "string", "enum": ["inbox", "account"], "description": "count/search/senders/contact_candidates only. Default 'inbox'. Use 'account' only when a whole-account scan is explicitly needed; Gmail labels can duplicate a message across folders."},
-    "confirm":  {"type": "boolean", "description": "create_address_book/add_contacts/create_folder/rename_folder/delete_folder/compact_folder/move/import_msg/trash/restore/purge/empty_trash: must be true after explicit user approval. delete_folder may remove the folder and its contents; system/special folders are protected."},
+    "confirm":  {"type": "boolean", "description": "create_address_book/add_contacts/create_folder/rename_folder/delete_folder/compact_folder/repair_folder/move/import_msg/trash/restore/purge/empty_trash: must be true after explicit user approval. delete_folder may remove the folder and its contents; system/special folders are protected."},
     "all":      {"type": "boolean", "description": "move only: move the entire selected source folder when explicitly requested. Requires confirm:true and destination. Prefer filters for narrower moves."},
     "batch_size": {"type": "integer", "minimum": 1, "maximum": 500, "description": "move/trash/restore/purge only: messages processed in one call. Default 250. Keep the default unless a smaller batch is needed."},
     "continuation": {"type": "string", "description": "move/trash/restore/purge continuation token returned by a previous batch. When more:true, repeat the exact same operation and filters with this token."}
@@ -204,6 +216,17 @@ func (t *ThunderbirdMail) execute(ctx context.Context, raw json.RawMessage) (Res
 	args.Op = strings.ToLower(strings.TrimSpace(args.Op))
 	switch args.Op {
 	case "status", "accounts", "folders", "count", "search", "senders", "largest", "address_books", "contacts", "contact_candidates":
+	case "verify_move":
+		if strings.TrimSpace(args.Destination) == "" || len(args.HeaderMessageIDs) == 0 {
+			return Result{Err: fmt.Errorf("thunderbird_mail: verify_move requires destination and header_message_ids (use the recheck request returned by move)")}, nil
+		}
+	case "repair_folder":
+		if !args.Confirm {
+			return Result{Err: fmt.Errorf("thunderbird_mail: repair_folder requires confirm:true after explicit user approval")}, nil
+		}
+		if strings.TrimSpace(args.Folder) == "" {
+			return Result{Err: fmt.Errorf("thunderbird_mail: repair_folder requires folder")}, nil
+		}
 	case "read":
 		if args.MessageID <= 0 {
 			return Result{Err: fmt.Errorf("thunderbird_mail: read requires message_id returned by search")}, nil
@@ -306,7 +329,7 @@ func (t *ThunderbirdMail) execute(ctx context.Context, raw json.RawMessage) (Res
 			return Result{Err: fmt.Errorf("thunderbird_mail: %s requires confirm:true after explicit user approval", args.Op)}, nil
 		}
 		if !thunderbirdHasMutationSelector(args) {
-			return Result{Err: fmt.Errorf("thunderbird_mail: %s requires at least one filter (from/subject/text/since/until)", args.Op)}, nil
+			return Result{Err: fmt.Errorf("thunderbird_mail: %s requires at least one filter (from/to/address/subject/text/since/until or exact message ids)", args.Op)}, nil
 		}
 	default:
 		return Result{Err: fmt.Errorf("thunderbird_mail: unsupported op %q", args.Op)}, nil
@@ -326,13 +349,17 @@ func (t *ThunderbirdMail) execute(ctx context.Context, raw json.RawMessage) (Res
 	if args.Op == "get_attachment" {
 		return t.attachmentResult(data)
 	}
+	note := ""
+	if args.Op == "move" {
+		note = thunderbirdMoveFollowUp(data, time.Now())
+	}
 	var pretty any
 	if json.Unmarshal(data, &pretty) == nil {
 		if formatted, err := json.MarshalIndent(pretty, "", "  "); err == nil {
-			return Result{Text: string(formatted)}, nil
+			return Result{Text: string(formatted) + note}, nil
 		}
 	}
-	return Result{Text: string(data)}, nil
+	return Result{Text: string(data) + note}, nil
 }
 
 func (b *thunderbirdBridgeState) ensureServer() error {
@@ -575,10 +602,7 @@ func (b *thunderbirdBridgeState) call(ctx context.Context, op string, raw json.R
 	select {
 	case response := <-waiter:
 		if !response.OK {
-			if response.Error == "" {
-				response.Error = "unknown Thunderbird extension error"
-			}
-			return nil, fmt.Errorf("%s", response.Error)
+			return nil, thunderbirdResponseError(op, response)
 		}
 		return response.Data, nil
 	case <-ctx.Done():
@@ -604,9 +628,16 @@ func (b *thunderbirdBridgeState) abandonRequest(id, op string, cause error) erro
 
 func thunderbirdOperationTimeout(op string) time.Duration {
 	switch op {
-	case "compact_folder":
+	case "compact_folder", "empty_trash":
 		return 15 * time.Minute
-	case "count", "search", "read", "senders", "contact_candidates", "create_address_book", "add_contacts", "update_contact", "create_folder", "rename_folder", "delete_folder", "move", "trash", "restore", "purge", "delete_permanently":
+	case "repair_folder":
+		// The extension allows 20 minutes for a folder index rebuild.
+		return 20 * time.Minute
+	case "move":
+		// The bridge verifies each move twice (up to 15 s, then a 5-10 s settle
+		// window and a server refresh of both folders) before answering.
+		return 180 * time.Second
+	case "count", "search", "read", "senders", "largest", "folders", "copy", "verify_move", "contact_candidates", "create_address_book", "add_contacts", "update_contact", "create_folder", "rename_folder", "delete_folder", "trash", "restore", "purge", "delete_permanently":
 		// IMAP folder mutations are server operations. Gmail can take tens of
 		// seconds to publish the completion event even when the operation is
 		// healthy; the former 20 s default caused false failures and unsafe
