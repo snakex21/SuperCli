@@ -121,3 +121,41 @@ func TestThunderbirdSpecGuidesUnreadBrandAndLocalFolders(t *testing.T) {
 		}
 	}
 }
+
+func TestThunderbirdCopyRoutesDestinationAccountFromFolderID(t *testing.T) {
+	raw := json.RawMessage(`{"op":"copy","confirm":true,"folder":"account1://Powiadomienia","destination":"account2://_T","message_ids":[1,2]}`)
+	var args thunderbirdToolArgs
+	_ = json.Unmarshal(raw, &args)
+	routed, err := thunderbirdRouteDestinationAccount(args, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	_ = json.Unmarshal(routed, &got)
+	if got["destination_account"] != "account2" || got["destination"] != "account2://_T" {
+		t.Fatalf("routed = %s", routed)
+	}
+	// An explicit destination_account wins.
+	raw = json.RawMessage(`{"op":"copy","destination":"account2://_T","destination_account":"Local Folders"}`)
+	_ = json.Unmarshal(raw, &args)
+	if routed, _ := thunderbirdRouteDestinationAccount(args, raw); string(routed) != string(raw) {
+		t.Fatalf("explicit destination_account rewritten: %s", routed)
+	}
+}
+
+func TestThunderbirdMoveRefusesCrossAccountDestination(t *testing.T) {
+	res, _ := NewThunderbirdMail().execute(context.Background(), json.RawMessage(`{"op":"move","confirm":true,"folder":"account1://INBOX","destination":"account2://Archiwum","from":"@example.com"}`))
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "works inside one account") {
+		t.Fatalf("cross-account move error = %v", res.Err)
+	}
+	for _, raw := range []string{
+		`{"op":"move","folder":"account1://INBOX","destination":"account1://Archiwum","from":"@example.com"}`,
+		`{"op":"move","folder":"INBOX","destination":"account2://Archiwum","from":"@example.com"}`,
+	} {
+		var args thunderbirdToolArgs
+		_ = json.Unmarshal([]byte(raw), &args)
+		if _, err := thunderbirdRouteDestinationAccount(args, json.RawMessage(raw)); err != nil {
+			t.Errorf("%s refused: %v", raw, err)
+		}
+	}
+}
