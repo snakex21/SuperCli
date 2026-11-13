@@ -6,9 +6,13 @@ package browser
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -30,10 +34,22 @@ const (
 	maxRenderedHTML = 2 << 20
 )
 
-// session is the lazily started browser and its single page.
+// session is the lazily started browser, its single page and the guard
+// proxy every browser request goes through.
 type session struct {
 	browser *testbrowser.Browser
 	page    *testbrowser.Page
+	proxy   *guardProxy
+	// refAttr is a per-session random attribute name for element refs, so a
+	// page cannot pre-plant refs that hijack clicks.
+	refAttr string
+}
+
+func (s *session) close() {
+	_ = s.browser.Close()
+	if s.proxy != nil {
+		s.proxy.Close()
+	}
 }
 
 // Tool owns at most one headless browser, started on first use and closed
@@ -43,13 +59,15 @@ type Tool struct {
 	mu       sync.Mutex
 	sess     *session
 	idle     *time.Timer
+	idleGen  uint64
 	start    func(context.Context) (*session, error)
 	checkURL func(context.Context, string) error
+	dial     dialFunc
 }
 
 func New() *Tool {
-	t := &Tool{}
-	t.start = startSession
+	t := &Tool{dial: web.PublicDialContext}
+	t.start = t.startSession
 	t.checkURL = func(ctx context.Context, raw string) error {
 		_, err := web.PublicHTTPURL(ctx, raw)
 		return err
@@ -57,18 +75,50 @@ func New() *Tool {
 	return t
 }
 
-func startSession(ctx context.Context) (*session, error) {
-	// The browser outlives this call; only startup is bounded by ctx.
-	b, err := testbrowser.Start(context.WithoutCancel(ctx), testbrowser.Options{Scoped: true, Width: 1280, Height: 900})
+func (t *Tool) startSession(ctx context.Context) (*session, error) {
+	sweepStaleProfiles()
+	proxy, err := startGuardProxy(t.dial)
 	if err != nil {
+		return nil, fmt.Errorf("start browser network guard: %w", err)
+	}
+	// The browser outlives this call; startup itself is bounded inside Start.
+	b, err := testbrowser.Start(context.WithoutCancel(ctx), testbrowser.Options{
+		Scoped: true, Width: 1280, Height: 900,
+		Args: []string{
+			"--proxy-server=http://" + proxy.addr(),
+			// Chrome bypasses proxies for loopback by default; route it too.
+			"--proxy-bypass-list=<-loopback>",
+			"--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+		},
+	})
+	if err != nil {
+		proxy.Close()
 		return nil, fmt.Errorf("could not start a headless Chrome/Edge (install one, or set SUPERCLI_TEST_BROWSER to its executable): %w", err)
 	}
 	page, err := b.NewPage(ctx, "about:blank")
 	if err != nil {
 		_ = b.Close()
+		proxy.Close()
 		return nil, err
 	}
-	return &session{browser: b, page: page}, nil
+	return &session{browser: b, page: page, proxy: proxy, refAttr: "data-sc-" + randomHex(5)}, nil
+}
+
+func randomHex(n int) string {
+	buf := make([]byte, n)
+	_, _ = rand.Read(buf)
+	return hex.EncodeToString(buf)
+}
+
+// sweepStaleProfiles removes temporary browser profiles left by a process
+// that could not clean up (crash, power loss). Only day-old ones are touched.
+func sweepStaleProfiles() {
+	matches, _ := filepath.Glob(filepath.Join(os.TempDir(), "supercli-testbrowser-*"))
+	for _, dir := range matches {
+		if info, err := os.Stat(dir); err == nil && info.IsDir() && time.Since(info.ModTime()) > 24*time.Hour {
+			_ = os.RemoveAll(dir)
+		}
+	}
 }
 
 type args struct {
@@ -161,11 +211,11 @@ func (t *Tool) run(ctx context.Context, a args) (string, error) {
 			return "", err
 		}
 	case "click":
-		if err := evalStatus(ctx, page, clickJS(a.Ref)); err != nil {
+		if err := evalStatus(ctx, page, clickJS(t.sess.refAttr, a.Ref)); err != nil {
 			return "", err
 		}
 	case "type":
-		if err := evalStatus(ctx, page, typeJS(a.Ref, a.Text, a.Submit)); err != nil {
+		if err := evalStatus(ctx, page, typeJS(t.sess.refAttr, a.Ref, a.Text, a.Submit)); err != nil {
 			return "", err
 		}
 	case "back":
@@ -176,7 +226,7 @@ func (t *Tool) run(ctx context.Context, a args) (string, error) {
 	if a.Action != "read" {
 		settle(ctx, page)
 	}
-	snap, err := takeSnapshot(ctx, page)
+	snap, err := takeSnapshot(ctx, page, t.sess.refAttr)
 	if err != nil {
 		return "", err
 	}
@@ -194,10 +244,16 @@ func (t *Tool) touchLocked() {
 	if t.idle != nil {
 		t.idle.Stop()
 	}
+	// A timer that already fired may be waiting for the lock; the generation
+	// check keeps it from closing a session used after it fired.
+	t.idleGen++
+	gen := t.idleGen
 	t.idle = time.AfterFunc(idleTimeout, func() {
 		t.mu.Lock()
 		defer t.mu.Unlock()
-		t.closeLocked()
+		if t.idleGen == gen {
+			t.closeLocked()
+		}
 	})
 }
 
@@ -207,7 +263,7 @@ func (t *Tool) closeLocked() {
 		t.idle = nil
 	}
 	if t.sess != nil {
-		_ = t.sess.browser.Close()
+		t.sess.close()
 		t.sess = nil
 	}
 }
@@ -256,7 +312,9 @@ func evalStatus(ctx context.Context, page *testbrowser.Page, js string) error {
 // then no new network resources for settleQuiet (a bounded networkidle).
 func settle(ctx context.Context, page *testbrowser.Page) {
 	deadline := time.Now().Add(settleMax)
-	time.Sleep(150 * time.Millisecond)
+	if !sleepCtx(ctx, 150*time.Millisecond) {
+		return
+	}
 	lastCount, quietSince := -1, time.Now()
 	for time.Now().Before(deadline) && ctx.Err() == nil {
 		var state struct {
@@ -271,7 +329,20 @@ func settle(ctx context.Context, page *testbrowser.Page) {
 				return
 			}
 		}
-		time.Sleep(100 * time.Millisecond)
+		if !sleepCtx(ctx, 100*time.Millisecond) {
+			return
+		}
+	}
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 
@@ -292,25 +363,41 @@ type snapshot struct {
 	More     int       `json:"more"`
 }
 
-func takeSnapshot(ctx context.Context, page *testbrowser.Page) (snapshot, error) {
+func takeSnapshot(ctx context.Context, page *testbrowser.Page, attr string) (snapshot, error) {
 	var snap snapshot
-	err := page.Eval(ctx, snapshotJS, &snap)
+	err := page.Eval(ctx, snapshotScript(attr), &snap)
 	return snap, err
 }
 
-// snapshotJS assigns stable data-sc-ref ids to visible interactive elements
-// (kept across snapshots of the same document) and returns the rendered DOM.
-var snapshotJS = fmt.Sprintf(`(() => {
+// jsArgs encodes Go values as JavaScript literals (JSON is valid JS; Go's
+// %q escapes are not).
+func jsArgs(values ...any) string {
+	parts := make([]string, len(values))
+	for i, v := range values {
+		encoded, _ := json.Marshal(v)
+		parts[i] = string(encoded)
+	}
+	return strings.Join(parts, ", ")
+}
+
+func snapshotScript(attr string) string {
+	return "(" + snapshotJS + ")(" + jsArgs(attr) + ")"
+}
+
+// snapshotJS assigns stable ref ids (under the session's random attribute)
+// to visible interactive elements, kept across snapshots of the same
+// document, and returns the rendered DOM.
+var snapshotJS = fmt.Sprintf(`(attr) => {
   const visible = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el);
     return r.width > 0 && r.height > 0 && s.visibility !== "hidden" && s.display !== "none"; };
-  let next = window.__scNextRef || 1;
+  let next = window[attr] || 1;
   const out = []; let more = 0;
   const sel = 'a[href],button,input:not([type=hidden]),select,textarea,summary,[role=button],[role=link],[role=tab],[role=checkbox],[role=menuitem],[onclick]';
   for (const el of document.querySelectorAll(sel)) {
     if (!visible(el) || el.disabled) continue;
     if (out.length >= %d) { more++; continue; }
-    let ref = el.getAttribute("data-sc-ref");
-    if (!ref) { ref = "e" + (next++); el.setAttribute("data-sc-ref", ref); }
+    let ref = el.getAttribute(attr);
+    if (!ref) { ref = "e" + (next++); el.setAttribute(attr, ref); }
     const tag = el.tagName.toLowerCase(); const type = (el.type || "").toLowerCase();
     let role = el.getAttribute("role") || ({a: "link", select: "combobox", textarea: "textbox", summary: "button", button: "button"})[tag] || tag;
     if (tag === "input") role = ["submit", "button", "reset", "image"].includes(type) ? "button" : (type === "checkbox" || type === "radio") ? type : "textbox";
@@ -321,19 +408,26 @@ var snapshotJS = fmt.Sprintf(`(() => {
     if (type === "checkbox" || type === "radio") item.checked = el.checked;
     out.push(item);
   }
-  window.__scNextRef = next;
+  window[attr] = next;
   return {url: location.href, title: document.title, html: document.documentElement.outerHTML.slice(0, %d), elements: out, more};
-})()`, maxElements, elementNameMax, maxRenderedHTML)
+}`, maxElements, elementNameMax, maxRenderedHTML)
 
-func clickJS(ref string) string {
-	return fmt.Sprintf(`((ref) => { const el = document.querySelector('[data-sc-ref="' + ref + '"]'); if (!el) return "missing";
+// findRefJS resolves a ref to exactly one element; a page that copies the
+// session attribute onto other elements makes the ref ambiguous, not hijacked.
+const findRefJS = `const found = document.querySelectorAll("[" + attr + "=" + JSON.stringify(ref) + "]");
+  if (found.length === 0) return "missing";
+  if (found.length > 1) return "ambiguous ref; open or read the page again for fresh refs";
+  const el = found[0];`
+
+func clickJS(attr, ref string) string {
+	return `((attr, ref) => { ` + findRefJS + `
   el.scrollIntoView({block: "center"});
   if (el.tagName === "A" && el.target && el.target !== "_self" && el.href) { location.href = el.href; return "ok"; }
-  el.click(); return "ok"; })(%q)`, ref)
+  el.click(); return "ok"; })(` + jsArgs(attr, ref) + `)`
 }
 
-func typeJS(ref, text string, submit bool) string {
-	return fmt.Sprintf(`((ref, text, submit) => { const el = document.querySelector('[data-sc-ref="' + ref + '"]'); if (!el) return "missing";
+func typeJS(attr, ref, text string, submit bool) string {
+	return `((attr, ref, text, submit) => { ` + findRefJS + `
   if (!("value" in el)) return "element is not a text field";
   el.focus();
   const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : el.tagName === "SELECT" ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
@@ -345,7 +439,7 @@ func typeJS(ref, text string, submit bool) string {
     el.dispatchEvent(new KeyboardEvent("keyup", opts));
     if (proceed && el.form) { if (el.form.requestSubmit) el.form.requestSubmit(); else el.form.submit(); }
   }
-  return "ok"; })(%q, %q, %t)`, ref, text, submit)
+  return "ok"; })(` + jsArgs(attr, ref, text, submit) + `)`
 }
 
 func formatSnapshot(snap snapshot, before string, a args) string {

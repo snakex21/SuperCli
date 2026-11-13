@@ -5,11 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"regexp"
 	"strings"
 	"testing"
+
+	"supercli/internal/tools/web"
 )
 
 func call(t *testing.T, tool *Tool, args map[string]any) (string, error) {
@@ -95,6 +100,7 @@ func TestBrowserOpenClickTypeBack(t *testing.T) {
 
 	tool := New()
 	tool.checkURL = func(context.Context, string) error { return nil } // loopback fixture
+	tool.dial = (&net.Dialer{}).DialContext                            // the guard proxy would refuse loopback
 	defer tool.Close()
 	text, err := call(t, tool, map[string]any{"action": "open", "url": server.URL + "/"})
 	if err != nil {
@@ -129,5 +135,45 @@ func TestBrowserOpenClickTypeBack(t *testing.T) {
 	text, err = call(t, tool, map[string]any{"action": "close"})
 	if err != nil || text != "Browser closed." || tool.sess != nil {
 		t.Fatalf("close failed: %q %v", text, err)
+	}
+}
+
+func TestGuardProxyRefusesPrivateAddresses(t *testing.T) {
+	hits := 0
+	internal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		fmt.Fprint(w, "internal secret")
+	}))
+	defer internal.Close()
+	proxy, err := startGuardProxy(web.PublicDialContext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer proxy.Close()
+	proxyURL, _ := url.Parse("http://" + proxy.addr())
+	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+	resp, err := client.Get(internal.URL + "/")
+	if err == nil {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK || strings.Contains(string(body), "internal secret") {
+			t.Fatalf("proxy reached a loopback address: %d %s", resp.StatusCode, body)
+		}
+	}
+	// HTTPS goes through CONNECT, which must be refused the same way.
+	host := strings.TrimPrefix(internal.URL, "http://")
+	conn, err := net.Dial("tcp", proxy.addr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	fmt.Fprintf(conn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", host, host)
+	reply := make([]byte, 64)
+	n, _ := conn.Read(reply)
+	if !strings.Contains(string(reply[:n]), "403") {
+		t.Fatalf("CONNECT to loopback not refused: %q", reply[:n])
+	}
+	if hits != 0 {
+		t.Fatalf("internal server was contacted %d times", hits)
 	}
 }
