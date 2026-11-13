@@ -13,8 +13,8 @@ import (
 
 func TestThunderbirdOperationTimeoutsMatchBridgeWork(t *testing.T) {
 	want := map[string]time.Duration{
-		"copy": 120 * time.Second, "largest": 120 * time.Second, "folders": 120 * time.Second,
-		"verify_move": 120 * time.Second, "search": 120 * time.Second, "count": 120 * time.Second,
+		"copy": 120 * time.Second, "largest": 135 * time.Second, "folders": 135 * time.Second,
+		"verify_move": 135 * time.Second, "search": 135 * time.Second, "count": 135 * time.Second,
 		"move": 180 * time.Second, "repair_folder": 20 * time.Minute, "empty_trash": 15 * time.Minute,
 		"compact_folder": 15 * time.Minute, "status": 20 * time.Second, "accounts": 20 * time.Second,
 	}

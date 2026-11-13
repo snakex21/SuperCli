@@ -20,8 +20,18 @@ func thunderbirdResponseError(op string, response thunderbirdBridgeResponse) err
 		return fmt.Errorf("%s (Thunderbird did NOT execute %s; it is safe to call it again later, which uses a new request id)", msg, op)
 	case op == "repair_folder" && thunderbirdFolderBusy(msg):
 		return fmt.Errorf("%s (folder is busy; nothing was changed; try repair_folder again in a few minutes, no automatic retry)", msg)
+	case thunderbirdFolderLookupError(msg):
+		return fmt.Errorf("%s (nothing was executed. List folders with op 'folders' - it covers one account, so add account:'Local Folders' for local folders - and pass the exact folder.id such as account1://INBOX or account2://Name)", msg)
 	}
 	return errors.New(msg)
+}
+
+// thunderbirdFolderLookupError matches the bridge's folder resolution errors
+// ("Nie znaleziono folderu Thunderbird: X", "Niejednoznaczna nazwa folderu"),
+// which name neither the account searched nor how to disambiguate.
+func thunderbirdFolderLookupError(msg string) bool {
+	lower := strings.ToLower(msg)
+	return strings.HasPrefix(lower, "nie znaleziono folderu") || strings.HasPrefix(lower, "niejednoznaczna nazwa folderu")
 }
 
 func thunderbirdFolderBusy(msg string) bool {
@@ -87,4 +97,34 @@ func compactJSON(raw json.RawMessage) string {
 		return string(raw)
 	}
 	return strings.TrimSpace(out.String())
+}
+
+// thunderbirdCopyFollowUp names the folder that now holds the copies. In a live
+// test a local model asked to "copy two mails, then delete them from there"
+// called trash on the copy SOURCE (a Gmail label) instead of the destination;
+// only the bridge's Gmail label guard stopped it from trashing the originals.
+func thunderbirdCopyFollowUp(data json.RawMessage) string {
+	var res struct {
+		Source *struct {
+			ID   string `json:"id"`
+			Path string `json:"path"`
+		} `json:"source"`
+		Destination *struct {
+			ID   string `json:"id"`
+			Path string `json:"path"`
+		} `json:"destination"`
+		DestinationAccount *struct {
+			Type string `json:"type"`
+		} `json:"destinationAccount"`
+	}
+	if json.Unmarshal(data, &res) != nil || res.Source == nil || res.Destination == nil || res.Destination.ID == "" {
+		return ""
+	}
+	note := fmt.Sprintf("\n\nHost note: the copies are in folder %q; the originals in %q were not changed. "+
+		"To delete only the copies, run trash/purge with folder %q (never the copy source %q).",
+		res.Destination.ID, res.Source.ID, res.Destination.ID, res.Source.ID)
+	if res.DestinationAccount != nil && strings.EqualFold(res.DestinationAccount.Type, "none") {
+		note += " In Local Folders trash moves them to that account's own Trash; purge them there with account:'Local Folders'."
+	}
+	return note
 }
