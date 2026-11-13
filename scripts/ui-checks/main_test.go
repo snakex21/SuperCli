@@ -333,6 +333,114 @@ func TestChatMockInitialSSEThroughProxy(t *testing.T) {
 	}
 }
 
+// serverLikeBody models an incoming net/http request body: it delivers its
+// bytes, and a later read waits until the handler starts the response, which
+// is when net/http discards and closes an unread HTTP/1 body; that read then
+// fails like the real one does.
+type serverLikeBody struct {
+	data      *strings.Reader
+	ctx       context.Context
+	started   <-chan struct{}
+	exhausted bool
+	lateRead  chan struct{}
+	lateOnce  sync.Once
+}
+
+func (b *serverLikeBody) Read(p []byte) (int, error) {
+	if !b.exhausted {
+		n, _ := b.data.Read(p)
+		if b.data.Len() == 0 {
+			b.exhausted = true
+			return n, io.EOF
+		}
+		return n, nil
+	}
+	b.lateOnce.Do(func() { close(b.lateRead) })
+	select {
+	case <-b.started:
+		return 0, http.ErrBodyReadAfterClose
+	case <-b.ctx.Done():
+		return 0, b.ctx.Err()
+	}
+}
+
+func (b *serverLikeBody) Close() error { return nil }
+
+// streamRecorder is a flushing ResponseWriter that marks the response start.
+type streamRecorder struct {
+	mu        sync.Mutex
+	header    http.Header
+	body      bytes.Buffer
+	status    int
+	started   chan struct{}
+	startOnce sync.Once
+}
+
+func (r *streamRecorder) Header() http.Header { return r.header }
+func (r *streamRecorder) WriteHeader(code int) {
+	r.mu.Lock()
+	if r.status == 0 {
+		r.status = code
+	}
+	r.mu.Unlock()
+	r.startOnce.Do(func() { close(r.started) })
+}
+func (r *streamRecorder) Write(p []byte) (int, error) {
+	r.WriteHeader(http.StatusOK)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.body.Write(p)
+}
+func (r *streamRecorder) Flush() {}
+
+// The proxy must not read the incoming request body after the streamed
+// response has started: net/http closes it at that point, the transport then
+// fails the forwarded request write and closes the upstream connection in the
+// middle of the SSE body. That race truncated /api/chat before its first frame
+// on loaded Linux CI ("network error" in Chrome). The body here forces that
+// interleaving instead of relying on scheduling.
+func TestProxyForwardsRequestBodyIndependentOfResponseStart(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var input map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil || input["turn_id"] != "body-race" {
+			http.Error(w, fmt.Sprintf("forwarded body: %v %v", input, err), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"type\":\"session\"}\n\n")
+		w.(http.Flusher).Flush()
+		fmt.Fprint(w, "data: {\"type\":\"done\"}\n\n")
+	}))
+	defer upstream.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	recorder := &streamRecorder{header: http.Header{}, started: make(chan struct{})}
+	const payload = `{"prompt":"synthetic HTTP contract","turn_id":"body-race"}`
+	body := &serverLikeBody{data: strings.NewReader(payload), ctx: ctx, started: recorder.started, lateRead: make(chan struct{})}
+	request := httptest.NewRequestWithContext(ctx, http.MethodPost, "http://fixture.test/api/chat", body)
+	request.ContentLength = int64(len(payload))
+	request.Header.Set("Content-Type", "application/json")
+	func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				t.Fatalf("proxy aborted the streamed response: %v", recovered)
+			}
+		}()
+		proxyFor(upstream.URL).ServeHTTP(recorder, request)
+	}()
+	select {
+	case <-body.lateRead:
+		t.Fatal("proxy read the incoming request body after its bytes were consumed")
+	default:
+	}
+	recorder.mu.Lock()
+	status, text := recorder.status, recorder.body.String()
+	recorder.mu.Unlock()
+	if status != http.StatusOK || !strings.Contains(text, `"type":"session"`) || !strings.Contains(text, `"type":"done"`) {
+		t.Fatalf("proxied SSE incomplete: status=%d body=%q", status, text)
+	}
+}
+
 func TestChatPortsNativeHTTPMock(t *testing.T) {
 	for _, spec := range []struct{ kind, mode string }{
 		{"chat-command-end-http", "cmd-if-exist"}, {"chat-command-end-http", "curl-gif"}, {"chat-command-end-http", "cmd-error"}, {"chat-command-end-http", "checkpoint-rejected"},
