@@ -343,6 +343,11 @@ func (t *ThunderbirdMail) execute(ctx context.Context, raw json.RawMessage) (Res
 		return Result{Err: fmt.Errorf("thunderbird_mail: unsupported op %q", args.Op)}, nil
 	}
 
+	raw, err := thunderbirdRouteDestinationAccount(args, raw)
+	if err != nil {
+		return Result{Err: err}, nil
+	}
+
 	if err := globalThunderbirdBridge.configureDataDir(t.dataDir); err != nil {
 		return Result{Err: fmt.Errorf("thunderbird_mail: %w", err)}, nil
 	}
@@ -422,6 +427,54 @@ func thunderbirdAllNull(m map[string]any) bool {
 		}
 	}
 	return true
+}
+
+// thunderbirdFolderAccount returns the account id prefix of a folder id such as
+// "account2://Trash", or "" for a plain name or path.
+func thunderbirdFolderAccount(folder string) string {
+	folder = strings.TrimSpace(folder)
+	if i := strings.Index(folder, "://"); i > 0 && !strings.ContainsAny(folder[:i], "/ 	") {
+		return folder[:i]
+	}
+	return ""
+}
+
+// thunderbirdRouteDestinationAccount makes a destination folder id authoritative.
+// The bridge resolves copy's destination inside destination_account, defaulting
+// to the SOURCE account, so copy from Gmail to "account2://X" failed with
+// "folder not found" although the folder existed (seen live with a local model,
+// which then gave up). Other operations resolve the destination inside the
+// source account only, so a cross-account destination is refused up front.
+func thunderbirdRouteDestinationAccount(args thunderbirdToolArgs, raw json.RawMessage) (json.RawMessage, error) {
+	destAccount := thunderbirdFolderAccount(args.Destination)
+	if destAccount == "" {
+		return raw, nil
+	}
+	switch args.Op {
+	case "copy":
+		if strings.TrimSpace(args.DestinationAccount) != "" {
+			return raw, nil
+		}
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) != nil {
+			return raw, nil
+		}
+		fields["destination_account"], _ = json.Marshal(destAccount)
+		routed, err := json.Marshal(fields)
+		if err != nil {
+			return raw, nil
+		}
+		return routed, nil
+	case "move", "restore", "import_msg":
+		srcAccount := thunderbirdFolderAccount(args.Folder)
+		if srcAccount == "" && strings.HasPrefix(strings.TrimSpace(args.Account), "account") && !strings.ContainsAny(args.Account, " @") {
+			srcAccount = strings.TrimSpace(args.Account)
+		}
+		if srcAccount != "" && srcAccount != destAccount {
+			return nil, fmt.Errorf("thunderbird_mail: %s works inside one account, but folder is in %s and destination %q is in %s; nothing was executed. Use op 'copy' (with destination_account) to put messages into another account", args.Op, srcAccount, args.Destination, destAccount)
+		}
+	}
+	return raw, nil
 }
 
 var (
