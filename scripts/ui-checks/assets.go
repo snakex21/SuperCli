@@ -167,7 +167,7 @@ func jsonResponse(w http.ResponseWriter, value any) {
 // Explicit external origins are proxied only in this isolated browser context.
 // This replaces network interception: models are mocked before app startup,
 // while the optional scaling settings writes still reach the owned test server.
-func proxyFor(raw string) *httputil.ReverseProxy {
+func proxyFor(raw string) http.Handler {
 	target, _ := url.Parse(raw)
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	director := proxy.Director
@@ -204,8 +204,31 @@ func proxyFor(raw string) *httputil.ReverseProxy {
 		response.Header.Set("Content-Length", fmt.Sprint(len(data)))
 		return nil
 	}
-	return proxy
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Forward an in-memory copy of the request body. An HTTP/1 server
+		// discards and closes an unread request body as soon as the handler
+		// writes the first response bytes; a streamed (SSE) upstream reply can
+		// arrive before the transport's final EOF read of the forwarded body,
+		// and that read then fails with "invalid Read on closed Body". The
+		// transport treats it as a write error and closes the upstream
+		// connection mid-stream ("use of closed network connection"), which
+		// Chrome reports as a fetch "network error" before the first frame.
+		if r.Body != nil && r.Body != http.NoBody {
+			data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxProxiedRequestBody))
+			if err != nil {
+				http.Error(w, "read proxied request body: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(data))
+			r.ContentLength = int64(len(data))
+			r.TransferEncoding = nil
+		}
+		proxy.ServeHTTP(w, r)
+	})
 }
+
+// maxProxiedRequestBody bounds the buffered copy of a proxied request body.
+const maxProxiedRequestBody = 8 << 20
 
 func externalSurface(raw string, models any) (*httptest.Server, error) {
 	proxy := proxyFor(raw)
