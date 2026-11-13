@@ -176,6 +176,8 @@ func registerFileWebAndLineTools(
 	// TAVILY_API_KEY supplies a key). Both are opt-in (NOT
 	// MarkAlwaysOn); the model discovers them via tool_search.
 	registry.MustRegister(tools.NewWebFetch().Spec())
+	// browser: headless Chrome/Edge for JS pages and clicking; discoverable.
+	registry.MustRegister(tools.NewBrowser().Spec())
 	registry.MustRegister(wrap.mut(tools.NewWebDownload(home).Spec()))
 	wsEngine := tomlCfg.WebSearch.Engine
 	wsKey := tomlCfg.WebSearch.APIKey

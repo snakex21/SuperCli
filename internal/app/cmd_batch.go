@@ -193,6 +193,7 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	// A compact current-facts tool is always available in batch mode. The
 	// advanced web_search/web_fetch contracts stay discoverable on demand.
 	reg.MustRegister(tools.NewWebFetch().Spec())
+	reg.MustRegister(tools.NewBrowser().Spec())
 	reg.MustRegister(codeIntel.WrapMutation(tools.NewWebDownload(home).Spec()))
 	batchWebEngine := tomlCfg.WebSearch.Engine
 	batchWebKey := tomlCfg.WebSearch.APIKey
