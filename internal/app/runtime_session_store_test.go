@@ -46,7 +46,7 @@ func TestSessionStackRecoversCommittedDeleteBeforeOpeningLiveWriter(t *testing.T
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reopened, writer := openSessionStack(data, "current", home, "model", nil)
+	reopened, writer := openSessionStack(data, "current", home, "model")
 	if reopened == nil || writer == nil {
 		t.Fatal("startup recovery disabled persistence")
 	}

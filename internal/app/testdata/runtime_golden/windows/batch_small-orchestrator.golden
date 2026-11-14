@@ -1,0 +1,327 @@
+##### surface
+batch profile=small-orchestrator
+##### base registry
+visible: read_lines,read_context,read_many,scratchpad,list_dir,patch_file,create_file,write_file,make_dir,move,copy,trash,search_code,ctx_execute,invoke_tool,web_lookup,tool_search,read_output,task,send_message,task_stop
+read_lines [on ro] desc=5fc6b5b1b048 schema=e72f18575d62 fn=supercli/internal/tools/files.(*ReadLines).execute-fm
+read_context [on ro] desc=1ea9091c87f7 schema=ab746c91670d fn=supercli/internal/tools/files.(*ReadContext).execute-fm
+read_many [on ro] desc=a89be90c17af schema=e5b1ec6fc768 fn=supercli/internal/tools/files.(*ReadMany).execute-fm
+scratchpad [on] desc=2c791388f9fd schema=8d24949d1787 fn=supercli/internal/tools/scratchpad.(*Scratchpad).run-fm
+list_dir [on ro] desc=ba7b8378b065 schema=20c2659b0356 fn=supercli/internal/tools/files.(*ListDirTool).Execute-fm
+patch_file [on] desc=381c66726849 schema=1e472a2eb49c fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
+create_file [on] desc=3e10cfbf6969 schema=cff57708c1c8 fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
+write_file [on] desc=4b2e40110fd4 schema=b8dab809301a fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
+make_dir [on] desc=a8edc26ac5a3 schema=5c101a2235dd fn=supercli/internal/tools/files.(*MakeDir).execute-fm
+move [on] desc=658efd3bf187 schema=6170c6a15ed2 fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
+copy [on] desc=53ee38a718d3 schema=119af3dec318 fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
+trash [on approval] desc=4e4f53808106 schema=e8dd5819a9d0 fn=supercli/internal/tools/files.(*Trash).execute-fm
+search_code [on ro] desc=37742248d322 schema=4fe96f18a70b fn=supercli/internal/tools/search.(*SearchCode).run-fm
+ctx_execute [on] desc=81a1a77d415e schema=6e56717e1e19 fn=supercli/internal/tools/workflow.(*CtxExecuteTool).Execute-fm
+code_intel [] desc=67ef1241e6bd schema=e2c1a9873c3c fn=supercli/internal/tools/codeintel.(*Tool).Execute-fm
+process_session [] desc=ffde6bd7cf9b schema=8e446bef10e3 fn=supercli/internal/tools/processsession.(*Tool).Execute-fm
+headless_control [approval] desc=6ec03ee68991 schema=67269f3aac73 fn=supercli/internal/tools/headless.(*Tool).Execute-fm
+invoke_tool [on] desc=06d24b024d2e schema=0dc93db84c43 fn=supercli/internal/agent.(*InvokeTool).Spec.func1
+web_fetch [ro] desc=074e797be2aa schema=dae3f262f5e0 fn=supercli/internal/tools/web.(*WebFetch).execute-fm
+browser [] desc=7e016870a3b9 schema=224185d89b23 fn=supercli/internal/tools/browser.(*Tool).Execute-fm
+web_download [] desc=b91e03154353 schema=ce4cdf1b4fcc fn=supercli/internal/tools/web.(*WebDownload).execute-fm
+web_search [ro] desc=0c533126ac36 schema=fc56ec9599d1 fn=supercli/internal/tools/web.(*WebSearch).execute-fm
+web_lookup [on ro] desc=efe870122b33 schema=8acf7a96a129 fn=supercli/internal/tools/web.(*WebSearch).lookup-fm
+tool_search [on] desc=adb46caef9d4 schema=bec7ffe0edef fn=supercli/internal/tools/search.(*ToolSearcher).execute-fm
+read_output [on ro] desc=8cb657cdcc97 schema=0b5132aaf325 fn=supercli/internal/tools/core.(*Registry).EnsureReadOutput.(*OutputStore).ReadOutputTool.func1
+task [on] desc=f89e722eadce schema=cba01779811d fn=supercli/internal/agent.(*AgentTool).execute-fm
+send_message [on] desc=43f46f4818e5 schema=9275b6d43277 fn=supercli/internal/agent.(*SendMessageTool).execute-fm
+task_stop [on] desc=5bf70a6bb1c7 schema=9f0fb0e23dea fn=supercli/internal/agent.(*TaskStopTool).execute-fm
+hide_messages [] desc=f8d2204daba4 schema=fabcc71294d8 fn=supercli/internal/tools/workflow.(*HideMessages).run-fm
+##### loop visible tools
+task
+send_message
+task_stop
+tool_search
+web_lookup
+search_code
+read_many
+read_lines
+read_context
+list_dir
+scratchpad
+read_output
+##### system prompt
+You are SuperCli, a portable AI assistant.
+
+- Use tools for actions: patch_file (batch edits), create_file (new files).
+- Word: NEW = exactly one edit_docx(create) with content + design. EXISTING = read_docx once, then exactly one edit_docx(batch). Success means stop tools and answer. Never script or unpack DOCX.
+- list_dir/search_code/read_many. tool_search only for missing tools; apply_skill(query,auto=true) for specialized guidance.
+- Use tools to close evidence gaps. Reuse results; act on known paths/URLs. Read missing context before edits. Batch independent calls; prefer batch tools. Stop when ALL requested outcomes are verified.
+- Verify edits; recheck only after failures or relevant changes. Fix errors and recheck, or report the blocker.
+- Do only what was asked. Match effort to scope; a no-op is a valid result. No formatting-only edits. Missing file/target: say so and ask; never substitute another.
+- Ask before irreversible actions (delete, mass move, send). Verify current facts.
+- edit_docx/edit_xlsx save a backup. After edits, state which file changed and what changed.
+- Be brief, use the user's language. remember preferences; recall only for missing prior context.
+
+OS: Windows. Use 'dir' instead of 'ls', 'type' instead of 'cat', 'del' instead of 'rm', 'copy' instead of 'cp', 'move' instead of 'mv', backslash paths. For shell commands use cmd /c prefix.
+
+Model profile (optional bounded instructions; lower priority than user request):
+Golden model profile: prefer small steps.
+
+Project instructions (AGENTS.md). Follow them for work in this repository; the current user request, safety rules, and tool rules take priority:
+# Golden project
+Always answer briefly.
+
+## Orchestrator mode
+
+Use direct search/read tools for targeted lookups and explanations. You cannot
+edit files or run commands: delegate changes and tests with task. Delegate
+independent work together; avoid overlapping writes. For substantial
+exploration, use a worker when isolation helps.
+
+Brief workers with goal, relevant paths/findings, expected result and completion
+criteria; they cannot see this chat. Reuse their evidence and continue with
+send_message when their context helps. Repeat reads/checks only for missing
+details, failures or relevant changes. Report changes, checks and blockers.
+Do not repeat a worker's assigned investigation; use its report and captured evidence.
+Use scratchpad for detailed evidence that should survive outside the chat.
+##### project instructions
+Project instructions (AGENTS.md). Follow them for work in this repository; the current user request, safety rules, and tool rules take priority:
+# Golden project
+Always answer briefly.
+##### user instructions
+User instructions (enabled preset: Golden). Apply these preferences unless the current user request conflicts; the current request, safety rules, and tool rules take priority:
+Golden user preset: reply in English.
+##### loop config
+Provider: set
+Registry: set
+Caps: set
+System: len=2461 sha=50850e83c63b
+ProjectInstructions: len=184 sha=5fcf086fd695
+UserInstructions: len=213 sha=c8493814683a
+UserInstructionsForRun: set
+SkipImplementationHint: false
+Briefing: ""
+LiveContext: ""
+LiveContextForRun: nil
+LiveContextBlocks: set
+RefreshContextWindow: set
+UserDownloadsDir: set
+MaxSteps: 300
+InitialMessages: nil
+KeepThinking: false
+EnableNavigator: true
+NavigatorAuto: true
+NavigatorKeywordsOnly: true
+ThinTools: true
+StableToolset: true
+CatalogHoist: true
+ReplaceContextTail: false
+Orchestrator: true
+TaskParallel: false
+TaskParallelWarnLocal: false
+ThinHintMax: 0
+BaseDir: "<HOME>"
+Writer: set
+ToolOutputs: nil
+ImageStore: nil
+ErrorLog: set
+Reflector: nil
+ReflectEvery: 0
+AdaptiveReflection: false
+PatternInjector: nil
+CreditTracker: nil
+Ultrawork: nil
+Draft: nil
+DraftProvider: nil
+NavigatorProvider: nil
+DraftOverrideSink: nil
+WindowFor: nil
+ContextWindowFor: set
+ContextProvider: "echo"
+ScopedContextWindowFor: set
+Summarizer: set
+LearnLimit: set
+PrefillProfiles: set
+PruneProtectTokens: 0
+Stats: set
+Review: nil
+provider.name: golden-model
+registry.len: 29
+max_steps.default: true
+live_context.err: <nil>
+live_context[runtime]: "Working directory (file sandbox root): <HOME>\nUse this exact path for file and directory operations. Relative paths resolve here; paths must stay inside it."
+user_instructions_for_run: "User instructions (enabled preset: Golden). Apply these preferences unless the current user request conflicts; the current request, safety rules, and tool rules take priority:\nGolden user preset: reply in English." err=<nil>
+##### approval gate
+fallback: false
+auto_approve: ["thunderbird_mail:count"]
+allow_all_non_interactive: false
+non_interactive_reason: "batch mode (--batch)"
+grant_ttl: 45m0s
+timeout: 0s
+audit_path: <DATA>\approvals.jsonl
+language: pl
+now: false
+##### events
+tool_call tool_search
+done steps=2
+done steps=1
+##### transcript
+=== request 1 ===
+tools: task(desc=f89e722eadce schema=cba01779811d) tool_search(desc=adb46caef9d4 schema=bec7ffe0edef) web_lookup(desc=efe870122b33 schema=8acf7a96a129) search_code(desc=37742248d322 schema=4fe96f18a70b) read_many(desc=a89be90c17af schema=e5b1ec6fc768) read_lines(desc=5fc6b5b1b048 schema=e72f18575d62) read_context(desc=1ea9091c87f7 schema=ab746c91670d) list_dir(desc=ba7b8378b065 schema=20c2659b0356) read_output(desc=8cb657cdcc97 schema=0b5132aaf325)
+--- msg 0 role=system origin={"source":"instructions"}
+You are SuperCli, a portable AI assistant.
+
+- Use tools for actions: patch_file (batch edits), create_file (new files).
+- Word: NEW = exactly one edit_docx(create) with content + design. EXISTING = read_docx once, then exactly one edit_docx(batch). Success means stop tools and answer. Never script or unpack DOCX.
+- list_dir/search_code/read_many. tool_search only for missing tools; apply_skill(query,auto=true) for specialized guidance.
+- Use tools to close evidence gaps. Reuse results; act on known paths/URLs. Read missing context before edits. Batch independent calls; prefer batch tools. Stop when ALL requested outcomes are verified.
+- Verify edits; recheck only after failures or relevant changes. Fix errors and recheck, or report the blocker.
+- Do only what was asked. Match effort to scope; a no-op is a valid result. No formatting-only edits. Missing file/target: say so and ask; never substitute another.
+- Ask before irreversible actions (delete, mass move, send). Verify current facts.
+- edit_docx/edit_xlsx save a backup. After edits, state which file changed and what changed.
+- Be brief, use the user's language. remember preferences; recall only for missing prior context.
+
+OS: Windows. Use 'dir' instead of 'ls', 'type' instead of 'cat', 'del' instead of 'rm', 'copy' instead of 'cp', 'move' instead of 'mv', backslash paths. For shell commands use cmd /c prefix.
+
+Model profile (optional bounded instructions; lower priority than user request):
+Golden model profile: prefer small steps.
+
+Project instructions (AGENTS.md). Follow them for work in this repository; the current user request, safety rules, and tool rules take priority:
+# Golden project
+Always answer briefly.
+
+## Orchestrator mode
+
+Use direct search/read tools for targeted lookups and explanations. You cannot
+edit files or run commands: delegate changes and tests with task. Delegate
+independent work together; avoid overlapping writes. For substantial
+exploration, use a worker when isolation helps.
+
+Brief workers with goal, relevant paths/findings, expected result and completion
+criteria; they cannot see this chat. Reuse their evidence and continue with
+send_message when their context helps. Repeat reads/checks only for missing
+details, failures or relevant changes. Report changes, checks and blockers.
+Do not repeat a worker's assigned investigation; use its report and captured evidence.
+Use scratchpad for detailed evidence that should survive outside the chat.
+
+User instructions (enabled preset: Golden). Apply these preferences unless the current user request conflicts; the current request, safety rules, and tool rules take priority:
+Golden user preset: reply in English.
+
+Use native tool calls when available. Text fallback:
+«tool_name
+key: value
+»
+One block per call; separate blocks for independent calls. For no arguments: «tool_name».
+Text arguments have no JSON braces. Arrays/objects require native JSON tool calling; patch_file's old/new shorthand accepts text.
+Simple read-only catalog tools can skip tool_search: call invoke_tool with "tool: name" and one "arg.field: value" line per target argument.
+
+More tools, loadable on demand — call tool_search once with a natural-language query. It activates the match and returns its full schema; then call the target through invoke_tool with those args:
+scratchpad(action, name, text) — Share compact notes between coordinator and workers without copying full worker…
+send_message(to, message, mode) — Continue a finished task worker by ID, or use mode=steer to queue a correction …
+task_stop(task_id) — Stop a running task worker by ID. Use when a worker is stuck, no longer needed,…
+--- msg 1 role=user origin={"spans":[{"source":"human"},{"source":"runtime"}]}
+GOLDEN_CALL tool_search {"query":"web_fetch"}
+
+Repo state (auto-collected):
+recently modified files:
+notes.txt (<AGE>)
+AGENTS.md (<AGE>)
+files (2):
+./: AGENTS.md notes.txt
+--- msg 2 role=system origin={"source":"runtime"}
+Working directory (file sandbox root): <HOME>
+Use this exact path for file and directory operations. Relative paths resolve here; paths must stay inside it.
+
+Current local date/time: <WEEKDAY>, <DATE> <TZ>. It is <YEAR> — verify that libraries, APIs, and patterns you recommend are still current before advising.
+=== request 2 ===
+tools: task(desc=f89e722eadce schema=cba01779811d) tool_search(desc=adb46caef9d4 schema=bec7ffe0edef) web_lookup(desc=efe870122b33 schema=8acf7a96a129) search_code(desc=37742248d322 schema=4fe96f18a70b) read_many(desc=a89be90c17af schema=e5b1ec6fc768) read_lines(desc=5fc6b5b1b048 schema=e72f18575d62) read_context(desc=1ea9091c87f7 schema=ab746c91670d) list_dir(desc=ba7b8378b065 schema=20c2659b0356) read_output(desc=8cb657cdcc97 schema=0b5132aaf325)
+--- msg 0 role=system origin={"source":"instructions"}
+You are SuperCli, a portable AI assistant.
+
+- Use tools for actions: patch_file (batch edits), create_file (new files).
+- Word: NEW = exactly one edit_docx(create) with content + design. EXISTING = read_docx once, then exactly one edit_docx(batch). Success means stop tools and answer. Never script or unpack DOCX.
+- list_dir/search_code/read_many. tool_search only for missing tools; apply_skill(query,auto=true) for specialized guidance.
+- Use tools to close evidence gaps. Reuse results; act on known paths/URLs. Read missing context before edits. Batch independent calls; prefer batch tools. Stop when ALL requested outcomes are verified.
+- Verify edits; recheck only after failures or relevant changes. Fix errors and recheck, or report the blocker.
+- Do only what was asked. Match effort to scope; a no-op is a valid result. No formatting-only edits. Missing file/target: say so and ask; never substitute another.
+- Ask before irreversible actions (delete, mass move, send). Verify current facts.
+- edit_docx/edit_xlsx save a backup. After edits, state which file changed and what changed.
+- Be brief, use the user's language. remember preferences; recall only for missing prior context.
+
+OS: Windows. Use 'dir' instead of 'ls', 'type' instead of 'cat', 'del' instead of 'rm', 'copy' instead of 'cp', 'move' instead of 'mv', backslash paths. For shell commands use cmd /c prefix.
+
+Model profile (optional bounded instructions; lower priority than user request):
+Golden model profile: prefer small steps.
+
+Project instructions (AGENTS.md). Follow them for work in this repository; the current user request, safety rules, and tool rules take priority:
+# Golden project
+Always answer briefly.
+
+## Orchestrator mode
+
+Use direct search/read tools for targeted lookups and explanations. You cannot
+edit files or run commands: delegate changes and tests with task. Delegate
+independent work together; avoid overlapping writes. For substantial
+exploration, use a worker when isolation helps.
+
+Brief workers with goal, relevant paths/findings, expected result and completion
+criteria; they cannot see this chat. Reuse their evidence and continue with
+send_message when their context helps. Repeat reads/checks only for missing
+details, failures or relevant changes. Report changes, checks and blockers.
+Do not repeat a worker's assigned investigation; use its report and captured evidence.
+Use scratchpad for detailed evidence that should survive outside the chat.
+
+User instructions (enabled preset: Golden). Apply these preferences unless the current user request conflicts; the current request, safety rules, and tool rules take priority:
+Golden user preset: reply in English.
+
+Use native tool calls when available. Text fallback:
+«tool_name
+key: value
+»
+One block per call; separate blocks for independent calls. For no arguments: «tool_name».
+Text arguments have no JSON braces. Arrays/objects require native JSON tool calling; patch_file's old/new shorthand accepts text.
+Simple read-only catalog tools can skip tool_search: call invoke_tool with "tool: name" and one "arg.field: value" line per target argument.
+
+More tools, loadable on demand — call tool_search once with a natural-language query. It activates the match and returns its full schema; then call the target through invoke_tool with those args:
+scratchpad(action, name, text) — Share compact notes between coordinator and workers without copying full worker…
+send_message(to, message, mode) — Continue a finished task worker by ID, or use mode=steer to queue a correction …
+task_stop(task_id) — Stop a running task worker by ID. Use when a worker is stuck, no longer needed,…
+--- msg 1 role=user origin={"spans":[{"source":"human"},{"source":"runtime"}]}
+GOLDEN_CALL tool_search {"query":"web_fetch"}
+
+Repo state (auto-collected):
+recently modified files:
+notes.txt (<AGE>)
+AGENTS.md (<AGE>)
+files (2):
+./: AGENTS.md notes.txt
+--- msg 2 role=system origin={"source":"runtime"}
+Working directory (file sandbox root): <HOME>
+Use this exact path for file and directory operations. Relative paths resolve here; paths must stay inside it.
+
+Current local date/time: <WEEKDAY>, <DATE> <TZ>. It is <YEAR> — verify that libraries, APIs, and patterns you recommend are still current before advising.
+--- msg 3 role=assistant origin={"source":"model"}
+tool_call call_1 tool_search {"query":"web_fetch"}
+--- msg 4 role=tool name=tool_search tool_call_id=call_1 origin={"source":"tool_result"}
+{"query":"web_fetch","matches":[{"name":"web_lookup","server":"user","score":1,"signature":"web_lookup(query, queries:list, refresh:bool)","schema":{"type":"object","properties":{"query":{"type":"string","description":"Search terms. Use a full URL to find external mentions or references to it; use web_fetch to read a known page or web_download to save a known file."},"queries":{"type":"array","items":{"type":"string"},"maxItems":3,"description":"Optional extra related queries (up to 3), searched in parallel in this one call."},"refresh":{"type":"boolean","description":"Bypass recent result reuse and the search cache to make a fresh network search (default false)."}},"required":["query"]}}],"hint":"These tools are now callable. Each match includes its exact signature and JSON schema; call by name when exposed, or through invoke_tool in the schema-stable toolset."}
+=== request 3 ===
+tools: web_lookup(desc=efe870122b33 schema=8acf7a96a129) tool_search(desc=adb46caef9d4 schema=bec7ffe0edef)
+--- msg 0 role=system origin={"source":"instructions"}
+You are SuperCli. Answer directly in the user's language. For plain conversation, reply briefly without tools. Use web_lookup for current facts, recall for remembered facts, and tool_search to obtain any other tools needed to fulfill the request.
+
+User instructions (enabled preset: Golden). Apply these preferences unless the current user request conflicts; the current request, safety rules, and tool rules take priority:
+Golden user preset: reply in English.
+--- msg 1 role=user origin={"spans":[{"source":"human"},{"source":"runtime"}]}
+GOLDEN_CALL tool_search {"query":"web_fetch"}
+
+Repo state (auto-collected):
+recently modified files:
+notes.txt (<AGE>)
+AGENTS.md (<AGE>)
+files (2):
+./: AGENTS.md notes.txt
+--- msg 2 role=assistant origin={"source":"model"}
+[part 0 text source=]
+done after tool
+--- msg 3 role=user origin={"source":"human"}
+thanks
+--- msg 4 role=system origin={"source":"runtime"}
+Working directory (file sandbox root): <HOME>
+Use this exact path for file and directory operations. Relative paths resolve here; paths must stay inside it.
+
+Current local date/time: <WEEKDAY>, <DATE> <TZ>. It is <YEAR> — verify that libraries, APIs, and patterns you recommend are still current before advising.

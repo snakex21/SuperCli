@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"supercli/internal/assembly"
 	"supercli/internal/system/config"
 	"supercli/internal/tools"
 	"supercli/internal/tools/mcp"
@@ -41,8 +42,7 @@ func initMcp(dataDir string, tomlCfg config.TomlConfig, registry *tools.Registry
 	}
 	manager := mcp.NewManager(configs)
 	manager.SetImageMode(tomlCfg.Mcp.ImageMode)
-	registry.MustRegister(mcp.NewBridge(manager).Spec())
-	registry.MarkAlwaysOn("mcp_bridge")
+	assembly.Register(registry, assembly.MCPBridge, &assembly.Deps{MCP: manager})
 	if reindex != nil {
 		reindex()
 	}

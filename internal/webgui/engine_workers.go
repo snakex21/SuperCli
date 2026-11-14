@@ -16,6 +16,7 @@ import (
 
 	"supercli/internal/account/codexauth"
 	"supercli/internal/agent"
+	"supercli/internal/assembly"
 	"supercli/internal/checkpoint"
 	"supercli/internal/llm"
 	"supercli/internal/llm/providers"
@@ -64,13 +65,15 @@ func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Pr
 			return preflight.BuildContext(ctx, home, preflight.Options{Layout: true})
 		}
 	}
-	for _, sp := range []tools.Tool{at.Spec(), agent.NewSendMessageTool(at.Workers).Spec(), agent.NewTaskStopTool(at.Workers).Spec()} {
-		if len(turns) > 0 && turns[0] != nil {
-			sp = turns[0].Wrap(sp)
-		}
-		reg.MustRegister(sp)
-		reg.MarkAlwaysOn(sp.Name)
+	deps := &assembly.Deps{Provided: map[string]tools.Tool{
+		"task":         at.Spec(),
+		"send_message": agent.NewSendMessageTool(at.Workers).Spec(),
+		"task_stop":    agent.NewTaskStopTool(at.Workers).Spec(),
+	}}
+	if len(turns) > 0 && turns[0] != nil {
+		deps.Checkpoint = turns[0].Wrap
 	}
+	assembly.Register(reg, assembly.Delegation(assembly.SurfaceWeb, true), deps)
 	// The engine retains workers across fresh parent loops; their continuation
 	// must remain callable through the stable dispatcher on later user turns.
 	if len(at.Workers.List()) > 0 {

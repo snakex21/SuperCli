@@ -9,6 +9,7 @@ import (
 
 	"supercli/internal/account/usagecost"
 	"supercli/internal/agent"
+	"supercli/internal/assembly"
 	"supercli/internal/llm"
 	"supercli/internal/llm/factory"
 	"supercli/internal/llm/prompt"
@@ -18,8 +19,12 @@ import (
 	"supercli/internal/system/preflight"
 	"supercli/internal/system/stats"
 	"supercli/internal/tools"
-	"supercli/internal/tools/ctxexec"
 )
+
+// batchAssembledHook is a test-only seam: golden tests inspect the fully
+// wired batch loop (and may drive it) before the real run. Returning true
+// stops runBatch there. Always nil in production.
+var batchAssembledHook func(l *agent.Loop, cfg agent.LoopConfig, base *tools.Registry) bool
 
 // runBatch executes a single prompt without TUI, printing the
 // assistant response to stdout. Used for CI/CD and scripting.
@@ -154,82 +159,48 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		}
 	}
 
-	// Build the agent loop.
+	// Build the agent loop: the batch toolset (see assembly.Batch) is the
+	// thin file family always-on plus discoverable lookups; tool_search makes
+	// the rest reachable.
 	reg := tools.NewRegistry()
 	codeIntel := tools.NewCodeIntel(home)
 	defer codeIntel.Close()
 	processSession := tools.NewProcessSession(home, dataDir)
 	defer processSession.Close()
 	defer tools.CloseBrowsers()
-	// Register the thin file tools so batch mode can actually
-	// exercise them (CI / live tool tests). tool_search makes the
-	// rest reachable; these are the create/edit/move/copy/trash
-	// family plus reads, all rooted at home and always-on.
-	for _, sp := range []tools.Tool{
-		tools.NewReadLines(home).Spec(),
-		tools.NewReadContext(home).Spec(),
-		tools.NewReadMany(home).Spec(),
-		tools.NewScratchpad(home).Spec(),
-		tools.NewListDir(home).Spec(),
-		tools.NewPatchFile(home).Spec(),
-		tools.NewCreateFile(home).Spec(),
-		tools.NewWriteFile(home).Spec(),
-		tools.NewMakeDir(home).Spec(),
-		tools.NewMove(home).Spec(),
-		tools.NewCopy(home).Spec(),
-		tools.NewTrash(home).Spec(),
-		tools.NewSearchCode(home).Spec(),
-		tools.NewCtxExecuteTool(ctxexec.New(home), home).Spec(),
-	} {
-		sp = codeIntel.WrapMutation(sp)
-		reg.MustRegister(sp)
-		reg.MarkAlwaysOn(sp.Name)
-	}
-	reg.MustRegister(codeIntel.Spec())
-	reg.MustRegister(processSession.Spec())
-	reg.MustRegister(tools.NewHeadlessControl(home, dataDir).Spec())
-	reg.MustRegister(agent.NewInvokeTool(reg).Spec())
-	reg.MarkAlwaysOn("invoke_tool")
-	// A compact current-facts tool is always available in batch mode. The
-	// advanced web_search/web_fetch contracts stay discoverable on demand.
-	reg.MustRegister(tools.NewWebFetch().Spec())
-	reg.MustRegister(tools.NewBrowser().Spec())
-	reg.MustRegister(codeIntel.WrapMutation(tools.NewWebDownload(home).Spec()))
-	batchWeb := tools.NewConfiguredWebSearch(tomlCfg)
-	reg.MustRegister(batchWeb.Spec())
-	reg.MustRegister(batchWeb.LookupSpec())
-	reg.MarkAlwaysOn("web_lookup")
-	// A short-lived batch registry does not need a SQLite FTS database: the
-	// searcher uses its deterministic lexical fallback over this small set.
-	toolSearcher := tools.NewToolSearcher(reg, nil)
-	reg.MustRegister(toolSearcher.Spec())
-	reg.MarkAlwaysOn("tool_search")
-	systemPrompt := prompt.Build(execProfile.PromptSmall) + "\n\n" + platformHint()
-	if modelProfile := prompt.LoadProfileAt(home, dataDir, cfg.Model); modelProfile != "" {
-		systemPrompt += "\n\n" + modelProfile
-	}
+	assembly.Register(reg, assembly.Batch, &assembly.Deps{
+		Home: home, DataDir: dataDir, Toml: tomlCfg, Registry: reg,
+		CodeIntel: codeIntel, ProcessSession: processSession,
+	})
 	projectInstructions := prompt.LoadProjectInstructions(home)
-	if projectInstructions != "" {
-		systemPrompt += "\n\n" + projectInstructions
+	promptSpec := assembly.PromptSpec{
+		Base:         prompt.Build(execProfile.PromptSmall),
+		Platform:     assembly.PlatformHint,
+		ModelProfile: prompt.LoadProfileAt(home, dataDir, cfg.Model),
+		Project:      projectInstructions,
 	}
-	// Orchestrator mode: the lean preamble replaces the coordinator
-	// section — the hard "you have no edit/run tools" boundary plus the
-	// delegate-first guidance (same as buildSystemPrompt in the TUI).
+	// Batch carries only the hard orchestrator preamble: an adaptive batch
+	// run has no coordinator section (historical; delegation stays available
+	// through the task tool's own contract).
 	if orchHard {
-		systemPrompt += agent.OrchestratorPrompt()
+		promptSpec.Role = assembly.RoleOrchestrator
 	}
+	systemPrompt := assembly.BuildSystemPrompt(promptSpec)
 	// Batch runs share the CLI/GUI tool_errors.log so one-shot
 	// failures land in the same corpus as interactive ones.
 	batchErrorLog := openToolErrorLog(dataDir)
 	defer batchErrorLog.Close()
 	batchSessionID := fmt.Sprintf("batch-%d", time.Now().UnixNano())
-	usageStore, sessionWriter := openSessionStack(dataDir, batchSessionID, home, mainProvider.Name(), nil, tomlCfg)
+	usageStore, sessionWriter := openSessionStack(dataDir, batchSessionID, home, mainProvider.Name(), tomlCfg)
 	if usageStore != nil {
 		defer usageStore.Close()
 	}
 	usageRates := usagecost.NewHistoryRates(dataDir)
 	defer usageRates.Close()
-	loopCfg := agent.LoopConfig{
+	resolveWindow := func(model string, c config.Config) agent.ContextWindowResolution {
+		return agent.ResolveContextWindowWithRuntime(model, tomlCfg.ContextWindow, 0, caps, learned, c.BaseURL, c.APIKey)
+	}
+	loopCfg := assembly.BuildLoopConfig(assembly.LoopSpec{
 		Provider:               mainProvider,
 		Registry:               reg,
 		Caps:                   caps,
@@ -238,54 +209,33 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		ProjectInstructions:    projectInstructions,
 		UserInstructions:       prompt.ActiveUserInstructions(dataDir),
 		UserInstructionsForRun: userInstructionsForRun(dataDir),
-		// Same as the TUI: state the real workspace in the request tail so the
-		// model does not guess a path (weak local models invented /home/dev on
-		// Windows) and the system prefix stays cacheable across projects.
+		// Same as the TUI: state the real workspace in the request tail so
+		// the model does not guess a path and the system prefix stays
+		// cacheable across projects. No memory or goal blocks: batch opens
+		// neither store.
 		LiveContextBlocks: func(ctx context.Context) ([]llm.ContextBlock, error) {
 			return []llm.ContextBlock{{Source: llm.SourceRuntime, Text: workingDirNote}}, ctx.Err()
 		},
-		MaxSteps:              tomlCfg.MaxStepsOr(agent.DefaultMaxSteps),
-		BaseDir:               home,
-		UserDownloadsDir:      agent.SystemDownloadsDir,
-		Stats:                 batchStats,
-		Writer:                sessionWriter,
-		EnableNavigator:       execProfile.EnableNavigator,
-		NavigatorAuto:         execProfile.NavigatorAuto,
-		NavigatorKeywordsOnly: execProfile.NavigatorKeywordsOnly,
-		ThinTools:             execProfile.ThinTools,
-		StableToolset:         execProfile.StableToolset,
-		CatalogHoist:          execProfile.CatalogHoist,
-		ReplaceContextTail:    execProfile.ReplaceContextTail,
-		Orchestrator:          orchHard,
-		// Batch uses the same source-aware cascade as TUI/WebGUI. This is
-		// memory-only: explicit budget bounded by the loaded runtime capacity,
-		// then the existing catalog/learned/fallback cascade when unknown.
-		ContextWindowFor: func(model string) agent.ContextWindowResolution {
-			return agent.ResolveContextWindowWithRuntime(model, tomlCfg.ContextWindow, 0, caps, learned, contextCfg.BaseURL, contextCfg.APIKey)
-		},
-		ContextProvider: contextProvider,
-		ScopedContextWindowFor: func(provider, model string) agent.ContextWindowResolution {
-			scopedCfg := configForProvider(provider)
-			if tokens, ok := modelContexts.Get(provider, model); ok {
-				return agent.ClampContextWindowToRuntime(agent.ContextWindowResolution{Tokens: tokens, Source: "model-override"}, scopedCfg.BaseURL, scopedCfg.APIKey, model)
-			}
-			resolved := agent.ResolveContextWindowWithRuntime(model, tomlCfg.ContextWindow, 0, caps, learned, scopedCfg.BaseURL, scopedCfg.APIKey)
-			if resolved.Tokens <= 0 {
-				return agent.ContextWindowResolution{Tokens: agent.DefaultContextWindow(), Source: "fallback"}
-			}
-			return resolved
-		},
+		Toml:         tomlCfg,
+		Profile:      execProfile,
+		Orchestrator: orchHard,
+		Home:         home,
+		Stats:        batchStats,
+		Writer:       sessionWriter,
+		// The same source-aware cascade as TUI/WebGUI (memory-only).
+		ContextWindowFor:       func(model string) agent.ContextWindowResolution { return resolveWindow(model, contextCfg) },
+		ContextProvider:        contextProvider,
+		ScopedContextWindowFor: assembly.ScopedContextWindow(modelContexts, configForProvider, resolveWindow),
 		RefreshContextWindow: func(ctx context.Context) error {
 			if taskWorkerProvider != nil {
 				return config.RefreshLocalContextWindows(ctx, contextCfg, taskWorkerCfg)
 			}
 			return config.RefreshLocalContextWindows(ctx, contextCfg)
 		},
-		Summarizer:         agent.NewAutoSummarizerWithProvider(compactProvider, reg.ActiveNames),
-		LearnLimit:         learned.Learn,
-		PrefillProfiles:    prefillProfiles,
-		PruneProtectTokens: tomlCfg.PruneProtectTokens,
-	}
+		Summarizer:      agent.NewAutoSummarizerWithProvider(compactProvider, reg.ActiveNames),
+		LearnLimit:      learned.Learn,
+		PrefillProfiles: prefillProfiles,
+	})
 	l, err := agent.NewLoop(loopCfg)
 	if err != nil {
 		fatal("agent loop", err)
@@ -340,7 +290,10 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	if orchMode.hard() {
 		// Coordinator contract: the main loop keeps only delegation +
 		// read-only lookups; workers inherit the full registry.
-		l.SetRegistry(agent.OrchestratorRegistry(reg))
+		l.SetRegistry(assembly.OrchestratorRegistry(reg, false))
+	}
+	if batchAssembledHook != nil && batchAssembledHook(l, loopCfg, reg) {
+		return
 	}
 
 	runCtx := context.Background()
@@ -478,42 +431,4 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	if gateOn {
 		noopGateSave(dataDir, home, userPrompt)
 	}
-}
-
-// buildChildToolRegistry builds a small self-contained
-// tool registry rooted at root for Darwin child agents.
-// Every file/code tool resolves paths inside root (the
-// child's git worktree), giving real per-candidate
-// isolation. Children deliberately do NOT get the
-// darwin tool (no recursion), ask_user (no TUI
-// channel), goal/memory (shared state), or tool_search
-// (no FTS index) — so everything registered here is
-// marked always-on.
-func buildChildToolRegistry(root string) *tools.Registry {
-	reg := tools.NewRegistry()
-	reg.MustRegister(tools.NewReadImage(root, 0).Spec())
-	reg.MustRegister(tools.NewSearchCode(root).Spec())
-	reg.MustRegister(tools.NewReadZip(root, 0).Spec())
-	reg.MustRegister(tools.NewReadDocx(root, 0).Spec())
-	reg.MustRegister(tools.NewReadXlsx(root, 0).Spec())
-	reg.MustRegister(tools.NewReadPdf(root, 0).Spec())
-	reg.MustRegister(tools.NewEditDocx(root).Spec())
-	reg.MustRegister(tools.NewEditXlsx(root).Spec())
-	reg.MustRegister(tools.NewListDir(root).Spec())
-	reg.MustRegister(tools.NewReadLines(root).Spec())
-	reg.MustRegister(tools.NewReadContext(root).Spec())
-	reg.MustRegister(tools.NewReadMany(root).Spec())
-	reg.MustRegister(tools.NewScratchpad(root).Spec())
-	reg.MustRegister(tools.NewPatchFile(root).Spec())
-	reg.MustRegister(tools.NewCreateFile(root).Spec())
-	reg.MustRegister(tools.NewWriteFile(root).Spec())
-	reg.MustRegister(tools.NewMakeDir(root).Spec())
-	reg.MustRegister(tools.NewMove(root).Spec())
-	reg.MustRegister(tools.NewCopy(root).Spec())
-	reg.MustRegister(tools.NewTrash(root).Spec())
-	reg.MustRegister(tools.NewCtxExecuteTool(ctxexec.New(root), root).Spec())
-	for _, name := range reg.Names() {
-		reg.MarkAlwaysOn(name)
-	}
-	return reg
 }

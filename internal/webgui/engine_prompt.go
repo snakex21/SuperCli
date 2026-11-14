@@ -8,11 +8,10 @@
 package webgui
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
-	"supercli/internal/agent"
+	"supercli/internal/assembly"
 	llmprompt "supercli/internal/llm/prompt"
 	"supercli/internal/storage/goal"
 	"supercli/internal/tools/sandbox"
@@ -25,59 +24,37 @@ func webAgentSystemPrompt(home, dataDir, model string, promptSmall, orchestrator
 
 func webAgentSystemPromptLayers(home, dataDir, model string, promptSmall, orchestrator, delegation bool, goalSvc *goal.Service, appProfile string) (string, string) {
 	officeProfile := strings.EqualFold(strings.TrimSpace(appProfile), "nestcafe")
-	system := llmprompt.Build(promptSmall)
+	spec := assembly.PromptSpec{
+		Base:         llmprompt.Build(promptSmall),
+		ModelProfile: llmprompt.LoadProfileAt(home, dataDir, model),
+		Goals:        goalSvc,
+	}
 	if officeProfile {
 		// The extended SuperCli layer is intentionally code-oriented. NestCafe
-		// uses the universal core and adds its office behavior below.
-		system = llmprompt.Core
+		// uses the universal core, no repository instructions, and adds its
+		// office behaviour as a surface layer.
+		spec.Base = llmprompt.Core
+	} else {
+		spec.Project = llmprompt.LoadProjectInstructions(home)
 	}
-	if profile := llmprompt.LoadProfileAt(home, dataDir, model); profile != "" {
-		system += "\n\n" + profile
+	switch {
+	case orchestrator:
+		spec.Role = assembly.RoleOrchestrator
+	case delegation:
+		spec.Role = assembly.RoleCoordinator
 	}
-	projectInstructions := ""
-	if !officeProfile {
-		projectInstructions = llmprompt.LoadProjectInstructions(home)
-		if projectInstructions != "" {
-			system += "\n\n" + projectInstructions
-		}
-	}
-	if orchestrator {
-		system += agent.OrchestratorPrompt()
-	} else if delegation {
-		system += agent.CoordinatorPrompt()
-	}
-	// An HTTP/SSE run ends with the parent turn. Background task notifications
-	// cannot be delivered to a closed response, so web coordinators deliberately
-	// use synchronous task calls.
+	// Deliberately absent compared with the TUI: OS/staleness hints, the
+	// embedded user preset and the memory briefing (all ride the per-request
+	// live context instead), and the workspace note (per project, would split
+	// the cacheable prefix across folders; see webWorkspaceNote).
 	if delegation {
-		system += "\n\nWeb GUI: call task synchronously; do not request async/background workers."
+		spec.SurfaceLayers = append(spec.SurfaceLayers, assembly.WebSyncTaskNote)
 	}
-	// The workspace note is deliberately absent here: it differs per project,
-	// and everything after it (rest of the prompt plus tool schemas) had to be
-	// re-evaluated by local servers whenever a chat started in another folder.
-	// webWorkspaceNote travels in the per-request live context instead.
 	if officeProfile {
-		system += `
-
-NestCafe office mode:
-- Act as a general desktop and office assistant, not primarily as a programming agent.
-- For requests about the user's Desktop, Documents, Downloads, pictures, or another named location, inspect that location directly with file tools. Full filesystem access covers ordinary user files; do not claim that the active workspace prevents access.
-- Word contract: NEW file = exactly one edit_docx create containing all text, tables, images and design. EXISTING file = one read_docx with selectors=true, then exactly one edit_docx batch containing every change. A successful create or batch is complete: stop tools and answer; never create the same path twice. Use an attached visual reference on the initial model call and choose the closest design/accent; wide tables become landscape automatically. Never use Python, PowerShell, Node, Word COM or unpacked OOXML for DOCX. If an operation is unsupported, say so. Preserve formatting and existing files unless replacement was requested.
-- Prefer the dedicated Word, Excel, PDF, image, archive, and file tools for other document work.
-- For Gmail/IMAP mailbox work, first find thunderbird_mail with tool_search and use it when the Thunderbird Bridge is connected; it queries and mutates the running Thunderbird account that owns the authenticated Gmail IMAP/OAuth session and is preferred over Outlook's local cache. count/search/senders default to Inbox. For finding mail, use subject for a subject substring, from for sender, to for recipient, or address when the user gives an email address but does not specify whether it is sender or recipient; address searches both directions. search omits attachment metadata unless include_attachments:true is passed; op:attachments lists full filenames with extensions, type and size for one message_id. For a company the user names (allegro, discord), search from:'<brand>' and, when Inbox finds nothing, repeat with scope:"account" because Gmail filters file such mail in other folders. For unread counts use op:folders (unreadMessageCount); count/search have no unread filter. After op:copy, delete copies only in the copy destination folder, never in the source. When the user asks what is INSIDE an attachment, use op:get_attachment: PNG/JPEG/GIF/WebP bytes are attached directly to the next model turn so a vision-capable model can inspect the pixels; PDF/Office/other files return a temporary localPath and must be handed to the appropriate document/image tool. Do not claim to have seen an attachment from metadata alone. Every thunderbird_mail write (folders, copy, move, trash, purge, contacts...) is shown to the user by SuperCli as an approval card before it runs: never set confirm yourself (the host sets it after the user approves) and do not ask for permission in chat first. If a write returns that the user declined it in SuperCli or approval is unavailable, nothing changed and Thunderbird was never called: do not retry, tell the user. Folder administration is supported: create_folder, rename_folder and delete_folder; system/special folders are protected. Pass folder explicitly to work inside labels/folders such as Ważne, Spam, custom folders, etc.; use scope:"account" only for an explicitly requested whole-account search because Gmail labels can duplicate messages across folders. Use op:move with folder as source and destination as target for moving mail into OR out of any Thunderbird folder/label; move requires a filter, or all:true only when the user explicitly asked to move the whole source folder. For a local Outlook .msg file the user wants inside Thunderbird, use op:import_msg with path plus an explicitly chosen destination; on Windows it uses classic Outlook COM to read the .msg, converts locally to RFC 822/MIME, and preserves the message body and attachments before Thunderbird imports it. An IMAP import_msg destination can upload that historical message to the mail server; never guess whether the target should be Local Folders or an IMAP folder. For newsletter/junk cleanup, start with op:senders to identify frequent Inbox senders instead of issuing several broad full-text counts such as newsletter/unsubscribe/promocja/oferta. Then count specific suspicious senders before trashing them. Bulk move/trash/purge is paged to avoid IMAP timeouts: each write processes up to 250 messages by default. If a paged write result has more:true, immediately repeat the exact same approved op+folder+destination+filters/all with the returned continuation token; keep following continuation tokens until more:false. This is continuation of the same approved operation and does not require asking the user again. Do not retry a timed-out destructive call blindly. IMPORTANT: when the user explicitly wants to permanently empty the ENTIRE Trash, use op:empty_trash instead of purge/date-filter batching. empty_trash calls Thunderbird core's native IMAP EmptyTrash/DeleteAllMessages operation and may repair a Gmail Trash even when Thunderbird's local cache incorrectly reports 0. It is irreversible; the approval card says so. Only call whole-Trash cleanup successful when empty_trash returns serverVerified:true. For purge/delete_permanently, intermediate batches are not server-confirmed and must never be totaled or reported as final deletion success. trash moves only filtered messages from Inbox/an explicitly selected folder to the real Thunderbird Trash. Never run a destructive filtered write without a filter.
-- For mail in desktop Outlook, find outlook_mail with tool_search and use it before shell/PowerShell COM. Re-run tool_search before claiming an Outlook capability is unavailable because an older conversation may contain a stale tool schema. If the user says mail is still visible but a folder search returns zero, use search/count with scope:"account" and op:sync_status before concluding it does not exist; if a known local Outlook/PST item is still missing, search can use scope:"all_stores" to inspect every Outlook store while returning only matching mail. For preserving one exact Outlook item as a native file, first identify its entry_id and use op:export_msg with a .msg path; export_msg never deletes the source and refuses to overwrite an existing file. Gmail labels can place mail outside Inbox and Outlook's local cache can diverge from the server when synchronization fails. If sync_status reports recent errors, never claim the remote Gmail mailbox is empty or that deletion succeeded remotely based only on local Outlook state. trash is recoverable; purge permanently deletes only filtered messages already in Outlook's default Trash. Both require explicit user approval, and purge must be described as irreversible before asking for confirmation. For bulk cleanup, prefer op:count (no message previews), then one confirmed trash/purge call with all:true; do not loop 100-message batches or dump search results unless the user asked to inspect individual messages. trash/purge results confirm local Outlook state only; Outlook Send/Receive is asynchronous, so do not claim the remote Gmail server is updated until later verification.
-- Organizing, renaming, copying, and summarizing files are normal tasks. Before a bulk move, overwrite, or removal, show the intended scope and ask for confirmation. Use recoverable trash instead of hard deletion.
-- Treat source-code and repository workflows as exceptional: use them only when the user explicitly asks for programming work.`
+		spec.SurfaceLayers = append(spec.SurfaceLayers, assembly.NestCafeOfficeMode)
 	}
-	// A tiny discovery hint is cheaper than carrying the complete goal schema in
-	// every request. When a goal is active, inject its open steps directly.
-	system += "\n\nFor durable multi-step work, find and use the goal tool."
-	if goalSvc != nil {
-		if injected, err := goalSvc.Inject(context.Background(), system, 5); err == nil {
-			system = injected
-		}
-	}
-	return system, projectInstructions
+	spec.SurfaceLayers = append(spec.SurfaceLayers, assembly.GoalDiscoveryHint)
+	return assembly.BuildSystemPrompt(spec), spec.Project
 }
 
 // webWorkspaceNote states the real sandbox root and access mode. It is sent in

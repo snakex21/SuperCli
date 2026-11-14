@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"supercli/internal/agent"
+	"supercli/internal/assembly"
 	"supercli/internal/llm"
 	"supercli/internal/system/config"
 	"supercli/internal/tools"
@@ -89,20 +90,12 @@ func wireContextWindows(
 		resolverMu.RUnlock()
 		return resolveWindowForConfig(model, resolvedCfg)
 	}
-	b.ScopedContextWindowFor = func(provider, model string) agent.ContextWindowResolution {
+	// Workers never fall through to the coordinator's endpoint limit.
+	b.ScopedContextWindowFor = assembly.ScopedContextWindow(b.ModelContexts, func(provider string) config.Config {
 		resolverMu.RLock()
-		scopedCfg := configForProvider(provider)
-		resolverMu.RUnlock()
-		if tokens, ok := b.ModelContexts.Get(provider, model); ok {
-			return agent.ClampContextWindowToRuntime(agent.ContextWindowResolution{Tokens: tokens, Source: "model-override"}, scopedCfg.BaseURL, scopedCfg.APIKey, model)
-		}
-		resolved := resolveWindowForConfig(model, scopedCfg)
-		if resolved.Tokens <= 0 {
-			// Do not fall through to the coordinator's endpoint for a worker.
-			return agent.ContextWindowResolution{Tokens: agent.DefaultContextWindow(), Source: "fallback"}
-		}
-		return resolved
-	}
+		defer resolverMu.RUnlock()
+		return configForProvider(provider)
+	}, resolveWindowForConfig)
 	// Legacy helpers such as resume sizing need only the numeric value; keep
 	// them on the same resolver rather than duplicating the cascade.
 	b.WindowFor = func(model string) int { return b.ContextWindowFor(model).Tokens }

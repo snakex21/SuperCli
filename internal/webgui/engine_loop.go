@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"supercli/internal/agent"
+	"supercli/internal/assembly"
 	"supercli/internal/checkpoint"
 	"supercli/internal/llm"
 	llmprompt "supercli/internal/llm/prompt"
@@ -22,10 +23,11 @@ import (
 	"supercli/internal/system/execution"
 	systats "supercli/internal/system/stats"
 	"supercli/internal/tools"
-	"supercli/internal/tools/ctxexec"
-	toolhostpower "supercli/internal/tools/hostpower"
-	"supercli/internal/tools/mcp"
 )
+
+// observeLoopConfig is a test-only seam: golden tests capture the exact
+// LoopConfig a web loop is built from. Always nil in production.
+var observeLoopConfig func(agent.LoopConfig)
 
 func (e *Engine) newLoop() (*agent.Loop, error) {
 	return e.newLoopWithSession(nil, nil)
@@ -94,182 +96,61 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 	if err != nil {
 		return nil, nil, fmt.Errorf("goal service: %w", err)
 	}
+	// The system prompt is assembled first: darwin candidates inherit it.
+	systemPrompt, projectInstructions := webAgentSystemPromptLayers(home, e.dataDir, cfg.Model, execProfile.PromptSmall, orchestrator, delegation, nil, appProfile)
+	// Branded overlays keep their own adjacent data root. Retain the legacy
+	// NestCafe preference key while the overlay migrates to the shared key.
+	autoMemory := uiSettingBool(e.dataDir, "supercli.autoMemory", true, "nestcafe.autoMemory")
+	systemPrompt += "\n\n" + llmprompt.MemoryGuidance(autoMemory)
+
 	reg := tools.NewRegistry()
-	// Only the human-facing stream has an interactive confirmation channel.
-	// Context inspection/compaction and other feature loops get no capability.
-	if askCh != nil {
-		reg.MustRegister(toolhostpower.Spec())
+	projectMemory := webMemoryKeeper{engine: e, home: home}
+	globalMemory := webMemoryKeeper{engine: e, home: home, global: true}
+	provided := map[string]tools.Tool{
+		"remember": tools.NewRememberDual(projectMemory, globalMemory).Spec(),
+		"recall":   tools.NewRecallDual(projectMemory, globalMemory).Spec(),
 	}
-	// Completed tool envelopes are omitted from future provider prompts, while
-	// their full persisted rows remain retrievable on demand through this local
-	// FTS tool. It is discoverable rather than always-on, so it adds no schema
-	// tokens to ordinary turns.
 	if history, historyErr := e.sessionStore(); historyErr == nil {
-		reg.MustRegister(tools.NewSearchHistory(history).Spec())
+		provided["search_history"] = tools.NewSearchHistory(history).Spec()
+	}
+	if !officeProfile && config.DarwinEnabled(tc) {
+		provided["darwin"] = e.darwinSpec(reg, prov, cfg, tc, home, systemPrompt)
 	}
 	// Registered but not always-on: thin discovery keeps the LSP schema out of
 	// ordinary chat turns, while the Engine reuses the lazy server per project.
 	codeIntel := e.codeIntelFor(home)
-	reg.MustRegister(codeIntel.Spec())
-	reg.MustRegister(e.processSessionFor(home).Spec())
-	reg.MustRegister(tools.NewHeadlessControl(home, e.DataDir()).Spec())
-	discoverer := e.skillDiscovererFor(home)
-	skillApplier := tools.NewSkillApplier(discoverer)
-	reg.MustRegister(skillApplier.Spec())
-	reg.MarkAlwaysOn("apply_skill")
-	projectMemory := webMemoryKeeper{engine: e, home: home}
-	globalMemory := webMemoryKeeper{engine: e, home: home, global: true}
-	reg.MustRegister(tools.NewRememberDual(projectMemory, globalMemory).Spec())
-	reg.MustRegister(tools.NewRecallDual(projectMemory, globalMemory).Spec())
-	reg.MarkAlwaysOn("remember")
-	reg.MarkAlwaysOn("recall")
-	// One edit path, matching agent.thinCoreTools in the TUI: patch_file
-	// to change a file, create_file to make one. Offering the model seven
-	// interchangeable editors is what made it pick the wrong one (and reach
-	// for write_file on a Word document); the line editors are gone entirely
-	// now, and patch_file absorbed the ergonomics they were kept for.
-	ctxTool := tools.NewCtxExecuteTool(ctxexec.New(home), home)
-	ctxTool.NativeOfficeOnly = officeProfile
-	for _, sp := range []tools.Tool{
-		tools.NewReadLines(home).Spec(),
-		tools.NewReadContext(home).Spec(),
-		tools.NewReadMany(home).Spec(),
-		tools.NewReadImage(home, 0).Spec(),
-		tools.NewListDir(home).Spec(),
-		tools.NewPatchFile(home).Spec(),
-		tools.NewCreateFile(home).Spec(),
-		tools.NewMakeDir(home).Spec(),
-		tools.NewMove(home).Spec(),
-		tools.NewCopy(home).Spec(),
-		tools.NewTrash(home).Spec(),
-		tools.NewSearchCode(home).Spec(),
-		ctxTool.Spec(),
-		tools.NewScratchpad(home).Spec(),
-	} {
-		if turn != nil {
-			sp = turn.Wrap(sp)
-		}
-		sp = codeIntel.WrapMutation(sp)
-		reg.MustRegister(sp)
-		reg.MarkAlwaysOn(sp.Name)
+	deps := &assembly.Deps{
+		Home:           home,
+		DataDir:        e.DataDir(),
+		Toml:           tc,
+		Registry:       reg,
+		CodeIntel:      codeIntel,
+		ProcessSession: e.processSessionFor(home),
+		Skills:         e.skillDiscovererFor(home),
+		// Only the human-facing stream has an interactive channel. A web
+		// question is an explicit pause in the foreground run: Stop,
+		// interrupt, disconnect or shutdown still cancel it immediately.
+		AskCh:      askCh,
+		AskTimeout: 24 * time.Hour,
+		Browser:    e.sharedBrowser(),
+		OfficeOnly: officeProfile,
+		Goals:      goalSvc,
+		MCP:        e.mcpRuntimeFor(home),
+		Provided:   provided,
 	}
-	// write_file overwrites a whole file and stays discoverable rather than
-	// core: patch_file changes a file, create_file makes one, and a full
-	// rewrite is rare enough to be worth a tool_search.
-	for _, sp := range []tools.Tool{
-		tools.NewWriteFile(home).Spec(),
-	} {
-		if turn != nil {
-			sp = turn.Wrap(sp)
-		}
-		sp = codeIntel.WrapMutation(sp)
-		reg.MustRegister(sp)
-	}
-	// Rich attachment readers stay discoverable through tool_search so their
-	// larger schemas do not burden ordinary chat turns. The attachment prompt
-	// names the exact reader, making selection deterministic.
-	for _, sp := range []tools.Tool{
-		tools.NewReadPdf(home, 0).Spec(),
-		tools.NewReadDocx(home, 0).Spec(),
-		tools.NewReadXlsx(home, 0).Spec(),
-		tools.NewSendScreenshot(e.DataDir(), nil).Spec(),
-		tools.NewShowMedia(home).Spec(),
-	} {
-		reg.MustRegister(sp)
-	}
-	zipSpec := tools.NewReadZip(home, 0).Spec()
 	if turn != nil {
-		zipSpec = turn.Wrap(zipSpec)
+		deps.Checkpoint = turn.Wrap
 	}
-	reg.MustRegister(zipSpec)
-	e.registerMediaGeneration(reg, home)
-	// Office editors are discoverable alongside their readers. Keeping them
-	// out of the always-on set avoids schema overhead in ordinary chat, while
-	// tool_search can expose them for an explicit Word or Excel request.
-	for _, sp := range []tools.Tool{
-		tools.NewEditDocx(home).Spec(),
-		tools.NewEditXlsx(home).Spec(),
-	} {
-		if turn != nil {
-			sp = turn.Wrap(sp)
-		}
-		reg.MustRegister(sp)
-	}
-	invoke := agent.NewInvokeTool(reg).Spec()
-	if turn != nil {
-		invoke = turn.Wrap(invoke)
-	}
-	reg.MustRegister(invoke)
-	reg.MarkAlwaysOn("invoke_tool")
-	// Keep the full goal schema out of ordinary turns. Once a goal is active it
-	// is no longer speculative: expose the schema from the first request so a
-	// slow/local model does not spend a fresh inference rediscovering it before
-	// every state transition. Stable toolsets pay this prefix once in KV cache.
-	goalSpec := tools.NewGoalTool(goalSvc).Spec()
-	reg.MustRegister(goalSpec)
-	if askCh != nil {
-		ask := tools.NewAskUser(askCh)
-		// A web/desktop question is an explicit pause in the foreground run.
-		// Do not let the coordinator silently continue while the user is away
-		// from the window; the request/run context still cancels immediately on
-		// Stop, interrupt, disconnect or shutdown.
-		ask.Timeout = 24 * time.Hour
-		reg.MustRegister(ask.Spec())
-		reg.MarkAlwaysOn("ask_user")
-	}
-	// Current facts should not fall through to browser automation. Keep one
-	// tiny query-only tool always available, while the larger filtered search
-	// and fetch schemas remain discoverable through tool_search.
-	reg.MustRegister(tools.NewWebFetch().Spec())
-	reg.MustRegister(e.sharedBrowser().Spec())
-	downloadSpec := tools.NewWebDownload(home).Spec()
-	if turn != nil {
-		downloadSpec = turn.Wrap(downloadSpec)
-	}
-	reg.MustRegister(codeIntel.WrapMutation(downloadSpec))
-	webSearcher := tools.NewConfiguredWebSearch(tc)
-	reg.MustRegister(webSearcher.Spec())
-	reg.MustRegister(webSearcher.LookupSpec())
-	reg.MarkAlwaysOn("web_lookup")
-	if manager := e.mcpRuntimeFor(home); manager != nil && len(manager.Names()) > 0 {
-		reg.MustRegister(mcp.NewBridge(manager).Spec())
-		reg.MarkAlwaysOn("mcp_bridge")
-	}
-	// Desktop Outlook COM is available to NestCafe/WebUI too. Keep it
-	// discoverable rather than always-on so ordinary chats pay no schema cost.
-	reg.MustRegister(tools.NewOutlookMail().Spec())
-	// Direct Thunderbird bridge for Gmail/IMAP verification. Read-only for now;
-	// it is discoverable and therefore costs nothing in unrelated turns.
-	reg.MustRegister(tools.NewThunderbirdMail(e.DataDir()).Spec())
-	// Web loops are short-lived and have a small registry. Lexical discovery
-	// avoids opening an FTS database per request while preserving the exact
-	// tool_search contract used by TUI and batch.
-	toolSearcher := tools.NewToolSearcher(reg, nil)
-	reg.MustRegister(toolSearcher.Spec())
-	reg.MarkAlwaysOn("tool_search")
-	// Context defense (mirrors the TUI wiring in app/main.go): without
-	// WindowFor the loop assumes its 16384-token default for every
-	// model, and without Summarizer auto-compaction degrades to the
-	// blind hide fallback — the model silently loses the whole prior
-	// conversation ("[earlier context cleared]" with no summary).
-	contextWindowFor := func(model string) agent.ContextWindowResolution {
-		return agent.ResolveContextWindowWithRuntime(model, tc.ContextWindow, 0, caps, e.learned, cfg.BaseURL, cfg.APIKey)
+	assembly.Register(reg, assembly.Web, deps)
+	// Context defense (shared with the CLI): without a window resolver the
+	// loop assumes its 16384-token default, and without a summarizer
+	// auto-compaction degrades to the blind hide fallback.
+	resolveWindow := func(model string, c config.Config) agent.ContextWindowResolution {
+		return agent.ResolveContextWindowWithRuntime(model, tc.ContextWindow, 0, caps, e.learned, c.BaseURL, c.APIKey)
 	}
 	configuredProviders := e.providerManager().Configured()
 	contextProvider := runtimeProviderForConfig(cfg, caps, configuredProviders)
 	configForProvider := contextWindowConfigForProvider(cfg, contextProvider, configuredProviders)
-	scopedContextWindowFor := func(provider, model string) agent.ContextWindowResolution {
-		scopedCfg := configForProvider(provider)
-		if tokens, ok := e.modelContexts.Get(provider, model); ok {
-			return agent.ClampContextWindowToRuntime(agent.ContextWindowResolution{Tokens: tokens, Source: "model-override"}, scopedCfg.BaseURL, scopedCfg.APIKey, model)
-		}
-		resolved := agent.ResolveContextWindowWithRuntime(model, tc.ContextWindow, 0, caps, e.learned, scopedCfg.BaseURL, scopedCfg.APIKey)
-		if resolved.Tokens <= 0 {
-			return agent.ContextWindowResolution{Tokens: agent.DefaultContextWindow(), Source: "fallback"}
-		}
-		return resolved
-	}
-	systemPrompt, projectInstructions := webAgentSystemPromptLayers(home, e.dataDir, cfg.Model, execProfile.PromptSmall, orchestrator, delegation, nil, appProfile)
 	instructionsDataDir := e.dataDir
 	currentSessionID := ""
 	if bound, ok := writer.(interface{ SessionID() string }); ok {
@@ -279,18 +160,8 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 	// Memory changes and goal completion within this run must not retain the
 	// snapshot from before the tool executed.
 	liveContextBlocks := e.webLiveContextBlocks(home, tc.MemoryBriefingTokens, currentSessionID, goalSvc, officeProfile)
-	// Branded overlays keep their own adjacent data root. Retain the legacy
-	// NestCafe preference key while the overlay migrates to the shared key.
-	autoMemory := uiSettingBool(e.dataDir, "supercli.autoMemory", true, "nestcafe.autoMemory")
-	systemPrompt += "\n\n" + llmprompt.MemoryGuidance(autoMemory)
-	if !officeProfile && config.DarwinEnabled(tc) {
-		e.registerDarwin(reg, prov, cfg, tc, home, systemPrompt)
-	}
-	// One shared runaway safety net (agent.DefaultMaxSteps) on every surface.
-	// An explicit max_steps in config.toml stays a strict user cap.
-	maxSteps := tc.MaxStepsOr(agent.DefaultMaxSteps)
 	compactResolver := e.compactProviderResolver(tc, cfg, prov)
-	loop, err := agent.NewLoop(agent.LoopConfig{
+	loopCfg := assembly.BuildLoopConfig(assembly.LoopSpec{
 		Provider:            prov,
 		Registry:            reg,
 		Caps:                caps,
@@ -304,47 +175,35 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 			blocks, err := liveContextBlocks(ctx)
 			if err == nil && goalSvc.Active() != nil {
 				// Refresh once at the safe request boundary, then activate the
-				// schema before Run freezes native/thin tool definitions. Doing
-				// another Refresh during construction duplicated SQLite reads and
-				// could still be stale by the time the first request was prepared.
-				reg.MarkAlwaysOn(goalSpec.Name)
+				// goal schema before Run freezes native/thin tool definitions.
+				reg.MarkAlwaysOn("goal")
 			}
 			return blocks, err
 		},
-		MaxSteps:               maxSteps,
+		Toml:                   tc,
+		Profile:                execProfile,
 		Orchestrator:           orchestrator,
 		TaskParallel:           taskParallel,
 		TaskParallelWarnLocal:  taskParallelWarnLocal,
-		EnableNavigator:        execProfile.EnableNavigator,
-		NavigatorAuto:          execProfile.NavigatorAuto,
-		NavigatorKeywordsOnly:  execProfile.NavigatorKeywordsOnly,
-		ThinTools:              execProfile.ThinTools,
-		StableToolset:          execProfile.StableToolset,
-		CatalogHoist:           execProfile.CatalogHoist,
-		ReplaceContextTail:     execProfile.ReplaceContextTail,
-		BaseDir:                home,
-		UserDownloadsDir:       agent.SystemDownloadsDir,
+		Home:                   home,
 		InitialMessages:        initial,
 		Writer:                 writer,
-		ContextWindowFor:       contextWindowFor,
+		ContextWindowFor:       func(model string) agent.ContextWindowResolution { return resolveWindow(model, cfg) },
 		ContextProvider:        contextProvider,
-		ScopedContextWindowFor: scopedContextWindowFor,
+		ScopedContextWindowFor: assembly.ScopedContextWindow(e.modelContexts, configForProvider, resolveWindow),
 		Summarizer:             agent.NewAutoSummarizerWithProviderResolver(compactResolver, reg.ActiveNames),
 		LearnLimit:             e.learned.Learn,
 		PrefillProfiles:        e.prefillProfiles,
-		// Zero-LLM tool-result prune (first line of context defense,
-		// before the summary fallback). Config prune_protect_tokens:
-		// 0 = scale with the active model window, negative = off.
-		PruneProtectTokens: tc.PruneProtectTokens,
-		Stats:              recorder,
-		// Attributed tool failures go to <dataDir>/logs/tool_errors.log,
-		// exactly as in the CLI. The web front-end shipped without this
-		// wiring, so every failure since the GUI became the primary
-		// front-end was classified and then thrown away.
+		Stats:                  recorder,
+		// Attributed tool failures go to <dataDir>/logs/tool_errors.log, as in the CLI.
 		ErrorLog: e.toolErrorLog(),
 		// review_model: interactive post-work review ("Sprawdzanie"); nil = off.
 		Review: e.postReviewConfig(tc),
 	})
+	if observeLoopConfig != nil {
+		observeLoopConfig(loopCfg)
+	}
+	loop, err := agent.NewLoop(loopCfg)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -364,11 +223,7 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 	if orchestrator {
 		// Workers retain the complete base registry above; only the parent loop
 		// is physically restricted to delegation and read-only lookup tools.
-		rootRegistry := agent.OrchestratorRegistry(reg)
-		if askCh != nil {
-			rootRegistry.MustRegister(toolhostpower.Spec())
-		}
-		loop.SetRegistry(rootRegistry)
+		loop.SetRegistry(assembly.OrchestratorRegistry(reg, askCh != nil))
 	}
 	return loop, reg, nil
 }

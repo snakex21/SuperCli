@@ -1,11 +1,7 @@
 package app
 
 import (
-	"log"
-	"path/filepath"
-	"time"
-
-	"supercli/internal/system/config"
+	"supercli/internal/assembly"
 	"supercli/internal/tools"
 )
 
@@ -16,24 +12,11 @@ import (
 // --allow-all flag of a non-interactive run; it approves every gated action and
 // is documented as risky.
 func installApprovalGate(dataDir string, ask chan<- tools.AskRequest, language string, nonInteractiveReason string, allowAllNonInteractive bool) *tools.ApprovalGate {
-	policy, err := config.LoadApprovals(dataDir)
-	if err != nil {
-		log.Printf("approvals: load [approvals] from config.toml: %v (prompting/denying without an allowlist)", err)
-	}
-	gate := &tools.ApprovalGate{
+	return assembly.InstallApprovalGate(assembly.GateSpec{
+		DataDir:                dataDir,
 		Fallback:               ask,
-		AutoApprove:            policy.AutoApprove,
-		AllowAllNonInteractive: allowAllNonInteractive,
-		NonInteractiveReason:   nonInteractiveReason,
-		AuditPath:              filepath.Join(dataDir, "approvals.jsonl"),
 		Language:               func() string { return language },
-	}
-	if policy.SessionGrantMinutes > 0 {
-		gate.GrantTTL = time.Duration(policy.SessionGrantMinutes) * time.Minute
-	}
-	if allowAllNonInteractive {
-		log.Printf("approvals: --allow-all in a non-interactive run approves every gated action without asking")
-	}
-	tools.SetDefaultApprover(gate)
-	return gate
+		NonInteractiveReason:   nonInteractiveReason,
+		AllowAllNonInteractive: allowAllNonInteractive,
+	})
 }

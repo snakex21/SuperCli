@@ -1,13 +1,9 @@
 package app
 
 import (
-	"context"
-	"log"
-
 	"supercli/internal/account/codexauth"
-	"supercli/internal/agent"
+	"supercli/internal/assembly"
 	"supercli/internal/llm/prompt"
-	"supercli/internal/storage/freshness"
 	"supercli/internal/storage/goal"
 	"supercli/internal/system/config"
 )
@@ -82,36 +78,29 @@ func buildSystemPromptWithInstructions(svc *goal.Service, instructions string) s
 
 func buildSystemPromptLayers(svc *goal.Service, instructions string, includeMemory bool) string {
 	// No date here: a date in the stable prefix changes it every day; the
-	// request tail carries the current local date and time.
-	base := supercliSystemPromptBase + "\n\n" + freshness.StalenessGuidance() + "\n" + platformHint()
-	if supercliModelProfile != "" {
-		base += "\n\n" + supercliModelProfile
-	}
-	if supercliProjectInstructions != "" {
-		base += "\n\n" + supercliProjectInstructions
-	}
-	if instructions != "" {
-		base += "\n\n" + instructions
+	// request tail carries the current local date and time. The TUI keeps
+	// the staleness guidance and OS hint in the prefix (batch: OS hint only;
+	// web: neither).
+	spec := assembly.PromptSpec{
+		Base:          supercliSystemPromptBase,
+		Platform:      assembly.PlatformWithStaleness,
+		ModelProfile:  supercliModelProfile,
+		Project:       supercliProjectInstructions,
+		User:          instructions,
+		Goals:         svc,
+		LogGoalErrors: true,
 	}
 	// Orchestrator mode is a stricter coordinator: its lean preamble
 	// replaces the coordinator section (it subsumes the delegate-first
 	// guidance and adds the hard "you have no edit/run tools" boundary).
 	if supercliOrchestratorMode {
-		base += agent.OrchestratorPrompt()
+		spec.Role = assembly.RoleOrchestrator
 	} else if supercliCoordinatorMode {
-		base += agent.CoordinatorPrompt()
+		spec.Role = assembly.RoleCoordinator
 	}
-	if includeMemory && memoryBriefing != "" {
-		base += "\n\n" + memoryBriefing
+	if includeMemory {
+		spec.SurfaceLayers = append(spec.SurfaceLayers, memoryBriefing)
 	}
-	base += "\n\n" + prompt.MemoryGuidance(true)
-	if svc == nil {
-		return base
-	}
-	injected, err := svc.Inject(context.Background(), base, 5)
-	if err != nil {
-		log.Printf("goal inject: %v", err)
-		return base
-	}
-	return injected
+	spec.SurfaceLayers = append(spec.SurfaceLayers, prompt.MemoryGuidance(true))
+	return assembly.BuildSystemPrompt(spec)
 }

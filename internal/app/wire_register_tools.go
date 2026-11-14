@@ -3,205 +3,102 @@ package app
 import (
 	"log"
 
-	"supercli/internal/agent"
-	"supercli/internal/llm"
-	"supercli/internal/storage/library"
+	"supercli/internal/assembly"
+	"supercli/internal/storage/goal"
+	"supercli/internal/storage/session"
 	"supercli/internal/system/config"
 	"supercli/internal/tools"
 )
 
-// toolWrappers optional wraps applied to mutating tools.
-type toolWrappers struct {
-	// checkpoint wraps file-mutating tools with undo snapshots.
-	checkpoint func(tools.Tool) tools.Tool
-	// diagnostic wraps mutations with code-intel invalidation.
-	diagnostic func(tools.Tool) tools.Tool
+// interactiveToolset is the TUI adapter over the shared toolset table. The
+// interactive registry fills in phases (assembly.TUIEarly, TUICore, the
+// post-loop delegation/MCP rows and TUILate) because several tools bind to
+// objects created in between (the loop, the session store, the MCP manager).
+// Callers own Close on CodeIntel and ProcessSession and must call FTSClose.
+type interactiveToolset struct {
+	Registry       *tools.Registry
+	AskCh          chan tools.AskRequest
+	CodeIntel      *tools.CodeIntel
+	ProcessSession *tools.ProcessSession
+	ToolSearcher   *tools.ToolSearcher
+	FTSClose       func()
+	deps           *assembly.Deps
 }
 
-func (w toolWrappers) mut(spec tools.Tool) tools.Tool {
-	if w.checkpoint != nil {
-		spec = w.checkpoint(spec)
-	}
-	if w.diagnostic != nil {
-		spec = w.diagnostic(spec)
-	}
-	return spec
-}
-
-func (w toolWrappers) cp(spec tools.Tool) tools.Tool {
-	if w.checkpoint != nil {
-		return w.checkpoint(spec)
-	}
-	return spec
-}
-
-// registerMediaAndOfficeTools registers image/office/pdf/screenshot tools
-// and the tool_search + skill/user-tool loaders. Callers own Close on the
-// returned CodeIntel, ProcessSession and ftsClose.
-func registerMediaAndOfficeTools(
-	registry *tools.Registry,
-	home, dataDir string,
-	caps *llm.CapabilityRegistry,
-	wrap toolWrappers,
-) (askCh chan tools.AskRequest, codeIntel *tools.CodeIntel, processSession *tools.ProcessSession, toolSearcher *tools.ToolSearcher, ftsClose func()) {
-	registry.MustRegister(tools.NewReadImage(home, 0).Spec())
-
-	askCh = make(chan tools.AskRequest, 4)
-	registry.MustRegister(tools.NewAskUser(askCh).Spec())
-
-	registry.MustRegister(tools.NewSearchCode(home).Spec())
-	codeIntel = tools.NewCodeIntel(home)
-	// Mutating office tools need diagnostic wrap (code-intel invalidation)
-	// in addition to checkpoint undo. Apply before those registrations.
-	wrap.diagnostic = codeIntel.WrapMutation
-	// Dormant by default: tool_search exposes its one compact schema only when
-	// the model needs exact symbols, references or diagnostics.
-	registry.MustRegister(codeIntel.Spec())
-	processSession = tools.NewProcessSession(home, dataDir)
-	registry.MustRegister(processSession.Spec())
-	registry.MustRegister(tools.NewHeadlessControl(home, dataDir).Spec())
-
-	// F21: read_zip is opt-in (not always-on).
-	// The model discovers it via tool_search
-	// when needed. The implementation is pure
-	// stdlib (archive/zip + path/filepath), so
-	// the binary stays self-contained.
-	registry.MustRegister(wrap.mut(tools.NewReadZip(home, 0).Spec()))
-
-	// F19: read_docx is opt-in (not always-on).
-	// The model discovers it via tool_search
-	// when needed. The implementation is pure
-	// stdlib (archive/zip + encoding/xml); no
-	// libreoffice, no docx library, no shell-out.
-	registry.MustRegister(tools.NewReadDocx(home, 0).Spec())
-
-	// F22: read_xlsx is opt-in (not always-on).
-	// The model discovers it via tool_search
-	// when needed. The implementation is pure
-	// stdlib (archive/zip + encoding/xml); no
-	// excelize, no libreoffice, no shell-out.
-	// Renders cells as a markdown-style
-	// pipe-separated table (one row per line,
-	// cells joined by " | ").
-	registry.MustRegister(tools.NewReadXlsx(home, 0).Spec())
-
-	// Wave-2 office editing: edit_docx / edit_xlsx
-	// rewrite a single zip entry byte-for-byte safe
-	// (temp file + atomic swap + .bak backup), pure
-	// stdlib. file_ops is the safe file manager for
-	// office users: no overwrite, no hard delete
-	// (trash folder instead), sandboxed paths.
-	registry.MustRegister(wrap.mut(tools.NewEditDocx(home).Spec()))
-	registry.MustRegister(wrap.mut(tools.NewEditXlsx(home).Spec()))
-	registry.MustRegister(tools.NewListDir(home).Spec())
-
-	// F20: read_pdf is opt-in (not always-on).
-	// The model discovers it via tool_search
-	// when needed. The implementation uses
-	// github.com/ledongthuc/pdf (pure Go, no
-	// cgo, no shell-out — no pdftotext, no
-	// poppler). Pages are separated by
-	// "--- Page N ---" headers.
-	registry.MustRegister(tools.NewReadPdf(home, 0).Spec())
-
-	// Media previews stay discoverable, without overhead in ordinary prompts.
-	registry.MustRegister(tools.NewShowMedia(home).Spec())
-	registerMediaGeneration(registry, home, dataDir)
-	registry.MustRegister(tools.NewSendScreenshot(dataDir, caps.HasVision).Spec())
-
+// newInteractiveToolset registers the early TUI rows (media, office, search,
+// skills, user tools). checkpoint may be nil (no undo snapshots).
+func newInteractiveToolset(registry *tools.Registry, home, dataDir string, tomlCfg config.TomlConfig, checkpoint func(tools.Tool) tools.Tool) *interactiveToolset {
 	ftsIndex, err := tools.NewInMemoryIndex()
 	if err != nil {
 		fatal("init fts index", err)
 	}
-	ftsClose = func() { _ = ftsIndex.Close() }
-	toolSearcher = tools.NewToolSearcher(registry, ftsIndex)
-	registry.MustRegister(toolSearcher.Spec())
-
-	discoverer := tools.NewDiscovererWithBuiltins(home, dataDir)
-	skillApplier := tools.NewSkillApplier(discoverer)
-	registry.MustRegister(skillApplier.Spec())
-
-	userLoader := tools.NewUserToolLoader(home, dataDir)
-	userTools, userErrs := userLoader.Load()
-	for _, e := range userErrs {
-		log.Printf("user tool load: %v", e)
+	ts := &interactiveToolset{
+		Registry:       registry,
+		AskCh:          make(chan tools.AskRequest, 4),
+		CodeIntel:      tools.NewCodeIntel(home),
+		ProcessSession: tools.NewProcessSession(home, dataDir),
+		FTSClose:       func() { _ = ftsIndex.Close() },
 	}
-	for _, t := range userTools {
-		registry.MustRegister(t)
+	ts.ToolSearcher = tools.NewToolSearcher(registry, ftsIndex)
+	ts.deps = &assembly.Deps{
+		Home:           home,
+		DataDir:        dataDir,
+		Toml:           tomlCfg,
+		Registry:       registry,
+		Checkpoint:     checkpoint,
+		CodeIntel:      ts.CodeIntel,
+		ProcessSession: ts.ProcessSession,
+		ToolSearcher:   ts.ToolSearcher,
+		AskCh:          ts.AskCh,
 	}
-	return askCh, codeIntel, processSession, toolSearcher, ftsClose
+	assembly.Register(registry, assembly.TUIEarly, ts.deps)
+	return ts
 }
 
-// registerFileWebAndLineTools registers line-level file ops, web tools,
-// library alternatives, invoke_tool and outlook_mail. Call after the
-// agent loop and other late tools so tool_search reindex sees them.
-func registerFileWebAndLineTools(
-	registry *tools.Registry,
-	home, dataDir string,
-	tomlCfg config.TomlConfig,
-	wrap toolWrappers,
-	toolSearcher *tools.ToolSearcher,
-) {
-	// F17: library alternatives tool. Opt-in
-	// (NOT MarkAlwaysOn); the model discovers
-	// it via tool_search. The Finder uses a
-	// built-in catalog of ~25 curated mappings.
-	libFinder := library.NewFinder()
-	registry.MustRegister(tools.NewCheckLibraryAlternatives(libFinder).Spec())
+// registerCore adds the rows that follow the always-on profile and memory
+// stack: remember/recall (when a store is open), ctx_execute, goal (with
+// decomposition on the main provider), host power, darwin (nil = disabled)
+// and search_history (when the session store opened).
+func (ts *interactiveToolset) registerCore(mem memoryBundle, goals *goal.Service, goalSetup func(*tools.GoalTool), darwin *tools.Tool, sessStore *session.Store) {
+	provided := map[string]tools.Tool{}
+	if mem.Project != nil || mem.Global != nil {
+		// remember routes entries to the project or global store via its
+		// `scope` argument; recall searches both (FTS5 + vectors when an
+		// embedder was detected).
+		rememberTool := tools.NewRememberDual(storeOrNil(mem.Project), storeOrNil(mem.Global))
+		rememberTool.OnSave = mem.AutoSaver.NoteRemember
+		provided["remember"] = rememberTool.Spec()
+		provided["recall"] = tools.NewRecallDual(storeOrNil(mem.Project), storeOrNil(mem.Global)).Spec()
+	}
+	if darwin != nil {
+		provided["darwin"] = *darwin
+	}
+	if sessStore != nil {
+		// Opt-in: the model discovers it via tool_search.
+		provided["search_history"] = tools.NewSearchHistory(sessStore).Spec()
+	}
+	ts.deps.Goals = goals
+	ts.deps.GoalSetup = goalSetup
+	ts.deps.Provided = provided
+	assembly.Register(ts.Registry, assembly.TUICore, ts.deps)
+	ts.deps.Provided = nil
+}
 
-	// F24: targeted file operations. All five
-	// tools are opt-in (NOT MarkAlwaysOn); the
-	// model discovers them via tool_search. They
-	// save tokens by reading/editing specific line
-	// ranges instead of entire files.
-	registry.MustRegister(tools.NewReadLines(home).Spec())
-	registry.MustRegister(tools.NewReadContext(home).Spec())
-	registry.MustRegister(tools.NewReadMany(home).Spec())
-	registry.MustRegister(tools.NewScratchpad(home).Spec())
-	// Preferred mutations for the main model (also thin-core).
-	registry.MustRegister(wrap.mut(tools.NewPatchFile(home).Spec()))
-	registry.MustRegister(wrap.mut(tools.NewCreateFile(home).Spec()))
-	// write_file overwrites a whole file; discoverable, not always-on core.
-	registry.MustRegister(wrap.mut(tools.NewWriteFile(home).Spec()))
-	registry.MustRegister(wrap.mut(tools.NewMakeDir(home).Spec()))
-	registry.MustRegister(wrap.mut(tools.NewMove(home).Spec()))
-	registry.MustRegister(wrap.mut(tools.NewCopy(home).Spec()))
-	registry.MustRegister(wrap.mut(tools.NewTrash(home).Spec()))
+// registerLate adds the line-level file ops, web tools, library finder,
+// invoke_tool and mail tools, then re-indexes tool_search: many tools were
+// registered after the first index build and would otherwise be invisible
+// to tool_search (and unreachable for small-tier models).
+func (ts *interactiveToolset) registerLate() {
+	assembly.Register(ts.Registry, assembly.TUILate, ts.deps)
+	if err := ts.ToolSearcher.RebuildIndex(); err != nil {
+		log.Printf("tool_search reindex: %v", err)
+	}
+}
 
-	// Web tools: web_fetch (SSRF-guarded HTML→text fetcher) and
-	// web_search (DuckDuckGo by default — no key; Brave/Tavily/SearXNG
-	// when [web_search] in config.toml or BRAVE_API_KEY /
-	// TAVILY_API_KEY supplies a key). Both are opt-in (NOT
-	// MarkAlwaysOn); the model discovers them via tool_search.
-	registry.MustRegister(tools.NewWebFetch().Spec())
-	// browser: headless Chrome/Edge for JS pages and clicking; discoverable.
-	registry.MustRegister(tools.NewBrowser().Spec())
-	registry.MustRegister(wrap.mut(tools.NewWebDownload(home).Spec()))
-	webSearcher := tools.NewConfiguredWebSearch(tomlCfg)
-	registry.MustRegister(webSearcher.Spec())
-	registry.MustRegister(webSearcher.LookupSpec())
-	registry.MarkAlwaysOn("web_lookup")
-	registry.MustRegister(agent.NewInvokeTool(registry).Spec())
-
-	// outlook_mail: Windows-only COM automation of desktop
-	// Outlook (read/search, create DRAFTS, recoverable trash moves, and
-	// explicitly confirmed filtered purge from Deleted Items; never sends).
-	// Opt-in via tool_search; on
-	// non-Windows it returns an explanatory error.
-	registry.MustRegister(tools.NewOutlookMail().Spec())
-	// thunderbird_mail: direct read-only bridge into a running Thunderbird
-	// MailExtension. Thunderbird owns the authenticated IMAP/OAuth session,
-	// avoiding Outlook COM/cache ambiguity for Gmail checks.
-	registry.MustRegister(tools.NewThunderbirdMail(dataDir).Spec())
-
-	// Re-index for tool_search: many tools (ctx_execute, goal,
-	// memory, task, consult, file-line tools, web tools, ...)
-	// are registered AFTER the first RebuildIndex call above, so
-	// without this second pass they were invisible to tool_search
-	// and effectively unreachable for small-tier models.
-	if toolSearcher != nil {
-		if err := toolSearcher.RebuildIndex(); err != nil {
-			log.Printf("tool_search reindex: %v", err)
-		}
+// applyAlwaysOnToolProfile marks the TUI's execution-profile core
+// (assembly.AlwaysOnProfile).
+func applyAlwaysOnToolProfile(registry *tools.Registry, coordinatorMode, thinTools bool) {
+	for _, name := range assembly.AlwaysOnProfile(coordinatorMode, thinTools) {
+		registry.MarkAlwaysOn(name)
 	}
 }

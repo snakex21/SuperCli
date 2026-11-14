@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"supercli/internal/agent"
+	"supercli/internal/assembly"
 	"supercli/internal/llm"
 	"supercli/internal/system/config"
 	"supercli/internal/system/execution"
@@ -120,31 +121,20 @@ func wireAgentTool(w agentToolWiring) (*agent.AgentTool, error) {
 			return preflight.BuildContext(ctx, home, preflight.Options{Layout: true})
 		}
 	}
-	if !w.delegationOff {
-		taskSpec := at.Spec()
-		sendSpec := agent.NewSendMessageTool(at.Workers).Spec()
-		if w.checkpoint != nil {
-			taskSpec = w.checkpoint(taskSpec)
-			sendSpec = w.checkpoint(sendSpec)
-		}
-		w.registry.MustRegister(taskSpec)
-		w.registry.MustRegister(sendSpec)
-		taskStopTool := agent.NewTaskStopTool(at.Workers)
-		w.registry.MustRegister(taskStopTool.Spec())
-		if w.coordinatorMode {
-			w.registry.MarkAlwaysOn("task")
-			w.registry.MarkAlwaysOn("send_message")
-			w.registry.MarkAlwaysOn("task_stop")
-		}
-	}
-	// F14: opt-in tool. The model calls hide_messages
-	// when it wants to drop old messages from its own
-	// context. We bind it after NewLoop because the tool
-	// needs the loop as Hider and a way to ask its
-	// current Messages length.
+	// F14: hide_messages binds to the loop (Hider + message count), so it
+	// is registered here, after NewLoop, and stays opt-in (tool_search).
 	hideTool := tools.NewHideMessages(w.loop, func() int {
 		return len(w.loop.AllMessages())
 	})
-	w.registry.MustRegister(hideTool.Spec())
+	provided := map[string]tools.Tool{"hide_messages": hideTool.Spec()}
+	var rows []assembly.Entry
+	if !w.delegationOff {
+		provided["task"] = at.Spec()
+		provided["send_message"] = agent.NewSendMessageTool(at.Workers).Spec()
+		provided["task_stop"] = agent.NewTaskStopTool(at.Workers).Spec()
+		rows = assembly.Delegation(assembly.SurfaceTUI, w.coordinatorMode)
+	}
+	rows = append(rows, assembly.Entry{Tool: "hide_messages"})
+	assembly.Register(w.registry, rows, &assembly.Deps{Checkpoint: w.checkpoint, Provided: provided})
 	return at, nil
 }
