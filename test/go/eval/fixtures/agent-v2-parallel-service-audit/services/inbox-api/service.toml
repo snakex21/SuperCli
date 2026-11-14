@@ -1,0 +1,13 @@
+# inbox-api service manifest
+name = "inbox-api"
+port = 7035
+owner = "team-data"
+deps = ["kyc-worker"]
+
+[health]
+path = "/healthz"
+interval = "30s"
+
+[resources]
+cpu = "250m"
+memory = "128Mi"

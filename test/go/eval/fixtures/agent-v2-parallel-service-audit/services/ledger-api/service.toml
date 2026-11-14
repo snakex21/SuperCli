@@ -1,0 +1,13 @@
+# ledger-api service manifest
+name = "ledger-api"
+port = 7004
+owner = "team-infra"
+deps = ["media-worker", "quota-api"]
+
+[health]
+path = "/healthz"
+interval = "10s"
+
+[resources]
+cpu = "250m"
+memory = "512Mi"

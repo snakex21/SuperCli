@@ -1,0 +1,9 @@
+{
+  "name": "api-dr",
+  "timeout_ms": 45000,
+  "db_url": "postgres://dr-db.internal:5432/app",
+  "features": "search , export",
+  "log_level": "CRITICAL",
+  "replicas": 1,
+  "region": "eu-north-1"
+}

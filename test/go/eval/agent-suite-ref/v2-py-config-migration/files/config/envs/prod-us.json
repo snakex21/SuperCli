@@ -1,0 +1,19 @@
+{
+  "schema": 2,
+  "name": "api-prod-us",
+  "timeout": "30s",
+  "db": {
+    "host": "db.us.internal",
+    "port": 5433,
+    "name": "app_us"
+  },
+  "features": [
+    "search",
+    "export",
+    "audit"
+  ],
+  "logging": {
+    "level": "warning"
+  },
+  "region": "us-east-1"
+}

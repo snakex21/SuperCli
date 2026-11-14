@@ -1,0 +1,13 @@
+# ranker-worker service manifest
+name = "ranker-worker"
+port = 7063
+owner = "team-pay"
+deps = ["auth-api"]
+
+[health]
+path = "/healthz"
+interval = "30s"
+
+[resources]
+cpu = "250m"
+memory = "128Mi"

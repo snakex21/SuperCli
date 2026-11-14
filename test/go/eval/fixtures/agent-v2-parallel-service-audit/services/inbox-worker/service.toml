@@ -1,0 +1,13 @@
+# inbox-worker service manifest
+name = "inbox-worker"
+port = 7037
+owner = "Team-Core"
+deps = []
+
+[health]
+path = "/healthz"
+interval = "15s"
+
+[resources]
+cpu = "250m"
+memory = "512Mi"

@@ -1,0 +1,10 @@
+{
+  "first_5xx_after_deploy": {
+    "request_id": "r113242",
+    "upstream": "orders-db"
+  },
+  "distinct_users_503": 87,
+  "top_failing_endpoint": "/api/checkout",
+  "top_failing_count": 94,
+  "search_p95_ms": 844
+}

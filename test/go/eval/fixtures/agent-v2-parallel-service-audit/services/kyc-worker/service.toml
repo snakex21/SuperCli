@@ -1,0 +1,13 @@
+# kyc-worker service manifest
+name = "kyc-worker"
+port = 7040
+owner = "team-core"
+deps = ["ledger-worker", "pricing-worker"]
+
+[health]
+path = "/healthz"
+interval = "5s"
+
+[resources]
+cpu = "100m"
+memory = "256Mi"

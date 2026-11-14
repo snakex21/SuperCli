@@ -1,0 +1,17 @@
+{
+  "schema": 2,
+  "name": "api-demo",
+  "timeout": "60s",
+  "db": {
+    "host": "demo-db",
+    "port": 5432,
+    "name": "demo"
+  },
+  "features": [
+    "export"
+  ],
+  "region": "eu-central-1",
+  "logging": {
+    "level": "info"
+  }
+}

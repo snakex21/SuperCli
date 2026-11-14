@@ -1,0 +1,13 @@
+# catalog-worker service manifest
+name = "catalog-worker"
+port = 7019
+owner = "team-search"
+deps = ["ledger-api", "ranker-worker"]
+
+[health]
+path = "/healthz"
+interval = "10s"
+
+[resources]
+cpu = "250m"
+memory = "512Mi"

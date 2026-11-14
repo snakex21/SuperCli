@@ -1,0 +1,13 @@
+# email-worker service manifest
+name = "email-worker"
+port = 7024
+owner = "team-infra"
+deps = []
+
+[health]
+path = "/healthz"
+interval = "15s"
+
+[resources]
+cpu = "500m"
+memory = "256Mi"

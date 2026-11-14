@@ -1,0 +1,13 @@
+# feed-api service manifest
+name = "feed-api"
+port = 7024
+owner = "team-pay"
+deps = ["feed-worker", "geo-worker", "inbox-worker"]
+
+[health]
+path = "/healthz"
+interval = "15s"
+
+[resources]
+cpu = "100m"
+memory = "512Mi"

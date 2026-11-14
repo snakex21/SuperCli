@@ -1,0 +1,13 @@
+# geo-api service manifest
+name = "geo-api"
+port = 7031
+owner = "team-data"
+deps = ["kyc-worker", "orders-worker", "ranker-worker"]
+
+[health]
+path = "/healthz"
+interval = "30s"
+
+[resources]
+cpu = "100m"
+memory = "256Mi"

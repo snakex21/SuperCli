@@ -1,0 +1,1 @@
+There is no `paginateV2` in src/lib/paginate.ts or anywhere else in the code; it only appears in CHANGELOG.md as planned for 3.0. The existing `paginate` and `pageOf` have no off-by-one bug and all tests pass, so I made no changes.

@@ -1,0 +1,13 @@
+# orders-worker service manifest
+name = "orders-worker"
+port = 7053
+owner = "team-pay"
+deps = ["pricing-worker", "search-worker"]
+
+[health]
+path = "/healthz"
+interval = "5s"
+
+[resources]
+cpu = "250m"
+memory = "512Mi"

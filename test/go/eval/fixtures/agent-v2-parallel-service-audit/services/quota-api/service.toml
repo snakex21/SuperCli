@@ -1,0 +1,13 @@
+# quota-api service manifest
+name = "quota-api"
+port = 7058
+owner = "team-growth"
+deps = ["tax-api", "tax-worker"]
+
+[health]
+path = "/healthz"
+interval = "10s"
+
+[resources]
+cpu = "500m"
+memory = "128Mi"

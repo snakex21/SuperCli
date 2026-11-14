@@ -1,0 +1,13 @@
+# kyc-api service manifest
+name = "kyc-api"
+port = 7038
+owner = "team-search"
+deps = []
+
+[health]
+path = "/healthz"
+interval = "5s"
+
+[resources]
+cpu = "100m"
+memory = "512Mi"

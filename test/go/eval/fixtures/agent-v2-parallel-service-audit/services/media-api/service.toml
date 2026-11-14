@@ -1,0 +1,13 @@
+# media-api service manifest
+name = "media-api"
+port = 7047
+owner = "team-core"
+deps = ["orders-worker", "quota-worker", "ranker-worker", "search-worker", "searchd"]
+
+[health]
+path = "/healthz"
+interval = "30s"
+
+[resources]
+cpu = "500m"
+memory = "128Mi"

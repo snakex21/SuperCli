@@ -1,0 +1,19 @@
+{
+  "schema": 2,
+  "name": "api-dr",
+  "timeout": "45s",
+  "db": {
+    "host": "dr-db.internal",
+    "port": 5432,
+    "name": "app"
+  },
+  "features": [
+    "search",
+    "export"
+  ],
+  "logging": {
+    "level": "critical"
+  },
+  "replicas": 1,
+  "region": "eu-north-1"
+}

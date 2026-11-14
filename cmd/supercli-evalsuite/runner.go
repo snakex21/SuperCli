@@ -160,11 +160,24 @@ func killTree(p *os.Process) error {
 	return p.Kill()
 }
 
-// referenceRunner applies <ref>/<task>/files over the workspace and
-// returns <ref>/<task>/answer.md: a grader self-test that must pass.
+// referenceRunner removes the workspace paths listed in
+// <ref>/<task>/delete.txt (one relative path per line), applies
+// <ref>/<task>/files over the workspace and returns
+// <ref>/<task>/answer.md: a grader self-test that must pass.
 func referenceRunner(refDir string) agenteval.AgentRunner {
 	return func(_ context.Context, in agenteval.AgentInput) (agenteval.AgentOutput, error) {
 		dir := filepath.Join(refDir, in.TaskID)
+		if list, err := os.ReadFile(filepath.Join(dir, "delete.txt")); err == nil {
+			for _, line := range strings.Split(string(list), "\n") {
+				rel := filepath.Clean(filepath.FromSlash(strings.TrimSpace(line)))
+				if rel == "." || filepath.IsAbs(rel) || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+					continue
+				}
+				if err := os.RemoveAll(filepath.Join(in.Workspace, rel)); err != nil {
+					return agenteval.AgentOutput{}, err
+				}
+			}
+		}
 		files := filepath.Join(dir, "files")
 		if info, err := os.Stat(files); err == nil && info.IsDir() {
 			err := filepath.WalkDir(files, func(p string, d os.DirEntry, err error) error {

@@ -1,0 +1,13 @@
+# billing-worker service manifest
+name = "billing-worker"
+port = 7009
+owner = "team-payments"
+deps = []
+
+[health]
+path = "/healthz"
+interval = "10s"
+
+[resources]
+cpu = "100m"
+memory = "128Mi"

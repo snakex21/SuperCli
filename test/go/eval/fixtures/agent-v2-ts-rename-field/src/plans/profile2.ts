@@ -1,0 +1,16 @@
+// Filler module: profile helpers with a stable API.
+export interface Profile2 {
+  id: string;
+  name: string;
+  count: number;
+  tags: string[];
+}
+
+export function weight(r: Profile2): number {
+  return r.count * 2 + r.tags.reduce((n, t) => n + t.length, 0);
+}
+
+export function label(r: Profile2): string {
+  const name = r.name.trim() || "(unnamed profile)";
+  return `${r.id}: ${name}`;
+}

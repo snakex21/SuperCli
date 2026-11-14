@@ -1,0 +1,7 @@
+{
+  "name": "api-demo",
+  "timeout_ms": 60000,
+  "db_url": "postgres://demo-db/demo",
+  "features": " export ",
+  "region": "eu-central-1"
+}

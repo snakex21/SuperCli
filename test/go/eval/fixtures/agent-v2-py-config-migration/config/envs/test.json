@@ -1,0 +1,7 @@
+{
+  "name": "api-test",
+  "timeout_ms": 1500,
+  "db_url": "postgres://db-test/app_test",
+  "features": "search",
+  "log_level": "INFO"
+}

@@ -1,0 +1,17 @@
+{
+  "schema": 2,
+  "name": "svc",
+  "timeout": "2500ms",
+  "db": {
+    "host": "h",
+    "port": 7000,
+    "name": "d"
+  },
+  "features": [
+    "a",
+    "b"
+  ],
+  "logging": {
+    "level": "warning"
+  }
+}

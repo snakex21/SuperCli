@@ -1,0 +1,16 @@
+{
+  "schema": 2,
+  "name": "api-test",
+  "timeout": "1500ms",
+  "db": {
+    "host": "db-test",
+    "port": 5432,
+    "name": "app_test"
+  },
+  "features": [
+    "search"
+  ],
+  "logging": {
+    "level": "info"
+  }
+}

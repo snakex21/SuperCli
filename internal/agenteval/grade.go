@@ -312,6 +312,18 @@ func ChangedLineCount(before, after string) int {
 		return len(a) + len(b)
 	}
 	if len(a)*len(b) > 25_000_000 {
+		// Too big for the quadratic LCS. With equal line counts the
+		// positional alignment is a valid upper bound (scattered value
+		// fixes in a large data file stay cheap); otherwise count all.
+		if len(a) == len(b) {
+			n := 0
+			for i := range a {
+				if a[i] != b[i] {
+					n += 2
+				}
+			}
+			return n
+		}
 		return len(a) + len(b)
 	}
 	prev := make([]int, len(b)+1)

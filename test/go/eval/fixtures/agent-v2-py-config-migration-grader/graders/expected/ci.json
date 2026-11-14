@@ -1,0 +1,17 @@
+{
+  "schema": 2,
+  "name": "api-ci",
+  "timeout": "2s",
+  "db": {
+    "host": "127.0.0.1",
+    "port": 55432,
+    "name": "ci"
+  },
+  "features": [
+    "beta",
+    "search"
+  ],
+  "logging": {
+    "level": "debug"
+  }
+}

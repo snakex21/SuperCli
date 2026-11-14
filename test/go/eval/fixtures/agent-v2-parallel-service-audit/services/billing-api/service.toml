@@ -1,0 +1,13 @@
+# billing-api service manifest
+name = "billing-api"
+port = 7007
+owner = "team-data"
+deps = ["catalog-worker", "quota-worker", "tax-worker"]
+
+[health]
+path = "/healthz"
+interval = "15s"
+
+[resources]
+cpu = "250m"
+memory = "128Mi"

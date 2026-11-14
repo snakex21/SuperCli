@@ -1,0 +1,13 @@
+# tax-api service manifest
+name = "tax-api"
+port = 7068
+owner = "team-core"
+deps = ["ledger-v1", "tax-worker"]
+
+[health]
+path = "/healthz"
+interval = "5s"
+
+[resources]
+cpu = "100m"
+memory = "512Mi"

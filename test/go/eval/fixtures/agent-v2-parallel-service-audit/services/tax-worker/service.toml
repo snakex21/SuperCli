@@ -1,0 +1,13 @@
+# tax-worker service manifest
+name = "tax-worker"
+port = 7070
+owner = "team-infra"
+deps = []
+
+[health]
+path = "/healthz"
+interval = "15s"
+
+[resources]
+cpu = "100m"
+memory = "128Mi"

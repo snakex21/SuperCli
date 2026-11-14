@@ -1,0 +1,19 @@
+{
+  "schema": 2,
+  "name": "api-sandbox",
+  "timeout": "7500ms",
+  "db": {
+    "host": "sandbox.db.internal",
+    "port": 5432,
+    "name": "sbx"
+  },
+  "features": [
+    "search",
+    "beta",
+    "export"
+  ],
+  "logging": {
+    "level": "info"
+  },
+  "owner": "team-sbx"
+}

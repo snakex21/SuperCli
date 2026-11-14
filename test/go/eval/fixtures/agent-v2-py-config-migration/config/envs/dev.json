@@ -1,0 +1,8 @@
+{
+  "name": "api-dev",
+  "timeout_ms": 5000,
+  "db_url": "postgres://localhost:5432/app_dev",
+  "features": "search, export",
+  "log_level": "DEBUG",
+  "region": "local"
+}
