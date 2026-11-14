@@ -21,6 +21,11 @@ import (
 	"supercli/internal/tools/ctxexec"
 )
 
+// batchAssembledHook is a test-only seam: golden tests inspect the fully
+// wired batch loop (and may drive it) before the real run. Returning true
+// stops runBatch there. Always nil in production.
+var batchAssembledHook func(l *agent.Loop, cfg agent.LoopConfig, base *tools.Registry) bool
+
 // runBatch executes a single prompt without TUI, printing the
 // assistant response to stdout. Used for CI/CD and scripting.
 func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelFlag string, echoFlag, debugFlag bool, draftMode, draftModel string, traceJSONL bool, tomlCfg config.TomlConfig) {
@@ -341,6 +346,9 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		// Coordinator contract: the main loop keeps only delegation +
 		// read-only lookups; workers inherit the full registry.
 		l.SetRegistry(agent.OrchestratorRegistry(reg))
+	}
+	if batchAssembledHook != nil && batchAssembledHook(l, loopCfg, reg) {
+		return
 	}
 
 	runCtx := context.Background()

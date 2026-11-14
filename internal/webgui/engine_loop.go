@@ -27,6 +27,10 @@ import (
 	"supercli/internal/tools/mcp"
 )
 
+// observeLoopConfig is a test-only seam: golden tests capture the exact
+// LoopConfig a web loop is built from. Always nil in production.
+var observeLoopConfig func(agent.LoopConfig)
+
 func (e *Engine) newLoop() (*agent.Loop, error) {
 	return e.newLoopWithSession(nil, nil)
 }
@@ -290,7 +294,7 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 	// An explicit max_steps in config.toml stays a strict user cap.
 	maxSteps := tc.MaxStepsOr(agent.DefaultMaxSteps)
 	compactResolver := e.compactProviderResolver(tc, cfg, prov)
-	loop, err := agent.NewLoop(agent.LoopConfig{
+	loopCfg := agent.LoopConfig{
 		Provider:            prov,
 		Registry:            reg,
 		Caps:                caps,
@@ -344,7 +348,11 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 		ErrorLog: e.toolErrorLog(),
 		// review_model: interactive post-work review ("Sprawdzanie"); nil = off.
 		Review: e.postReviewConfig(tc),
-	})
+	}
+	if observeLoopConfig != nil {
+		observeLoopConfig(loopCfg)
+	}
+	loop, err := agent.NewLoop(loopCfg)
 	if err != nil {
 		return nil, nil, err
 	}

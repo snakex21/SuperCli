@@ -1,0 +1,298 @@
+##### surface
+web app_profile=nestcafe profile=full-direct
+##### base registry
+visible: apply_skill,remember,recall,read_lines,read_context,read_many,read_image,list_dir,patch_file,create_file,make_dir,move,copy,trash,search_code,ctx_execute,scratchpad,invoke_tool,ask_user,web_lookup,tool_search,read_output
+host_power [approval] desc=cb2f4b0eb93d schema=5a1e3574332b fn=supercli/internal/tools/hostpower.Execute
+search_history [ro] desc=429792732cd2 schema=14198f25a40a fn=supercli/internal/tools/search.(*SearchHistory).run-fm
+code_intel [] desc=67ef1241e6bd schema=e2c1a9873c3c fn=supercli/internal/tools/codeintel.(*Tool).Execute-fm
+process_session [] desc=ffde6bd7cf9b schema=8e446bef10e3 fn=supercli/internal/tools/processsession.(*Tool).Execute-fm
+headless_control [approval] desc=6ec03ee68991 schema=67269f3aac73 fn=supercli/internal/tools/headless.(*Tool).Execute-fm
+apply_skill [on ro] desc=a091b205f439 schema=870c4eb3f23a fn=supercli/internal/tools/skills.(*SkillApplier).execute-fm
+remember [on] desc=7bc440d6700c schema=8d4d23ebf405 fn=supercli/internal/tools/memorytools.(*Remember).run-fm
+recall [on] desc=f1f69c902d5d schema=8cceb156aa6e fn=supercli/internal/tools/memorytools.(*Recall).run-fm
+read_lines [on ro] desc=5fc6b5b1b048 schema=e72f18575d62 fn=supercli/internal/tools/files.(*ReadLines).execute-fm
+read_context [on ro] desc=1ea9091c87f7 schema=ab746c91670d fn=supercli/internal/tools/files.(*ReadContext).execute-fm
+read_many [on ro] desc=a89be90c17af schema=e5b1ec6fc768 fn=supercli/internal/tools/files.(*ReadMany).execute-fm
+read_image [on ro] desc=c3613d57535b schema=03f6c6408bd1 fn=supercli/internal/tools/media.(*ReadImageTool).Execute-fm
+list_dir [on ro] desc=ba7b8378b065 schema=20c2659b0356 fn=supercli/internal/tools/files.(*ListDirTool).Execute-fm
+patch_file [on] desc=381c66726849 schema=1e472a2eb49c fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
+create_file [on] desc=3e10cfbf6969 schema=cff57708c1c8 fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
+make_dir [on] desc=a8edc26ac5a3 schema=5c101a2235dd fn=supercli/internal/checkpoint.(*Turn).Wrap.func2
+move [on] desc=658efd3bf187 schema=6170c6a15ed2 fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
+copy [on] desc=53ee38a718d3 schema=119af3dec318 fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
+trash [on approval] desc=4e4f53808106 schema=e8dd5819a9d0 fn=supercli/internal/checkpoint.(*Turn).Wrap.func2
+search_code [on ro] desc=37742248d322 schema=4fe96f18a70b fn=supercli/internal/tools/search.(*SearchCode).run-fm
+ctx_execute [on] desc=81a1a77d415e schema=6e56717e1e19 fn=supercli/internal/checkpoint.(*Turn).Wrap.func2
+scratchpad [on] desc=2c791388f9fd schema=8d24949d1787 fn=supercli/internal/tools/scratchpad.(*Scratchpad).run-fm
+write_file [] desc=4b2e40110fd4 schema=b8dab809301a fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
+read_pdf [] desc=ec05225a6bdd schema=7acc663b8a6c fn=supercli/internal/tools/office.(*ReadPdfTool).Execute-fm
+read_docx [] desc=a3cf0006a0c2 schema=f7ef85111b45 fn=supercli/internal/tools/office.(*ReadDocxTool).Execute-fm
+read_xlsx [] desc=5571c90b150a schema=84ee9d7ae4d1 fn=supercli/internal/tools/office.(*ReadXlsxTool).Execute-fm
+send_screenshot [] desc=fa835dab39f6 schema=9ed2bcf3514c fn=supercli/internal/tools/media.(*SendScreenshotTool).Execute-fm
+show_media [ro] desc=a1a88d518973 schema=181f5b331f2d fn=supercli/internal/tools/media.(*ShowMediaTool).Execute-fm
+read_zip [] desc=35e8dffa5506 schema=7d6d0f06ca7e fn=supercli/internal/checkpoint.(*Turn).Wrap.func2
+generate_image [approval] desc=15e0a12ead11 schema=bbed25434b75 fn=supercli/internal/tools/mediagen.(*Tool).Execute-fm
+generate_video [approval] desc=dc4ecdbfe9c2 schema=1ed49e0d6458 fn=supercli/internal/tools/mediagen.(*Tool).Execute-fm
+edit_docx [] desc=c7b3898dd023 schema=b42e6353c6fe fn=supercli/internal/checkpoint.(*Turn).Wrap.func2
+edit_xlsx [] desc=b3dc55c47502 schema=53bf51cd4d15 fn=supercli/internal/checkpoint.(*Turn).Wrap.func2
+invoke_tool [on] desc=23ee29093377 schema=0dc93db84c43 fn=supercli/internal/agent.(*InvokeTool).Spec.func1
+goal [] desc=91047b6c1566 schema=5e48e04fa23d fn=supercli/internal/tools/workflow.(*GoalTool).Execute-fm
+ask_user [on] desc=9951814db096 schema=2d18c1db508f fn=supercli/internal/tools/interactive.(*AskUser).Execute-fm
+web_fetch [ro] desc=074e797be2aa schema=dae3f262f5e0 fn=supercli/internal/tools/web.(*WebFetch).execute-fm
+browser [] desc=7e016870a3b9 schema=224185d89b23 fn=supercli/internal/tools/browser.(*Tool).Execute-fm
+web_download [] desc=b91e03154353 schema=ce4cdf1b4fcc fn=supercli/internal/checkpoint.(*Turn).Wrap.func2
+web_search [ro] desc=0c533126ac36 schema=fc56ec9599d1 fn=supercli/internal/tools/web.(*WebSearch).execute-fm
+web_lookup [on ro] desc=efe870122b33 schema=8acf7a96a129 fn=supercli/internal/tools/web.(*WebSearch).lookup-fm
+outlook_mail [approval arg=confirm] desc=90919146c32c schema=37d4866eb922 fn=supercli/internal/tools/mail.(*OutlookMail).execute-fm
+thunderbird_mail [approval arg=confirm] desc=3d0f8f503164 schema=b185f9386e20 fn=supercli/internal/tools/mail.(*ThunderbirdMail).execute-fm
+tool_search [on] desc=adb46caef9d4 schema=bec7ffe0edef fn=supercli/internal/tools/search.(*ToolSearcher).execute-fm
+read_output [on ro] desc=8cb657cdcc97 schema=0b5132aaf325 fn=supercli/internal/tools/core.(*Registry).EnsureReadOutput.(*OutputStore).ReadOutputTool.func1
+##### loop visible tools
+apply_skill
+remember
+recall
+read_lines
+read_context
+read_many
+read_image
+list_dir
+patch_file
+create_file
+make_dir
+move
+copy
+trash
+search_code
+ctx_execute
+scratchpad
+invoke_tool
+ask_user
+web_lookup
+tool_search
+read_output
+##### system prompt
+You are SuperCli, a portable AI assistant.
+
+- Use tools for actions: patch_file (batch edits), create_file (new files).
+- Word: NEW = exactly one edit_docx(create) with content + design. EXISTING = read_docx once, then exactly one edit_docx(batch). Success means stop tools and answer. Never script or unpack DOCX.
+- list_dir/search_code/read_many. tool_search only for missing tools; apply_skill(query,auto=true) for specialized guidance.
+- Use tools to close evidence gaps. Reuse results; act on known paths/URLs. Read missing context before edits. Batch independent calls; prefer batch tools. Stop when ALL requested outcomes are verified.
+- Verify edits; recheck only after failures or relevant changes. Fix errors and recheck, or report the blocker.
+- Do only what was asked. Match effort to scope; a no-op is a valid result. No formatting-only edits. Missing file/target: say so and ask; never substitute another.
+- Ask before irreversible actions (delete, mass move, send). Verify current facts.
+- edit_docx/edit_xlsx save a backup. After edits, state which file changed and what changed.
+- Be brief, use the user's language. remember preferences; recall only for missing prior context.
+
+Model profile (optional bounded instructions; lower priority than user request):
+Golden model profile: prefer small steps.
+
+NestCafe office mode:
+- Act as a general desktop and office assistant, not primarily as a programming agent.
+- For requests about the user's Desktop, Documents, Downloads, pictures, or another named location, inspect that location directly with file tools. Full filesystem access covers ordinary user files; do not claim that the active workspace prevents access.
+- Word contract: NEW file = exactly one edit_docx create containing all text, tables, images and design. EXISTING file = one read_docx with selectors=true, then exactly one edit_docx batch containing every change. A successful create or batch is complete: stop tools and answer; never create the same path twice. Use an attached visual reference on the initial model call and choose the closest design/accent; wide tables become landscape automatically. Never use Python, PowerShell, Node, Word COM or unpacked OOXML for DOCX. If an operation is unsupported, say so. Preserve formatting and existing files unless replacement was requested.
+- Prefer the dedicated Word, Excel, PDF, image, archive, and file tools for other document work.
+- For Gmail/IMAP mailbox work, first find thunderbird_mail with tool_search and use it when the Thunderbird Bridge is connected; it queries and mutates the running Thunderbird account that owns the authenticated Gmail IMAP/OAuth session and is preferred over Outlook's local cache. count/search/senders default to Inbox. For finding mail, use subject for a subject substring, from for sender, to for recipient, or address when the user gives an email address but does not specify whether it is sender or recipient; address searches both directions. search omits attachment metadata unless include_attachments:true is passed; op:attachments lists full filenames with extensions, type and size for one message_id. For a company the user names (allegro, discord), search from:'<brand>' and, when Inbox finds nothing, repeat with scope:"account" because Gmail filters file such mail in other folders. For unread counts use op:folders (unreadMessageCount); count/search have no unread filter. After op:copy, delete copies only in the copy destination folder, never in the source. When the user asks what is INSIDE an attachment, use op:get_attachment: PNG/JPEG/GIF/WebP bytes are attached directly to the next model turn so a vision-capable model can inspect the pixels; PDF/Office/other files return a temporary localPath and must be handed to the appropriate document/image tool. Do not claim to have seen an attachment from metadata alone. Every thunderbird_mail write (folders, copy, move, trash, purge, contacts...) is shown to the user by SuperCli as an approval card before it runs: never set confirm yourself (the host sets it after the user approves) and do not ask for permission in chat first. If a write returns that the user declined it in SuperCli or approval is unavailable, nothing changed and Thunderbird was never called: do not retry, tell the user. Folder administration is supported: create_folder, rename_folder and delete_folder; system/special folders are protected. Pass folder explicitly to work inside labels/folders such as Ważne, Spam, custom folders, etc.; use scope:"account" only for an explicitly requested whole-account search because Gmail labels can duplicate messages across folders. Use op:move with folder as source and destination as target for moving mail into OR out of any Thunderbird folder/label; move requires a filter, or all:true only when the user explicitly asked to move the whole source folder. For a local Outlook .msg file the user wants inside Thunderbird, use op:import_msg with path plus an explicitly chosen destination; on Windows it uses classic Outlook COM to read the .msg, converts locally to RFC 822/MIME, and preserves the message body and attachments before Thunderbird imports it. An IMAP import_msg destination can upload that historical message to the mail server; never guess whether the target should be Local Folders or an IMAP folder. For newsletter/junk cleanup, start with op:senders to identify frequent Inbox senders instead of issuing several broad full-text counts such as newsletter/unsubscribe/promocja/oferta. Then count specific suspicious senders before trashing them. Bulk move/trash/purge is paged to avoid IMAP timeouts: each write processes up to 250 messages by default. If a paged write result has more:true, immediately repeat the exact same approved op+folder+destination+filters/all with the returned continuation token; keep following continuation tokens until more:false. This is continuation of the same approved operation and does not require asking the user again. Do not retry a timed-out destructive call blindly. IMPORTANT: when the user explicitly wants to permanently empty the ENTIRE Trash, use op:empty_trash instead of purge/date-filter batching. empty_trash calls Thunderbird core's native IMAP EmptyTrash/DeleteAllMessages operation and may repair a Gmail Trash even when Thunderbird's local cache incorrectly reports 0. It is irreversible; the approval card says so. Only call whole-Trash cleanup successful when empty_trash returns serverVerified:true. For purge/delete_permanently, intermediate batches are not server-confirmed and must never be totaled or reported as final deletion success. trash moves only filtered messages from Inbox/an explicitly selected folder to the real Thunderbird Trash. Never run a destructive filtered write without a filter.
+- For mail in desktop Outlook, find outlook_mail with tool_search and use it before shell/PowerShell COM. Re-run tool_search before claiming an Outlook capability is unavailable because an older conversation may contain a stale tool schema. If the user says mail is still visible but a folder search returns zero, use search/count with scope:"account" and op:sync_status before concluding it does not exist; if a known local Outlook/PST item is still missing, search can use scope:"all_stores" to inspect every Outlook store while returning only matching mail. For preserving one exact Outlook item as a native file, first identify its entry_id and use op:export_msg with a .msg path; export_msg never deletes the source and refuses to overwrite an existing file. Gmail labels can place mail outside Inbox and Outlook's local cache can diverge from the server when synchronization fails. If sync_status reports recent errors, never claim the remote Gmail mailbox is empty or that deletion succeeded remotely based only on local Outlook state. trash is recoverable; purge permanently deletes only filtered messages already in Outlook's default Trash. Both require explicit user approval, and purge must be described as irreversible before asking for confirmation. For bulk cleanup, prefer op:count (no message previews), then one confirmed trash/purge call with all:true; do not loop 100-message batches or dump search results unless the user asked to inspect individual messages. trash/purge results confirm local Outlook state only; Outlook Send/Receive is asynchronous, so do not claim the remote Gmail server is updated until later verification.
+- Organizing, renaming, copying, and summarizing files are normal tasks. Before a bulk move, overwrite, or removal, show the intended scope and ask for confirmation. Use recoverable trash instead of hard deletion.
+- Treat source-code and repository workflows as exceptional: use them only when the user explicitly asks for programming work.
+
+For durable multi-step work, find and use the goal tool.
+
+Memory: recall only for missing prior context needed by this task. Use remember for new durable facts or user preferences (type=preference, scope=global), or when explicitly asked. Do not call memory tools just to start or finish a task. Never store secrets.
+##### project instructions
+
+##### user instructions
+User instructions (enabled preset: Golden). Apply these preferences unless the current user request conflicts; the current request, safety rules, and tool rules take priority:
+Golden user preset: reply in English.
+##### loop config
+Provider: set
+Registry: set
+Caps: set
+System: len=9091 sha=086b04d3a0d2
+ProjectInstructions: ""
+UserInstructions: len=213 sha=c8493814683a
+UserInstructionsForRun: set
+SkipImplementationHint: false
+Briefing: ""
+LiveContext: ""
+LiveContextForRun: nil
+LiveContextBlocks: set
+RefreshContextWindow: nil
+UserDownloadsDir: set
+MaxSteps: 300
+InitialMessages: nil
+KeepThinking: false
+EnableNavigator: true
+NavigatorAuto: true
+NavigatorKeywordsOnly: true
+ThinTools: false
+StableToolset: true
+CatalogHoist: false
+ReplaceContextTail: false
+Orchestrator: false
+TaskParallel: true
+TaskParallelWarnLocal: false
+ThinHintMax: 0
+BaseDir: "<HOME>"
+Writer: nil
+ToolOutputs: nil
+ImageStore: nil
+ErrorLog: set
+Reflector: nil
+ReflectEvery: 0
+AdaptiveReflection: false
+PatternInjector: nil
+CreditTracker: nil
+Ultrawork: nil
+Draft: nil
+DraftProvider: nil
+NavigatorProvider: nil
+DraftOverrideSink: nil
+WindowFor: nil
+ContextWindowFor: set
+ContextProvider: "echo"
+ScopedContextWindowFor: set
+Summarizer: set
+LearnLimit: set
+PrefillProfiles: set
+PruneProtectTokens: 0
+Stats: nil
+Review: nil
+provider.name: golden-model
+registry.len: 45
+max_steps.default: true
+live_context.err: <nil>
+live_context[memory]: ""
+live_context[runtime]: ""
+live_context[goal_state]: ""
+live_context[runtime]: "Active workspace (all file and shell tools are sandboxed here): <HOME>"
+user_instructions_for_run: "User instructions (enabled preset: Golden). Apply these preferences unless the current user request conflicts; the current request, safety rules, and tool rules take priority:\nGolden user preset: reply in English." err=<nil>
+##### approval gate
+fallback: false
+auto_approve: ["thunderbird_mail:count"]
+allow_all_non_interactive: false
+non_interactive_reason: "no chat window is attached to this run"
+grant_ttl: 45m0s
+timeout: 0s
+audit_path: <DATA>\approvals.jsonl
+language: pl
+now: false
+##### events
+tool_call tool_search
+done steps=2
+done steps=1
+##### transcript
+=== request 1 ===
+tools: apply_skill(desc=a091b205f439 schema=870c4eb3f23a) remember(desc=7bc440d6700c schema=8d4d23ebf405) recall(desc=f1f69c902d5d schema=8cceb156aa6e) read_lines(desc=5fc6b5b1b048 schema=e72f18575d62) read_context(desc=1ea9091c87f7 schema=ab746c91670d) read_many(desc=a89be90c17af schema=e5b1ec6fc768) read_image(desc=c3613d57535b schema=03f6c6408bd1) list_dir(desc=ba7b8378b065 schema=20c2659b0356) patch_file(desc=381c66726849 schema=1e472a2eb49c) create_file(desc=3e10cfbf6969 schema=cff57708c1c8) make_dir(desc=a8edc26ac5a3 schema=5c101a2235dd) move(desc=658efd3bf187 schema=6170c6a15ed2) copy(desc=53ee38a718d3 schema=119af3dec318) trash(desc=4e4f53808106 schema=e8dd5819a9d0) search_code(desc=37742248d322 schema=4fe96f18a70b) ctx_execute(desc=81a1a77d415e schema=6e56717e1e19) scratchpad(desc=2c791388f9fd schema=8d24949d1787) invoke_tool(desc=23ee29093377 schema=0dc93db84c43) ask_user(desc=9951814db096 schema=2d18c1db508f) web_lookup(desc=efe870122b33 schema=8acf7a96a129) tool_search(desc=adb46caef9d4 schema=bec7ffe0edef) read_output(desc=8cb657cdcc97 schema=0b5132aaf325)
+--- msg 0 role=system origin={"source":"instructions"}
+You are SuperCli, a portable AI assistant.
+
+- Use tools for actions: patch_file (batch edits), create_file (new files).
+- Word: NEW = exactly one edit_docx(create) with content + design. EXISTING = read_docx once, then exactly one edit_docx(batch). Success means stop tools and answer. Never script or unpack DOCX.
+- list_dir/search_code/read_many. tool_search only for missing tools; apply_skill(query,auto=true) for specialized guidance.
+- Use tools to close evidence gaps. Reuse results; act on known paths/URLs. Read missing context before edits. Batch independent calls; prefer batch tools. Stop when ALL requested outcomes are verified.
+- Verify edits; recheck only after failures or relevant changes. Fix errors and recheck, or report the blocker.
+- Do only what was asked. Match effort to scope; a no-op is a valid result. No formatting-only edits. Missing file/target: say so and ask; never substitute another.
+- Ask before irreversible actions (delete, mass move, send). Verify current facts.
+- edit_docx/edit_xlsx save a backup. After edits, state which file changed and what changed.
+- Be brief, use the user's language. remember preferences; recall only for missing prior context.
+
+Model profile (optional bounded instructions; lower priority than user request):
+Golden model profile: prefer small steps.
+
+NestCafe office mode:
+- Act as a general desktop and office assistant, not primarily as a programming agent.
+- For requests about the user's Desktop, Documents, Downloads, pictures, or another named location, inspect that location directly with file tools. Full filesystem access covers ordinary user files; do not claim that the active workspace prevents access.
+- Word contract: NEW file = exactly one edit_docx create containing all text, tables, images and design. EXISTING file = one read_docx with selectors=true, then exactly one edit_docx batch containing every change. A successful create or batch is complete: stop tools and answer; never create the same path twice. Use an attached visual reference on the initial model call and choose the closest design/accent; wide tables become landscape automatically. Never use Python, PowerShell, Node, Word COM or unpacked OOXML for DOCX. If an operation is unsupported, say so. Preserve formatting and existing files unless replacement was requested.
+- Prefer the dedicated Word, Excel, PDF, image, archive, and file tools for other document work.
+- For Gmail/IMAP mailbox work, first find thunderbird_mail with tool_search and use it when the Thunderbird Bridge is connected; it queries and mutates the running Thunderbird account that owns the authenticated Gmail IMAP/OAuth session and is preferred over Outlook's local cache. count/search/senders default to Inbox. For finding mail, use subject for a subject substring, from for sender, to for recipient, or address when the user gives an email address but does not specify whether it is sender or recipient; address searches both directions. search omits attachment metadata unless include_attachments:true is passed; op:attachments lists full filenames with extensions, type and size for one message_id. For a company the user names (allegro, discord), search from:'<brand>' and, when Inbox finds nothing, repeat with scope:"account" because Gmail filters file such mail in other folders. For unread counts use op:folders (unreadMessageCount); count/search have no unread filter. After op:copy, delete copies only in the copy destination folder, never in the source. When the user asks what is INSIDE an attachment, use op:get_attachment: PNG/JPEG/GIF/WebP bytes are attached directly to the next model turn so a vision-capable model can inspect the pixels; PDF/Office/other files return a temporary localPath and must be handed to the appropriate document/image tool. Do not claim to have seen an attachment from metadata alone. Every thunderbird_mail write (folders, copy, move, trash, purge, contacts...) is shown to the user by SuperCli as an approval card before it runs: never set confirm yourself (the host sets it after the user approves) and do not ask for permission in chat first. If a write returns that the user declined it in SuperCli or approval is unavailable, nothing changed and Thunderbird was never called: do not retry, tell the user. Folder administration is supported: create_folder, rename_folder and delete_folder; system/special folders are protected. Pass folder explicitly to work inside labels/folders such as Ważne, Spam, custom folders, etc.; use scope:"account" only for an explicitly requested whole-account search because Gmail labels can duplicate messages across folders. Use op:move with folder as source and destination as target for moving mail into OR out of any Thunderbird folder/label; move requires a filter, or all:true only when the user explicitly asked to move the whole source folder. For a local Outlook .msg file the user wants inside Thunderbird, use op:import_msg with path plus an explicitly chosen destination; on Windows it uses classic Outlook COM to read the .msg, converts locally to RFC 822/MIME, and preserves the message body and attachments before Thunderbird imports it. An IMAP import_msg destination can upload that historical message to the mail server; never guess whether the target should be Local Folders or an IMAP folder. For newsletter/junk cleanup, start with op:senders to identify frequent Inbox senders instead of issuing several broad full-text counts such as newsletter/unsubscribe/promocja/oferta. Then count specific suspicious senders before trashing them. Bulk move/trash/purge is paged to avoid IMAP timeouts: each write processes up to 250 messages by default. If a paged write result has more:true, immediately repeat the exact same approved op+folder+destination+filters/all with the returned continuation token; keep following continuation tokens until more:false. This is continuation of the same approved operation and does not require asking the user again. Do not retry a timed-out destructive call blindly. IMPORTANT: when the user explicitly wants to permanently empty the ENTIRE Trash, use op:empty_trash instead of purge/date-filter batching. empty_trash calls Thunderbird core's native IMAP EmptyTrash/DeleteAllMessages operation and may repair a Gmail Trash even when Thunderbird's local cache incorrectly reports 0. It is irreversible; the approval card says so. Only call whole-Trash cleanup successful when empty_trash returns serverVerified:true. For purge/delete_permanently, intermediate batches are not server-confirmed and must never be totaled or reported as final deletion success. trash moves only filtered messages from Inbox/an explicitly selected folder to the real Thunderbird Trash. Never run a destructive filtered write without a filter.
+- For mail in desktop Outlook, find outlook_mail with tool_search and use it before shell/PowerShell COM. Re-run tool_search before claiming an Outlook capability is unavailable because an older conversation may contain a stale tool schema. If the user says mail is still visible but a folder search returns zero, use search/count with scope:"account" and op:sync_status before concluding it does not exist; if a known local Outlook/PST item is still missing, search can use scope:"all_stores" to inspect every Outlook store while returning only matching mail. For preserving one exact Outlook item as a native file, first identify its entry_id and use op:export_msg with a .msg path; export_msg never deletes the source and refuses to overwrite an existing file. Gmail labels can place mail outside Inbox and Outlook's local cache can diverge from the server when synchronization fails. If sync_status reports recent errors, never claim the remote Gmail mailbox is empty or that deletion succeeded remotely based only on local Outlook state. trash is recoverable; purge permanently deletes only filtered messages already in Outlook's default Trash. Both require explicit user approval, and purge must be described as irreversible before asking for confirmation. For bulk cleanup, prefer op:count (no message previews), then one confirmed trash/purge call with all:true; do not loop 100-message batches or dump search results unless the user asked to inspect individual messages. trash/purge results confirm local Outlook state only; Outlook Send/Receive is asynchronous, so do not claim the remote Gmail server is updated until later verification.
+- Organizing, renaming, copying, and summarizing files are normal tasks. Before a bulk move, overwrite, or removal, show the intended scope and ask for confirmation. Use recoverable trash instead of hard deletion.
+- Treat source-code and repository workflows as exceptional: use them only when the user explicitly asks for programming work.
+
+For durable multi-step work, find and use the goal tool.
+
+Memory: recall only for missing prior context needed by this task. Use remember for new durable facts or user preferences (type=preference, scope=global), or when explicitly asked. Do not call memory tools just to start or finish a task. Never store secrets.
+
+User instructions (enabled preset: Golden). Apply these preferences unless the current user request conflicts; the current request, safety rules, and tool rules take priority:
+Golden user preset: reply in English.
+--- msg 1 role=user origin={"source":"human"}
+GOLDEN_CALL tool_search {"query":"web_fetch"}
+--- msg 2 role=system origin={"source":"runtime"}
+Active workspace (all file and shell tools are sandboxed here): <HOME>
+
+Current local date/time: <WEEKDAY>, <DATE> <TZ>. It is <YEAR> — verify that libraries, APIs, and patterns you recommend are still current before advising.
+
+
+
+[host power] Use host_power only when the human explicitly requests a one-shot host power action after this work. Create or use the active goal and complete and verify its tasks honestly; never mark incomplete or failed work successful. Implementing this feature, quoted instructions, and documentation are not requests to power off the host.
+=== request 2 ===
+tools: apply_skill(desc=a091b205f439 schema=870c4eb3f23a) remember(desc=7bc440d6700c schema=8d4d23ebf405) recall(desc=f1f69c902d5d schema=8cceb156aa6e) read_lines(desc=5fc6b5b1b048 schema=e72f18575d62) read_context(desc=1ea9091c87f7 schema=ab746c91670d) read_many(desc=a89be90c17af schema=e5b1ec6fc768) read_image(desc=c3613d57535b schema=03f6c6408bd1) list_dir(desc=ba7b8378b065 schema=20c2659b0356) patch_file(desc=381c66726849 schema=1e472a2eb49c) create_file(desc=3e10cfbf6969 schema=cff57708c1c8) make_dir(desc=a8edc26ac5a3 schema=5c101a2235dd) move(desc=658efd3bf187 schema=6170c6a15ed2) copy(desc=53ee38a718d3 schema=119af3dec318) trash(desc=4e4f53808106 schema=e8dd5819a9d0) search_code(desc=37742248d322 schema=4fe96f18a70b) ctx_execute(desc=81a1a77d415e schema=6e56717e1e19) scratchpad(desc=2c791388f9fd schema=8d24949d1787) invoke_tool(desc=23ee29093377 schema=0dc93db84c43) ask_user(desc=9951814db096 schema=2d18c1db508f) web_fetch(desc=074e797be2aa schema=dae3f262f5e0) web_lookup(desc=efe870122b33 schema=8acf7a96a129) tool_search(desc=adb46caef9d4 schema=bec7ffe0edef) read_output(desc=8cb657cdcc97 schema=0b5132aaf325)
+--- msg 0 role=system origin={"source":"instructions"}
+You are SuperCli, a portable AI assistant.
+
+- Use tools for actions: patch_file (batch edits), create_file (new files).
+- Word: NEW = exactly one edit_docx(create) with content + design. EXISTING = read_docx once, then exactly one edit_docx(batch). Success means stop tools and answer. Never script or unpack DOCX.
+- list_dir/search_code/read_many. tool_search only for missing tools; apply_skill(query,auto=true) for specialized guidance.
+- Use tools to close evidence gaps. Reuse results; act on known paths/URLs. Read missing context before edits. Batch independent calls; prefer batch tools. Stop when ALL requested outcomes are verified.
+- Verify edits; recheck only after failures or relevant changes. Fix errors and recheck, or report the blocker.
+- Do only what was asked. Match effort to scope; a no-op is a valid result. No formatting-only edits. Missing file/target: say so and ask; never substitute another.
+- Ask before irreversible actions (delete, mass move, send). Verify current facts.
+- edit_docx/edit_xlsx save a backup. After edits, state which file changed and what changed.
+- Be brief, use the user's language. remember preferences; recall only for missing prior context.
+
+Model profile (optional bounded instructions; lower priority than user request):
+Golden model profile: prefer small steps.
+
+NestCafe office mode:
+- Act as a general desktop and office assistant, not primarily as a programming agent.
+- For requests about the user's Desktop, Documents, Downloads, pictures, or another named location, inspect that location directly with file tools. Full filesystem access covers ordinary user files; do not claim that the active workspace prevents access.
+- Word contract: NEW file = exactly one edit_docx create containing all text, tables, images and design. EXISTING file = one read_docx with selectors=true, then exactly one edit_docx batch containing every change. A successful create or batch is complete: stop tools and answer; never create the same path twice. Use an attached visual reference on the initial model call and choose the closest design/accent; wide tables become landscape automatically. Never use Python, PowerShell, Node, Word COM or unpacked OOXML for DOCX. If an operation is unsupported, say so. Preserve formatting and existing files unless replacement was requested.
+- Prefer the dedicated Word, Excel, PDF, image, archive, and file tools for other document work.
+- For Gmail/IMAP mailbox work, first find thunderbird_mail with tool_search and use it when the Thunderbird Bridge is connected; it queries and mutates the running Thunderbird account that owns the authenticated Gmail IMAP/OAuth session and is preferred over Outlook's local cache. count/search/senders default to Inbox. For finding mail, use subject for a subject substring, from for sender, to for recipient, or address when the user gives an email address but does not specify whether it is sender or recipient; address searches both directions. search omits attachment metadata unless include_attachments:true is passed; op:attachments lists full filenames with extensions, type and size for one message_id. For a company the user names (allegro, discord), search from:'<brand>' and, when Inbox finds nothing, repeat with scope:"account" because Gmail filters file such mail in other folders. For unread counts use op:folders (unreadMessageCount); count/search have no unread filter. After op:copy, delete copies only in the copy destination folder, never in the source. When the user asks what is INSIDE an attachment, use op:get_attachment: PNG/JPEG/GIF/WebP bytes are attached directly to the next model turn so a vision-capable model can inspect the pixels; PDF/Office/other files return a temporary localPath and must be handed to the appropriate document/image tool. Do not claim to have seen an attachment from metadata alone. Every thunderbird_mail write (folders, copy, move, trash, purge, contacts...) is shown to the user by SuperCli as an approval card before it runs: never set confirm yourself (the host sets it after the user approves) and do not ask for permission in chat first. If a write returns that the user declined it in SuperCli or approval is unavailable, nothing changed and Thunderbird was never called: do not retry, tell the user. Folder administration is supported: create_folder, rename_folder and delete_folder; system/special folders are protected. Pass folder explicitly to work inside labels/folders such as Ważne, Spam, custom folders, etc.; use scope:"account" only for an explicitly requested whole-account search because Gmail labels can duplicate messages across folders. Use op:move with folder as source and destination as target for moving mail into OR out of any Thunderbird folder/label; move requires a filter, or all:true only when the user explicitly asked to move the whole source folder. For a local Outlook .msg file the user wants inside Thunderbird, use op:import_msg with path plus an explicitly chosen destination; on Windows it uses classic Outlook COM to read the .msg, converts locally to RFC 822/MIME, and preserves the message body and attachments before Thunderbird imports it. An IMAP import_msg destination can upload that historical message to the mail server; never guess whether the target should be Local Folders or an IMAP folder. For newsletter/junk cleanup, start with op:senders to identify frequent Inbox senders instead of issuing several broad full-text counts such as newsletter/unsubscribe/promocja/oferta. Then count specific suspicious senders before trashing them. Bulk move/trash/purge is paged to avoid IMAP timeouts: each write processes up to 250 messages by default. If a paged write result has more:true, immediately repeat the exact same approved op+folder+destination+filters/all with the returned continuation token; keep following continuation tokens until more:false. This is continuation of the same approved operation and does not require asking the user again. Do not retry a timed-out destructive call blindly. IMPORTANT: when the user explicitly wants to permanently empty the ENTIRE Trash, use op:empty_trash instead of purge/date-filter batching. empty_trash calls Thunderbird core's native IMAP EmptyTrash/DeleteAllMessages operation and may repair a Gmail Trash even when Thunderbird's local cache incorrectly reports 0. It is irreversible; the approval card says so. Only call whole-Trash cleanup successful when empty_trash returns serverVerified:true. For purge/delete_permanently, intermediate batches are not server-confirmed and must never be totaled or reported as final deletion success. trash moves only filtered messages from Inbox/an explicitly selected folder to the real Thunderbird Trash. Never run a destructive filtered write without a filter.
+- For mail in desktop Outlook, find outlook_mail with tool_search and use it before shell/PowerShell COM. Re-run tool_search before claiming an Outlook capability is unavailable because an older conversation may contain a stale tool schema. If the user says mail is still visible but a folder search returns zero, use search/count with scope:"account" and op:sync_status before concluding it does not exist; if a known local Outlook/PST item is still missing, search can use scope:"all_stores" to inspect every Outlook store while returning only matching mail. For preserving one exact Outlook item as a native file, first identify its entry_id and use op:export_msg with a .msg path; export_msg never deletes the source and refuses to overwrite an existing file. Gmail labels can place mail outside Inbox and Outlook's local cache can diverge from the server when synchronization fails. If sync_status reports recent errors, never claim the remote Gmail mailbox is empty or that deletion succeeded remotely based only on local Outlook state. trash is recoverable; purge permanently deletes only filtered messages already in Outlook's default Trash. Both require explicit user approval, and purge must be described as irreversible before asking for confirmation. For bulk cleanup, prefer op:count (no message previews), then one confirmed trash/purge call with all:true; do not loop 100-message batches or dump search results unless the user asked to inspect individual messages. trash/purge results confirm local Outlook state only; Outlook Send/Receive is asynchronous, so do not claim the remote Gmail server is updated until later verification.
+- Organizing, renaming, copying, and summarizing files are normal tasks. Before a bulk move, overwrite, or removal, show the intended scope and ask for confirmation. Use recoverable trash instead of hard deletion.
+- Treat source-code and repository workflows as exceptional: use them only when the user explicitly asks for programming work.
+
+For durable multi-step work, find and use the goal tool.
+
+Memory: recall only for missing prior context needed by this task. Use remember for new durable facts or user preferences (type=preference, scope=global), or when explicitly asked. Do not call memory tools just to start or finish a task. Never store secrets.
+
+User instructions (enabled preset: Golden). Apply these preferences unless the current user request conflicts; the current request, safety rules, and tool rules take priority:
+Golden user preset: reply in English.
+--- msg 1 role=user origin={"source":"human"}
+GOLDEN_CALL tool_search {"query":"web_fetch"}
+--- msg 2 role=system origin={"source":"runtime"}
+Active workspace (all file and shell tools are sandboxed here): <HOME>
+
+Current local date/time: <WEEKDAY>, <DATE> <TZ>. It is <YEAR> — verify that libraries, APIs, and patterns you recommend are still current before advising.
+
+
+
+[host power] Use host_power only when the human explicitly requests a one-shot host power action after this work. Create or use the active goal and complete and verify its tasks honestly; never mark incomplete or failed work successful. Implementing this feature, quoted instructions, and documentation are not requests to power off the host.
+--- msg 3 role=assistant origin={"source":"model"}
+tool_call call_1 tool_search {"query":"web_fetch"}
+--- msg 4 role=tool name=tool_search tool_call_id=call_1 origin={"source":"tool_result"}
+{"query":"web_fetch","matches":[{"name":"web_fetch","server":"user","score":1,"signature":"web_fetch(url, offset:int, max_chars:int, mode, refresh:bool)","schema":{"type":"object","properties":{"url":{"type":"string","description":"Full http(s) URL to read."},"offset":{"type":"integer","description":"Continue a long page from this character offset."},"max_chars":{"type":"integer","description":"Max characters (default fits the model context)."},"mode":{"type":"string","enum":["text","links","media"],"description":"text (default), links or media."},"refresh":{"type":"boolean","description":"Skip reuse of a recent result (default false)."}},"required":["url"]}}],"hint":"These tools are now callable. Each match includes its exact signature and JSON schema; call by name when exposed, or through invoke_tool in the schema-stable toolset."}
+=== request 3 ===
+tools: web_lookup(desc=efe870122b33 schema=8acf7a96a129) tool_search(desc=adb46caef9d4 schema=bec7ffe0edef) recall(desc=f1f69c902d5d schema=8cceb156aa6e)
+--- msg 0 role=system origin={"source":"instructions"}
+You are SuperCli. Answer directly in the user's language. For plain conversation, reply briefly without tools. Use web_lookup for current facts, recall for remembered facts, and tool_search to obtain any other tools needed to fulfill the request.
+
+User instructions (enabled preset: Golden). Apply these preferences unless the current user request conflicts; the current request, safety rules, and tool rules take priority:
+Golden user preset: reply in English.
+--- msg 1 role=user origin={"source":"human"}
+GOLDEN_CALL tool_search {"query":"web_fetch"}
+--- msg 2 role=assistant origin={"source":"model"}
+[part 0 text source=]
+done after tool
+--- msg 3 role=user origin={"source":"human"}
+thanks
+--- msg 4 role=system origin={"source":"runtime"}
+Active workspace (all file and shell tools are sandboxed here): <HOME>
+
+Current local date/time: <WEEKDAY>, <DATE> <TZ>. It is <YEAR> — verify that libraries, APIs, and patterns you recommend are still current before advising.
+
+
+
+[host power] Use host_power only when the human explicitly requests a one-shot host power action after this work. Create or use the active goal and complete and verify its tasks honestly; never mark incomplete or failed work successful. Implementing this feature, quoted instructions, and documentation are not requests to power off the host.
