@@ -19,20 +19,20 @@ import (
 	"supercli/internal/testbrowser"
 )
 
-// Delivery tests use only in-memory queues and HTTP recorders. Marking once as
-// done prevents call from opening a listener or contacting a real extension.
+// Delivery tests use only in-memory queues and HTTP recorders. testNoListen
+// prevents call from opening a listener or contacting a real extension.
 func newThunderbirdDeliveryTestState() *thunderbirdBridgeState {
 	b := &thunderbirdBridgeState{
-		queue:    make(chan thunderbirdBridgeRequest, 32),
-		waiters:  make(map[string]chan thunderbirdBridgeResponse),
-		lastPoll: time.Now(),
+		queue:        make(chan thunderbirdBridgeRequest, 32),
+		waiters:      make(map[string]chan thunderbirdBridgeResponse),
+		lastPoll:     time.Now(),
+		testNoListen: true,
 	}
-	b.once.Do(func() {})
 	return b
 }
 
 func postThunderbirdDeliveryResult(b *thunderbirdBridgeState, body string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodPost, "/result?token="+thunderbirdBridgeToken, strings.NewReader(body))
+	req := newThunderbirdTestPeer(nil, b).request(http.MethodPost, "/v2/result", []byte(body))
 	rec := httptest.NewRecorder()
 	b.handleResult(rec, req)
 	return rec
@@ -225,7 +225,7 @@ func TestThunderbirdDeliveryPollSkipsAbandonedRequests(t *testing.T) {
 	b.queue <- want
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	req := httptest.NewRequest(http.MethodGet, "/poll?token="+thunderbirdBridgeToken, nil).WithContext(ctx)
+	req := newThunderbirdTestPeer(t, b).request(http.MethodGet, "/v2/poll", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
 	b.handlePoll(rec, req)
 	if rec.Code != http.StatusOK {
@@ -277,7 +277,7 @@ func TestThunderbirdDeliveryDispatchedCancellationReportsUnknownAndUsesFreshIDs(
 			errs <- err
 		}()
 		pollCtx, stopPoll := context.WithTimeout(context.Background(), time.Second)
-		poll := httptest.NewRequest(http.MethodGet, "/poll?token="+thunderbirdBridgeToken, nil).WithContext(pollCtx)
+		poll := newThunderbirdTestPeer(t, b).request(http.MethodGet, "/v2/poll", nil).WithContext(pollCtx)
 		rec := httptest.NewRecorder()
 		b.handlePoll(rec, poll)
 		stopPoll()
@@ -364,7 +364,7 @@ func TestThunderbirdDeliveryCancellationBeforeDispatchPreventsExecution(t *testi
 	b.queue <- live
 	pollCtx, stopPoll := context.WithTimeout(context.Background(), time.Second)
 	defer stopPoll()
-	poll := httptest.NewRequest(http.MethodGet, "/poll?token="+thunderbirdBridgeToken, nil).WithContext(pollCtx)
+	poll := newThunderbirdTestPeer(t, b).request(http.MethodGet, "/v2/poll", nil).WithContext(pollCtx)
 	rec := httptest.NewRecorder()
 	b.handlePoll(rec, poll)
 	var got thunderbirdBridgeRequest
@@ -384,7 +384,7 @@ func TestThunderbirdDeliveryDispatchedDeadlinePreservesContextError(t *testing.T
 	}()
 	pollCtx, stopPoll := context.WithTimeout(context.Background(), time.Second)
 	defer stopPoll()
-	poll := httptest.NewRequest(http.MethodGet, "/poll?token="+thunderbirdBridgeToken, nil).WithContext(pollCtx)
+	poll := newThunderbirdTestPeer(t, b).request(http.MethodGet, "/v2/poll", nil).WithContext(pollCtx)
 	rec := httptest.NewRecorder()
 	b.handlePoll(rec, poll)
 	var req thunderbirdBridgeRequest
@@ -404,9 +404,11 @@ func TestThunderbirdDeliveryDispatchedDeadlinePreservesContextError(t *testing.T
 	}
 }
 
-// Opt in with THUNDERBIRD_EXTENSION_SOURCE=/absolute/path/to/background.js.
-// This connects the actual host and extension transport through a temporary
-// loopback server; every messenger API is a synthetic in-memory fixture.
+// Opt in with THUNDERBIRD_EXTENSION_SOURCE=/absolute/path/to/background.js
+// (bridge-auth.js is read from the same folder). This pairs the actual
+// extension transport with this host through a one-time code, authenticates
+// and runs one operation over a temporary loopback server; every messenger
+// API is a synthetic in-memory fixture.
 func TestThunderbirdDeliveryExtensionLostACKE2E(t *testing.T) {
 	source := os.Getenv("THUNDERBIRD_EXTENSION_SOURCE")
 	if source == "" {
@@ -422,23 +424,53 @@ func TestThunderbirdDeliveryExtensionLostACKE2E(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read explicitly selected extension source: %v", err)
 	}
-	runThunderbirdDeliveryBrowserFixture(t, string(code))
+	auth, err := os.ReadFile(filepath.Join(filepath.Dir(source), "bridge-auth.js"))
+	if err != nil {
+		t.Fatalf("read bridge-auth.js next to the extension source: %v", err)
+	}
+	runThunderbirdDeliveryBrowserFixture(t, string(auth)+"\n"+string(code), true)
 }
 
-func runThunderbirdDeliveryBrowserFixture(t *testing.T, source string) {
+// runThunderbirdDeliveryBrowserFixture executes extension source in a real
+// browser against the real host handler (transport guard included). With
+// pair=true the source must be the actual extension: the fixture pairs it
+// with a fresh code first. Otherwise it gets a pre-provisioned session.
+func runThunderbirdDeliveryBrowserFixture(t *testing.T, source string, pair bool) {
 	t.Helper()
 	b := newThunderbirdDeliveryTestState()
+	b.dataDir = t.TempDir()
+	var setup string
+	if pair {
+		code, err := b.startPairing()
+		if err != nil {
+			t.Fatal(err)
+		}
+		codeJSON, _ := json.Marshal(code.Code)
+		setup = "await fixtureExtension.pair(" + string(codeJSON) + ");\n"
+	} else {
+		peer := newThunderbirdTestPeer(t, b)
+		session, _ := json.Marshal(map[string]string{"id": peer.sessionID, "key": b64.EncodeToString(peer.sessionKey)})
+		source = strings.Replace(source, "FIXTURE_SESSION_JSON", string(session), 1)
+	}
+	bridge := b.handler()
 	mux := http.NewServeMux()
-	mux.HandleFunc("/poll", b.handlePoll)
-	mux.HandleFunc("/result", b.handleResult)
+	mux.HandleFunc("/v2/", func(w http.ResponseWriter, r *http.Request) {
+		// The fixture page stands in for the moz-extension background page,
+		// whose web origin the guard would (correctly) refuse.
+		r.Header.Del("Origin")
+		bridge.ServeHTTP(w, r)
+	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte("<!doctype html><html><head><title>Synthetic delivery fixture</title></head><body></body></html>"))
 	})
 	server := httptest.NewServer(mux)
 	defer server.Close()
+	b.mu.Lock()
+	b.addr = strings.TrimPrefix(server.URL, "http://")
+	b.mu.Unlock()
 
-	bridgeURL := regexp.MustCompile(`(?m)^const BRIDGE_URL = "http://127\.0\.0\.1:47831";$`)
+	bridgeURL := regexp.MustCompile(`(?m)^const BRIDGE_URL = "http://127\.0\.0\.1:47831";\r?$`)
 	if len(bridgeURL.FindAllStringIndex(source, -1)) != 1 {
 		t.Fatal("expected exactly one constant loopback BRIDGE_URL in extension source")
 	}
@@ -471,7 +503,7 @@ func runThunderbirdDeliveryBrowserFixture(t *testing.T, source string) {
 	// Source is read by Go, then executed unchanged apart from its fixed bridge
 	// origin. The new page has no real extension/mail APIs: only these stubs.
 	expression := "(async () => { const fixtureTarget = " + string(target) + ";\n" + thunderbirdDeliveryBrowserFixture +
-		"\nconst fixtureWorker = (() => {\n" + source + "\nreturn () => requestWorkerRunning;\n})();\n" + thunderbirdDeliveryBrowserAssertions + "\n})()"
+		"\nconst fixtureExtension = (() => {\n" + source + "\nreturn {worker: () => requestWorkerRunning, pair: typeof pairWithCode === \"function\" ? pairWithCode : null};\n})();\nconst fixtureWorker = fixtureExtension.worker;\n" + setup + thunderbirdDeliveryBrowserAssertions + "\n})()"
 	var output json.RawMessage
 	if err := page.Eval(ctx, expression, &output); err != nil {
 		cancel()
@@ -514,6 +546,9 @@ func runThunderbirdDeliveryBrowserFixture(t *testing.T, source string) {
 	if _, ok := b.completed[report.ID]; !ok || len(b.completed) != 1 || len(b.waiters) != 0 || len(b.dispatched) != 0 || len(b.queue) != 0 || b.requestID.Load() != 1 {
 		t.Fatalf("host did not finish exactly one synthetic request: accepted=%d waiters=%d dispatched=%d queued=%d requestIDs=%d", len(b.completed), len(b.waiters), len(b.dispatched), len(b.queue), b.requestID.Load())
 	}
+	if pair && (b.auth.pairing == nil || b.auth.window != nil) {
+		t.Fatal("pairing was not completed and the window not closed")
+	}
 }
 
 const thunderbirdDeliveryBrowserFixture = `
@@ -523,6 +558,7 @@ let fixtureMutations = 0, fixturePolls = 0;
 const fixtureAccount = {id:"synthetic-account", name:"Synthetic account", type:"none"};
 const fixtureNativeFetch = globalThis.fetch.bind(globalThis);
 const fixtureNativeTimeout = globalThis.setTimeout.bind(globalThis);
+const fixtureStore = {};
 globalThis.messenger = {
  accounts: {list:async()=>[fixtureAccount]},
  folders: {
@@ -532,22 +568,30 @@ globalThis.messenger = {
    const folder={id:"synthetic-folder",accountId:fixtureAccount.id,name,path:"/"+name};
    fixtureFolders.push(folder);return folder;
   }
- }
+ },
+ storage: {local: {
+  get:async key=>({[key]:fixtureStore[key]}),
+  set:async values=>{Object.assign(fixtureStore, JSON.parse(JSON.stringify(values)));}
+ }},
+ runtime: {id:"supercli-bridge@local", getManifest:()=>({version:"fixture"})}
 };
 globalThis.browser = globalThis.messenger;
 globalThis.console = {log(){},warn(){}};
-globalThis.setTimeout = (fn,ms,...args)=>fixtureNativeTimeout(fn,ms===5000?ms:0,...args);
-globalThis.fetch = async(url,options)=>{
+// Retry delays run almost instantly; the delivery abort (5 s) and per-operation
+// limits (>= 60 s) keep their real duration.
+globalThis.setTimeout = (fn,ms,...args)=>fixtureNativeTimeout(fn,ms===5000||ms>=60000?ms:Math.min(ms||0,5),...args);
+globalThis.fetch = async(url,options={})=>{
  const parsed=new URL(url,location.href);
  fixtureCheck(parsed.origin===fixtureTarget,"fixture must never contact a real bridge");
- if(parsed.pathname==="/poll"){
+ if(parsed.pathname==="/v2/poll"){
   fixturePolls++;
   // One real host poll; leave any subsequent background loop dormant.
   if(fixturePolls>1)return new Promise(()=>{});
   return fixtureNativeFetch(url,options);
  }
- fixtureCheck(parsed.pathname==="/result","unexpected fixture endpoint");
- fixtureBodies.push(options.body);
+ if(parsed.pathname!=="/v2/result")return fixtureNativeFetch(url,options);
+ const body=options.body;
+ fixtureBodies.push(typeof body==="string"?body:new TextDecoder().decode(body));
  const response=await fixtureNativeFetch(url,options);fixtureStatuses.push(response.status);
  if(fixtureBodies.length===1){
   // Host acceptance is real; lose only the extension's knowledge of its ACK.
@@ -558,7 +602,7 @@ globalThis.fetch = async(url,options)=>{
 `
 
 const thunderbirdDeliveryBrowserAssertions = `
-const fixtureDeadline=Date.now()+7000;
+const fixtureDeadline=Date.now()+12000;
 while(Date.now()<fixtureDeadline){
  if(fixtureBodies.length>=2 && !fixtureWorker())break;
  await new Promise(resolve=>fixtureNativeTimeout(resolve,2));
@@ -567,21 +611,38 @@ fixtureCheck(fixtureMutations===1,"lost ACK repeated the mailbox operation");
 fixtureCheck(fixtureBodies.length===2,"lost ACK must retry delivery once");
 fixtureCheck(fixtureBodies[0]===fixtureBodies[1],"retry must use identical serialized result");
 fixtureCheck(JSON.stringify(fixtureStatuses)==="[204,204]","host did not acknowledge both posts");
-fixtureCheck(JSON.parse(fixtureBodies[0]).ok===true,"operation failed");
+fixtureCheck(JSON.parse(fixtureBodies[0]).ok===true,"operation failed: "+JSON.parse(fixtureBodies[0]).error);
 fixtureCheck(fixtureWorker()===false,"extension worker did not stop");
 return {mutations:fixtureMutations,posts:fixtureBodies.length,identicalBodies:true,statuses:fixtureStatuses,id:JSON.parse(fixtureBodies[0]).id};
 `
 
 // Always exercise the native harness with self-contained synthetic source.
-// This does not opt in to or claim coverage of an external extension checkout.
+// It signs with WebCrypto and verifies the host's response signatures, so it
+// also checks that browser HMACs match the Go host byte for byte.
 func TestThunderbirdDeliveryNativeBrowserFixtureLostACK(t *testing.T) {
-	token, _ := json.Marshal(thunderbirdBridgeToken)
 	source := `const BRIDGE_URL = "http://127.0.0.1:47831";
 let requestWorkerRunning=false;
-const BRIDGE_TOKEN=` + string(token) + `;
+const FIXTURE_SESSION=FIXTURE_SESSION_JSON;
+const fxEnc=new TextEncoder();
+const fxB64=b=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+const fxBytes=s=>Uint8Array.from(atob(s.replace(/-/g,"+").replace(/_/g,"/")),c=>c.charCodeAt(0));
+async function fxSigned(method,path,body){
+ const key=await crypto.subtle.importKey("raw",fxBytes(FIXTURE_SESSION.key),{name:"HMAC",hash:"SHA-256"},false,["sign"]);
+ const bytes=fxEnc.encode(body||"");
+ const ts=String(Date.now()), nonce=fxB64(crypto.getRandomValues(new Uint8Array(16)));
+ const hash=fxB64(await crypto.subtle.digest("SHA-256",bytes));
+ const mac=fxB64(await crypto.subtle.sign("HMAC",key,fxEnc.encode(["req",method,path,ts,nonce,hash].join("\n"))));
+ const response=await fetch(BRIDGE_URL+path,{method,headers:{"X-TB-Session":FIXTURE_SESSION.id,"X-TB-Ts":ts,"X-TB-Nonce":nonce,"X-TB-Mac":mac},body:method==="GET"?undefined:bytes});
+ const data=new Uint8Array(await response.arrayBuffer());
+ const rts=response.headers.get("X-TB-Ts");
+ const rhash=fxB64(await crypto.subtle.digest("SHA-256",data));
+ const want=fxB64(await crypto.subtle.sign("HMAC",key,fxEnc.encode(["res",String(response.status),nonce,rts,rhash].join("\n"))));
+ if(want!==response.headers.get("X-TB-Mac"))throw Error("host response signature invalid");
+ return {status:response.status,ok:response.ok,json:()=>JSON.parse(new TextDecoder().decode(data))};
+}
 (async()=>{
- const response=await fetch(BRIDGE_URL+"/poll?token="+encodeURIComponent(BRIDGE_TOKEN));
- const request=await response.json();
+ const response=await fxSigned("GET","/v2/poll");
+ const request=response.json();
  if(request.op!=="create_folder" || !request.args.confirm)throw Error("unexpected synthetic operation");
  requestWorkerRunning=true;
  const account=(await messenger.accounts.list())[0];
@@ -589,22 +650,15 @@ const BRIDGE_TOKEN=` + string(token) + `;
  const body=JSON.stringify({id:request.id,ok:true,data:{changed:true,created}});
  for(;;){
   try{
-   const ack=await fetch(BRIDGE_URL+"/result?token="+encodeURIComponent(BRIDGE_TOKEN),{method:"POST",headers:{"Content-Type":"application/json"},body});
+   const ack=await fxSigned("POST","/v2/result",body);
    if(!ack.ok)throw Error("result rejected");
    break;
   }catch(error){await new Promise(resolve=>setTimeout(resolve,10));}
  }
  requestWorkerRunning=false;
- await fetch(BRIDGE_URL+"/poll?token="+encodeURIComponent(BRIDGE_TOKEN));
+ await fxSigned("GET","/v2/poll");
 })();`
-	// Exercise Go's opted-in file-reading path too, but select only source
-	// written by this test, never an installed extension or user's mailbox.
-	path := filepath.Join(t.TempDir(), "background.js")
-	if err := os.WriteFile(path, []byte(source), 0600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("THUNDERBIRD_EXTENSION_SOURCE", path)
-	TestThunderbirdDeliveryExtensionLostACKE2E(t)
+	runThunderbirdDeliveryBrowserFixture(t, source, false)
 }
 
 func TestThunderbirdDeliveryAuthenticationPrecedesRecoveryCache(t *testing.T) {
@@ -614,11 +668,24 @@ func TestThunderbirdDeliveryAuthenticationPrecedesRecoveryCache(t *testing.T) {
 	if got := postThunderbirdDeliveryResult(b, body); got.Code != http.StatusNoContent {
 		t.Fatal(got.Code)
 	}
-	for _, token := range []string{"", "invalid-fixture-token"} {
-		req := httptest.NewRequest(http.MethodPost, "/result?token="+token, strings.NewReader(body))
+	// Unsigned, wrongly signed and replayed copies are all refused before the
+	// recovery cache is consulted.
+	peer := newThunderbirdTestPeer(t, b)
+	signed := peer.request(http.MethodPost, "/v2/result", []byte(body))
+	forged := peer.request(http.MethodPost, "/v2/result", []byte(body))
+	forged.Header.Set(headerMAC, thunderbirdMAC64(bytes.Repeat([]byte{9}, 32), "forged"))
+	unsigned := httptest.NewRequest(http.MethodPost, "/v2/result", strings.NewReader(body))
+	first := httptest.NewRecorder()
+	b.handleResult(first, signed)
+	if first.Code != http.StatusNoContent {
+		t.Fatalf("signed replay of a completed result status=%d", first.Code)
+	}
+	replay := peer.request(http.MethodPost, "/v2/result", []byte(body))
+	replay.Header = signed.Header.Clone()
+	for _, req := range []*http.Request{unsigned, forged, replay} {
 		rec := httptest.NewRecorder()
 		b.handleResult(rec, req)
-		if rec.Code != http.StatusForbidden {
+		if rec.Code != http.StatusUnauthorized {
 			t.Fatalf("unauthorized replay status=%d", rec.Code)
 		}
 	}

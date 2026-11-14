@@ -153,7 +153,7 @@ func TestThunderbirdResultBodiesDecodeAsUTF8(t *testing.T) {
 			}
 			text := "Zażółć gęślą jaźń \U0001F4EC Ważne"
 			body := fmt.Sprintf(`{"id":%q,"ok":%t,"data":{"folder":%q},"error":%q}`, req.ID, ok, text, text)
-			httpReq := httptest.NewRequest(http.MethodPost, "/result?token="+thunderbirdBridgeToken, strings.NewReader(body))
+			httpReq := newThunderbirdTestPeer(t, b).request(http.MethodPost, "/v2/result", []byte(body))
 			httpReq.Header.Set("Content-Type", "application/json; charset=utf-8")
 			rec := httptest.NewRecorder()
 			b.handleResult(rec, httpReq)

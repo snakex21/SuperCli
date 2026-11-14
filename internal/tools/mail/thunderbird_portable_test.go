@@ -131,7 +131,7 @@ func TestThunderbirdAttachmentUploadPortableWithBlockedSystemTemp(t *testing.T) 
 		t.Run(tc.name, func(t *testing.T) {
 			state := &thunderbirdBridgeState{dataDir: tc.root, downloads: make(map[string]thunderbirdDownloadedAttachment)}
 			body := []byte("portable attachment payload")
-			req := httptest.NewRequest(http.MethodPost, "/attachment-file?token="+thunderbirdBridgeToken+"&id=portable&filename=notes.txt&content_type=text%2Fplain", bytes.NewReader(body))
+			req := newThunderbirdTestPeer(t, state).request(http.MethodPost, "/v2/attachment-file?id=portable&filename=notes.txt&content_type=text%2Fplain", body)
 			rec := httptest.NewRecorder()
 			state.handleAttachmentFile(rec, req)
 			if rec.Code != http.StatusOK {
@@ -161,7 +161,7 @@ func TestThunderbirdAttachmentUploadFailureRemovesPartialFile(t *testing.T) {
 	root := filepath.Join(base, "data")
 	blockThunderbirdSystemTemp(t, base)
 	state := &thunderbirdBridgeState{dataDir: root, downloads: make(map[string]thunderbirdDownloadedAttachment)}
-	req := httptest.NewRequest(http.MethodPost, "/attachment-file?token="+thunderbirdBridgeToken+"&id=failed&filename=failed.pdf", thunderbirdFailedUploadReader{})
+	req := newThunderbirdTestPeer(t, state).requestStream(http.MethodPost, "/v2/attachment-file?id=failed&filename=failed.pdf", thunderbirdFailedUploadReader{})
 	rec := httptest.NewRecorder()
 	state.handleAttachmentFile(rec, req)
 	if rec.Code != http.StatusRequestEntityTooLarge {
@@ -189,7 +189,7 @@ func TestThunderbirdPortableWriteFailureHasNoFallback(t *testing.T) {
 	blockThunderbirdSystemTemp(t, base)
 
 	state := &thunderbirdBridgeState{dataDir: root, downloads: make(map[string]thunderbirdDownloadedAttachment)}
-	req := httptest.NewRequest(http.MethodPost, "/attachment-file?token="+thunderbirdBridgeToken+"&id=blocked&filename=blocked.txt", bytes.NewReader([]byte("payload")))
+	req := newThunderbirdTestPeer(t, state).request(http.MethodPost, "/v2/attachment-file?id=blocked&filename=blocked.txt", []byte("payload"))
 	rec := httptest.NewRecorder()
 	state.handleAttachmentFile(rec, req)
 	if rec.Code != http.StatusInternalServerError || len(state.downloads) != 0 {
@@ -292,7 +292,7 @@ func TestThunderbirdPortableAttachmentRetentionUnchanged(t *testing.T) {
 	state := &thunderbirdBridgeState{dataDir: root, downloads: make(map[string]thunderbirdDownloadedAttachment)}
 	upload := func(id, payload string) thunderbirdDownloadedAttachment {
 		t.Helper()
-		req := httptest.NewRequest(http.MethodPost, "/attachment-file?token="+thunderbirdBridgeToken+"&id="+id+"&filename=notes.txt", strings.NewReader(payload))
+		req := newThunderbirdTestPeer(t, state).request(http.MethodPost, "/v2/attachment-file?id="+id+"&filename=notes.txt", []byte(payload))
 		rec := httptest.NewRecorder()
 		state.handleAttachmentFile(rec, req)
 		if rec.Code != http.StatusOK {

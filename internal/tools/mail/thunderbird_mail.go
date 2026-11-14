@@ -15,10 +15,9 @@ import (
 	"time"
 )
 
-const (
-	thunderbirdBridgeAddr  = "127.0.0.1:47831"
-	thunderbirdBridgeToken = "supercli-thunderbird-local-v1-7b2e44c91a"
-)
+// thunderbirdBridgeAddr is the only address the bridge listens on: loopback,
+// one fixed port. Who may use it is decided by pairing (thunderbird_bridge_*.go).
+const thunderbirdBridgeAddr = "127.0.0.1:47831"
 
 // ThunderbirdMail talks to a tiny local MailExtension running inside
 // Thunderbird. Thunderbird itself owns the authenticated IMAP/OAuth session;
@@ -127,9 +126,16 @@ type thunderbirdBridgeResponse struct {
 }
 
 type thunderbirdBridgeState struct {
-	once               sync.Once
+	// Listener state, guarded by mu. addr overrides thunderbirdBridgeAddr in
+	// tests; testNoListen keeps unit tests off the real port.
+	addr               string
+	listener           net.Listener
+	server             *http.Server
 	startErr           error
-	dataDir            string // guarded by mu; pinned on first operation
+	lastListenTry      time.Time
+	testNoListen       bool
+	auth               thunderbirdAuthState // guarded by mu
+	dataDir            string               // guarded by mu; pinned on first operation
 	queue              chan thunderbirdBridgeRequest
 	mu                 sync.Mutex
 	waiters            map[string]chan thunderbirdBridgeResponse
@@ -583,44 +589,13 @@ func thunderbirdRejectUnknownArgs(raw json.RawMessage) error {
 	return errors.New(msg + ". Repeat the call with only documented arguments.")
 }
 
-func (b *thunderbirdBridgeState) ensureServer() error {
-	b.once.Do(func() {
-		ln, err := net.Listen("tcp", thunderbirdBridgeAddr)
-		if err != nil {
-			b.startErr = fmt.Errorf("cannot listen on %s: %w", thunderbirdBridgeAddr, err)
-			return
-		}
-		mux := http.NewServeMux()
-		mux.HandleFunc("/poll", b.handlePoll)
-		mux.HandleFunc("/result", b.handleResult)
-		mux.HandleFunc("/health", b.handleHealth)
-		mux.HandleFunc("/message-file", b.handleMessageFile)
-		mux.HandleFunc("/attachment-file", b.handleAttachmentFile)
-		server := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
-		go func() { _ = server.Serve(ln) }()
-	})
-	return b.startErr
-}
-
-func (b *thunderbirdBridgeState) authorized(r *http.Request) bool {
-	return r.URL.Query().Get("token") == thunderbirdBridgeToken
-}
-
-func setThunderbirdCORS(w http.ResponseWriter) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-	w.Header().Set("Cache-Control", "no-store")
-}
-
 func (b *thunderbirdBridgeState) handlePoll(w http.ResponseWriter, r *http.Request) {
-	setThunderbirdCORS(w)
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusNoContent)
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if r.Method != http.MethodGet || !b.authorized(r) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+	signed, _, ok := b.authenticate(w, r, thunderbirdMaxJSONBody)
+	if !ok {
 		return
 	}
 	b.mu.Lock()
@@ -652,11 +627,10 @@ func (b *thunderbirdBridgeState) handlePoll(w http.ResponseWriter, r *http.Reque
 			if !active {
 				continue
 			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(req)
+			signed.writeJSON(w, http.StatusOK, req)
 			return
 		case <-timer.C:
-			w.WriteHeader(http.StatusNoContent)
+			signed.write(w, http.StatusNoContent, "", nil)
 			return
 		case <-r.Context().Done():
 			return
@@ -665,19 +639,17 @@ func (b *thunderbirdBridgeState) handlePoll(w http.ResponseWriter, r *http.Reque
 }
 
 func (b *thunderbirdBridgeState) handleResult(w http.ResponseWriter, r *http.Request) {
-	setThunderbirdCORS(w)
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusNoContent)
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if r.Method != http.MethodPost || !b.authorized(r) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+	signed, body, ok := b.authenticate(w, r, thunderbirdMaxResultBody)
+	if !ok {
 		return
 	}
-	defer r.Body.Close()
 	var response thunderbirdBridgeResponse
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<20)).Decode(&response); err != nil {
-		http.Error(w, "bad json", http.StatusBadRequest)
+	if err := json.Unmarshal(body, &response); err != nil {
+		signed.writeError(w, http.StatusBadRequest, "bad json")
 		return
 	}
 	// Retain only a digest, never mailbox contents. A lost HTTP acknowledgement
@@ -691,15 +663,15 @@ func (b *thunderbirdBridgeState) handleResult(w http.ResponseWriter, r *http.Req
 	b.lastPoll = now
 	if completion, ok := b.completed[response.ID]; ok {
 		if completion.digest != digest {
-			http.Error(w, "conflicting result for completed request", http.StatusConflict)
+			signed.writeError(w, http.StatusConflict, "conflicting result for completed request")
 			return
 		}
-		w.WriteHeader(http.StatusNoContent)
+		signed.write(w, http.StatusNoContent, "", nil)
 		return
 	}
 	waiter := b.waiters[response.ID]
 	if waiter == nil {
-		http.Error(w, "unknown request", http.StatusNotFound)
+		signed.writeError(w, http.StatusNotFound, "unknown request")
 		return
 	}
 	select {
@@ -710,9 +682,9 @@ func (b *thunderbirdBridgeState) handleResult(w http.ResponseWriter, r *http.Req
 		b.completionSequence++
 		b.completed[response.ID] = thunderbirdCompletion{digest: digest, at: now, order: b.completionSequence}
 		b.pruneCompletions(now)
-		w.WriteHeader(http.StatusNoContent)
+		signed.write(w, http.StatusNoContent, "", nil)
 	default:
-		http.Error(w, "request already completed", http.StatusConflict)
+		signed.writeError(w, http.StatusConflict, "request already completed")
 	}
 }
 
@@ -746,23 +718,6 @@ func (b *thunderbirdBridgeState) pruneCompletions(now time.Time) {
 	}
 }
 
-func (b *thunderbirdBridgeState) handleHealth(w http.ResponseWriter, r *http.Request) {
-	setThunderbirdCORS(w)
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	if r.Method != http.MethodGet || !b.authorized(r) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	b.mu.Lock()
-	last := b.lastPoll
-	active := b.activePolls
-	b.mu.Unlock()
-	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "last_poll": last, "active_polls": active})
-}
-
 func (b *thunderbirdBridgeState) call(ctx context.Context, op string, raw json.RawMessage) (json.RawMessage, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -788,7 +743,7 @@ func (b *thunderbirdBridgeState) call(ctx context.Context, op string, raw json.R
 		// Give a just-started Thunderbird extension a short chance to connect.
 		// A long-poll can stay open for 20 seconds, so an active poll is itself
 		// proof of liveness and must not be mistaken for a disconnect.
-		deadline := time.NewTimer(4 * time.Second)
+		deadline := time.NewTimer(6 * time.Second)
 		defer deadline.Stop()
 		for {
 			b.mu.Lock()
@@ -802,7 +757,7 @@ func (b *thunderbirdBridgeState) call(ctx context.Context, op string, raw json.R
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			case <-deadline.C:
-				return nil, fmt.Errorf("Thunderbird Bridge is not connected; install/enable SuperCLI Thunderbird Bridge and keep Thunderbird running")
+				return nil, b.notConnectedError()
 			case <-time.After(100 * time.Millisecond):
 			}
 		}

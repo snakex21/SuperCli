@@ -1,6 +1,7 @@
 package mail
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -45,20 +46,24 @@ func (b *thunderbirdBridgeState) cleanupDownloadedAttachmentsLocked() {
 }
 
 func (b *thunderbirdBridgeState) handleAttachmentFile(w http.ResponseWriter, r *http.Request) {
-	setThunderbirdCORS(w)
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	if r.Method != http.MethodPost || !b.authorized(r) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	defer r.Body.Close()
+	// Session, clock and nonce are checked before the upload is accepted; the
+	// MAC over the body is checked after it was streamed to a temporary file,
+	// which is deleted unless the signature is valid.
+	sess, nonce, reason := b.precheckSigned(r)
+	if reason != "" {
+		thunderbirdAuthError(w, http.StatusUnauthorized, reason, "authenticate again")
+		return
+	}
+	signed := &thunderbirdSigned{session: sess, nonce: nonce}
 
 	id := strings.TrimSpace(r.URL.Query().Get("id"))
 	if id == "" || len(id) > 160 {
-		http.Error(w, "missing or invalid transfer id", http.StatusBadRequest)
+		thunderbirdAuthError(w, http.StatusBadRequest, "bad_request", "missing or invalid transfer id")
 		return
 	}
 	name := strings.TrimSpace(r.URL.Query().Get("filename"))
@@ -76,7 +81,7 @@ func (b *thunderbirdBridgeState) handleAttachmentFile(w http.ResponseWriter, r *
 
 	dir, err := b.attachmentCacheDir()
 	if err != nil {
-		http.Error(w, "cannot create attachment cache", http.StatusInternalServerError)
+		thunderbirdAuthError(w, http.StatusInternalServerError, "internal", "cannot create attachment cache")
 		return
 	}
 	ext := filepath.Ext(name)
@@ -85,7 +90,7 @@ func (b *thunderbirdBridgeState) handleAttachmentFile(w http.ResponseWriter, r *
 	}
 	file, err := os.CreateTemp(dir, "attachment-*"+ext)
 	if err != nil {
-		http.Error(w, "cannot create attachment file", http.StatusInternalServerError)
+		thunderbirdAuthError(w, http.StatusInternalServerError, "internal", "cannot create attachment file")
 		return
 	}
 	path := file.Name()
@@ -97,14 +102,19 @@ func (b *thunderbirdBridgeState) handleAttachmentFile(w http.ResponseWriter, r *
 		}
 	}()
 
+	hash := sha256.New()
 	limited := http.MaxBytesReader(w, r.Body, maxThunderbirdAttachmentBytes)
-	written, err := io.Copy(file, limited)
+	written, err := io.Copy(io.MultiWriter(file, hash), limited)
 	if err != nil {
-		http.Error(w, "attachment exceeds limit or could not be written", http.StatusRequestEntityTooLarge)
+		thunderbirdAuthError(w, http.StatusRequestEntityTooLarge, "too_large", "attachment exceeds limit or could not be written")
+		return
+	}
+	if reason := b.finishSigned(r, sess, nonce, b64.EncodeToString(hash.Sum(nil))); reason != "" {
+		thunderbirdAuthError(w, http.StatusUnauthorized, reason, "authenticate again")
 		return
 	}
 	if err := file.Close(); err != nil {
-		http.Error(w, "cannot finish attachment file", http.StatusInternalServerError)
+		signed.writeError(w, http.StatusInternalServerError, "cannot finish attachment file")
 		return
 	}
 	keep = true
@@ -118,14 +128,16 @@ func (b *thunderbirdBridgeState) handleAttachmentFile(w http.ResponseWriter, r *
 	}
 	b.mu.Lock()
 	b.cleanupDownloadedAttachmentsLocked()
+	if b.downloads == nil {
+		b.downloads = make(map[string]thunderbirdDownloadedAttachment)
+	}
 	if old, ok := b.downloads[id]; ok {
 		_ = os.Remove(old.Path)
 	}
 	b.downloads[id] = item
 	b.mu.Unlock()
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	signed.writeJSON(w, http.StatusOK, map[string]any{
 		"ok":          true,
 		"transferId":  id,
 		"filename":    name,

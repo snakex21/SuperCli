@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"mime"
 	"net/http"
 	"os"
@@ -37,37 +38,45 @@ func (b *thunderbirdBridgeState) removeMessageTransfer(id string) {
 	b.mu.Unlock()
 }
 
+// maxThunderbirdMessageTransfer bounds a converted .eml served to Thunderbird.
+const maxThunderbirdMessageTransfer = int64(64 << 20)
+
 func (b *thunderbirdBridgeState) handleMessageFile(w http.ResponseWriter, r *http.Request) {
-	setThunderbirdCORS(w)
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusNoContent)
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if r.Method != http.MethodGet || !b.authorized(r) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+	signed, _, ok := b.authenticate(w, r, thunderbirdMaxJSONBody)
+	if !ok {
 		return
 	}
 	id := strings.TrimSpace(r.URL.Query().Get("id"))
 	if id == "" {
-		http.Error(w, "missing transfer id", http.StatusBadRequest)
+		signed.writeError(w, http.StatusBadRequest, "missing transfer id")
 		return
 	}
 	b.mu.Lock()
 	transfer, ok := b.transfers[id]
 	b.mu.Unlock()
 	if !ok {
-		http.Error(w, "unknown or expired transfer", http.StatusNotFound)
+		signed.writeError(w, http.StatusNotFound, "unknown or expired transfer")
 		return
 	}
 	file, err := os.Open(transfer.Path)
 	if err != nil {
-		http.Error(w, "transfer file unavailable", http.StatusNotFound)
+		signed.writeError(w, http.StatusNotFound, "transfer file unavailable")
 		return
 	}
 	defer file.Close()
 	stat, err := file.Stat()
-	if err != nil || !stat.Mode().IsRegular() {
-		http.Error(w, "transfer file unavailable", http.StatusNotFound)
+	if err != nil || !stat.Mode().IsRegular() || stat.Size() > maxThunderbirdMessageTransfer {
+		signed.writeError(w, http.StatusNotFound, "transfer file unavailable")
+		return
+	}
+	// The response is signed over its whole body, so it is read first.
+	data, err := io.ReadAll(io.LimitReader(file, maxThunderbirdMessageTransfer+1))
+	if err != nil || int64(len(data)) > maxThunderbirdMessageTransfer {
+		signed.writeError(w, http.StatusNotFound, "transfer file unavailable")
 		return
 	}
 	name := strings.TrimSpace(transfer.Name)
@@ -77,10 +86,8 @@ func (b *thunderbirdBridgeState) handleMessageFile(w http.ResponseWriter, r *htt
 	if !strings.EqualFold(filepath.Ext(name), ".eml") {
 		name = strings.TrimSuffix(name, filepath.Ext(name)) + ".eml"
 	}
-	w.Header().Set("Content-Type", "message/rfc822")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", stat.Size()))
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
-	http.ServeContent(w, r, name, stat.ModTime(), file)
+	signed.write(w, http.StatusOK, "message/rfc822", data)
 }
 
 func (t *ThunderbirdMail) importMSG(ctx context.Context, args thunderbirdToolArgs) (Result, error) {
