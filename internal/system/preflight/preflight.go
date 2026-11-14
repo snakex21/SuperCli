@@ -98,6 +98,9 @@ type Options struct {
 	RunGit func(root string, args ...string) (string, error)
 	// Now anchors the "recently modified" fallback. Zero = time.Now.
 	Now time.Time
+	// Layout appends the ignore-aware project layout (every file of a small
+	// project, a folder summary otherwise) under its own LayoutBudget.
+	Layout bool
 }
 
 // EstimateTokens prices a block the same way the loop prices prompt
@@ -119,6 +122,14 @@ func Build(root string, o Options) string {
 // BuildContext lets an interrupted foreground turn cancel optional startup
 // work. Real Git calls share one deadline instead of each spending five seconds.
 func BuildContext(ctx context.Context, root string, o Options) string {
+	if o.Layout {
+		o.Layout = false
+		block := BuildContext(ctx, root, o)
+		if ctx.Err() != nil {
+			return block
+		}
+		return appendLayout(ctx, block, root)
+	}
 	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
 	defer cancel()
 	if ctx.Err() != nil {

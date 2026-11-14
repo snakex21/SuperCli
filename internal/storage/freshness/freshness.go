@@ -27,8 +27,14 @@ const (
 // current-state facts with tools instead of reconstructing them
 // from memory.
 func PromptSection(now time.Time) string {
-	return "current_date: " + now.UTC().Format("2006-01-02") + "\n\n" +
-		"Your training data may be stale. Library versions, model IDs, API shapes, " +
+	return "current_date: " + now.UTC().Format("2006-01-02") + "\n\n" + StalenessGuidance()
+}
+
+// StalenessGuidance is PromptSection without the date line, for the stable
+// system prefix: a date there changes the cached prefix every day, while the
+// per-request tail already carries the current local date and time.
+func StalenessGuidance() string {
+	return "Your training data may be stale. Library versions, model IDs, API shapes, " +
 		"prices, and ecosystem facts may have changed since training. When current " +
 		"state matters, verify via tools (web search, reading go.mod / package " +
 		"manifests, running version commands) instead of reconstructing from memory. " +

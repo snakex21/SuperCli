@@ -110,14 +110,14 @@ func wireAgentTool(w agentToolWiring) (*agent.AgentTool, error) {
 	if resolvePreflightRepo(w.tomlCfg.PreflightRepo) {
 		home := w.home
 		w.loop.SetNextCoordinatorAddonSource(func(ctx context.Context) string {
-			block := preflight.BuildContext(ctx, home, preflight.Options{})
+			block := preflight.BuildContext(ctx, home, preflight.Options{Layout: true})
 			if block != "" && ctx.Err() == nil {
 				log.Printf("preflight: repo context ~%d tok (project turn)", preflight.EstimateTokens(block))
 			}
 			return block
 		})
 		at.PreflightContext = func(ctx context.Context) string {
-			return preflight.BuildContext(ctx, home, preflight.Options{})
+			return preflight.BuildContext(ctx, home, preflight.Options{Layout: true})
 		}
 	}
 	if !w.delegationOff {

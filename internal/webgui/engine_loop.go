@@ -321,6 +321,7 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 		ThinTools:              execProfile.ThinTools,
 		StableToolset:          execProfile.StableToolset,
 		CatalogHoist:           execProfile.CatalogHoist,
+		ReplaceContextTail:     execProfile.ReplaceContextTail,
 		BaseDir:                home,
 		UserDownloadsDir:       agent.SystemDownloadsDir,
 		InitialMessages:        initial,

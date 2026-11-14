@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"log"
-	"time"
 
 	"supercli/internal/account/codexauth"
 	"supercli/internal/agent"
@@ -82,7 +81,9 @@ func buildSystemPromptWithInstructions(svc *goal.Service, instructions string) s
 }
 
 func buildSystemPromptLayers(svc *goal.Service, instructions string, includeMemory bool) string {
-	base := supercliSystemPromptBase + "\n\n" + freshness.PromptSection(time.Now()) + "\n" + platformHint()
+	// No date here: a date in the stable prefix changes it every day; the
+	// request tail carries the current local date and time.
+	base := supercliSystemPromptBase + "\n\n" + freshness.StalenessGuidance() + "\n" + platformHint()
 	if supercliModelProfile != "" {
 		base += "\n\n" + supercliModelProfile
 	}

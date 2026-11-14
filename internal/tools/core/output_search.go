@@ -31,8 +31,8 @@ func (s *OutputStore) search(ctx context.Context, args readOutputArgs) (string, 
 	if budget <= 0 {
 		budget = outputReadDefault
 	}
-	if budget > outputReadMax {
-		budget = outputReadMax
+	if pageMax := readOutputMax(ctx); budget > pageMax {
+		budget = pageMax
 	}
 	if budget < len(args.Query) {
 		return "", fmt.Errorf("limit must fit the query (%d bytes)", len(args.Query))

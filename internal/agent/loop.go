@@ -130,10 +130,12 @@ type Loop struct {
 	// history every step. hoistedPreSet gates the lazy first render so
 	// the freeze happens after any SetRegistry swap. Guarded by nothing:
 	// providerMessages runs on the loop goroutine only.
-	hoistedPre            string
-	hoistedPreSet         bool
-	baseDir               string
-	writer                SessionWriter
+	hoistedPre    string
+	hoistedPreSet bool
+	tailReplace   bool
+	tailPin       *tailPin
+	baseDir       string
+	writer        SessionWriter
 	// imageStore saves tool images when there is no conversation writer
 	// (workers): media files only, never transcript messages.
 	imageStore            imageExternalizer
@@ -623,6 +625,11 @@ type LoopConfig struct {
 	// the hoist is live-verified (risk: a small model may reach for
 	// tool_search less reliably when the catalog is not at the end).
 	CatalogHoist bool
+	// ReplaceContextTail restores the legacy request-only tail that is
+	// rebuilt at the end of every request. Default false: the tail is
+	// pinned where it was first sent so requests stay append-only (see
+	// loop_tail_pins.go).
+	ReplaceContextTail bool
 	// Orchestrator enables the HARD delegation mode. It does not by
 	// itself restrict the registry (the app layer passes a restricted
 	// registry via OrchestratorRegistry); it only tells the loop to

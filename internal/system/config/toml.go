@@ -228,6 +228,14 @@ type TomlConfig struct {
 	// true/false overrides.
 	StableToolset *bool `toml:"stable_toolset"`
 
+	// ContextTailPinning keeps every provider request append-only: the
+	// per-request trailing context (date/time, live context, run hints) is
+	// sent once and stays where it was sent; a changed tail is appended
+	// instead of moving the old one. Hosted prompt caches then reuse the
+	// whole previous request. Tri-state: nil = built-in default (on),
+	// false restores the legacy "rebuild the tail at the end" placement.
+	ContextTailPinning *bool `toml:"context_tail_pinning"`
+
 	// TaskMaxSteps caps how many model turns a delegated worker (the
 	// `task` tool) may take before it is stopped. 0 = built-in default
 	// (the per-agent spec value, else 10). Only applied when a spec does
