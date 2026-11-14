@@ -103,7 +103,7 @@ func TestToolSearcher_CompactSchemaKeepsEmptyAndMatchOrder(t *testing.T) {
 	reg := NewRegistry()
 	for _, name := range []string{"empty_tool", "compact_tool"} {
 		reg.MustRegister(Tool{
-			Name: name, Description: "Schema fallback fixture", Schema: schemas[name],
+			Name: name, Description: "Schema fallback fixture", Schema: schemas[name], UncheckedArgs: schemas[name] == "",
 			Fn: func(context.Context, json.RawMessage) (Result, error) { return Result{}, nil },
 		})
 	}

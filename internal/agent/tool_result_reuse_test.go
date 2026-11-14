@@ -139,7 +139,7 @@ func TestToolResultReuseBarriersAndRunScope(t *testing.T) {
 	call := func() { reuseInvoke(l, context.Background(), "read", `{"query":"cats"}`) }
 	call()
 	call()
-	l.registry.MustRegister(tools.Tool{Name: "fixture_write", Description: "changes state", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+	l.registry.MustRegister(tools.Tool{UncheckedArgs: true, Name: "fixture_write", Description: "changes state", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 		return tools.Result{Text: "changed"}, nil
 	}})
 	l.invoke(context.Background(), llm.ToolCall{ID: "write", Name: "fixture_write", Arguments: `{}`}, make(chan Event, 16))
@@ -240,10 +240,10 @@ func TestLoopReusesRepeatedSearchWithoutEndingMixedWork(t *testing.T) {
 			searches++
 			return tools.Result{Text: "Selected public page https://example.org/page"}, nil
 		}})
-	r.MustRegister(tools.Tool{Name: "web_fetch", Description: "fixture", ReadOnly: true, Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+	r.MustRegister(tools.Tool{UncheckedArgs: true, Name: "web_fetch", Description: "fixture", ReadOnly: true, Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 		return tools.Result{Text: "Two declared asset URLs"}, nil
 	}})
-	r.MustRegister(tools.Tool{Name: "fixture_save", Description: "fixture", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+	r.MustRegister(tools.Tool{UncheckedArgs: true, Name: "fixture_save", Description: "fixture", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 		saves++
 		return tools.Result{Text: "Saved and verified"}, nil
 	}})
@@ -340,7 +340,7 @@ func TestResultReuseBoundsExpiryAndRefreshRace(t *testing.T) {
 }
 
 func TestReusableToolKeyNeverDropsDataOrEnablesUntrustedTools(t *testing.T) {
-	tool := tools.Tool{Name: "fixture", ReadOnly: true, ReuseTTL: time.Minute, RefreshArg: "refresh"}
+	tool := tools.Tool{UncheckedArgs: true, Name: "fixture", ReadOnly: true, ReuseTTL: time.Minute, RefreshArg: "refresh"}
 	a, _, ok := reusableToolKey(tool, json.RawMessage(`{"n":9007199254740992,"nested":{"b":2,"a":1}}`))
 	if !ok {
 		t.Fatal("valid args rejected")

@@ -164,7 +164,7 @@ func TestBeforePinRetryKeepsOriginalBytesForCoveredAndWholeTurns(t *testing.T) {
 			originalPath := os.Getenv("PATH")
 			t.Setenv("PATH", t.TempDir())
 			called := false
-			spec := turn.Wrap(tools.Tool{Name: "write_file", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+			spec := turn.Wrap(tools.Tool{UncheckedArgs: true, Name: "write_file", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 				called = true
 				return tools.Result{}, nil
 			}})
@@ -206,7 +206,7 @@ func TestBeforePinRetryMissingObjectBlocksMutation(t *testing.T) {
 	original := turn.before
 	turn.before, turn.beforePinned = "0123456789abcdef0123456789abcdef01234567", false
 	called := false
-	spec := turn.Wrap(tools.Tool{Name: "create_file", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+	spec := turn.Wrap(tools.Tool{UncheckedArgs: true, Name: "create_file", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 		called = true
 		return tools.Result{}, nil
 	}})

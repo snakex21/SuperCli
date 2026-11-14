@@ -27,9 +27,10 @@ func newNamedValidationProbe(t *testing.T, name, schema string) *validationProbe
 	t.Helper()
 	p := &validationProbe{registry: NewRegistry(), name: name}
 	p.registry.MustRegister(Tool{
-		Name:        name,
-		Description: "validation probe",
-		Schema:      schema,
+		Name:          name,
+		Description:   "validation probe",
+		Schema:        schema,
+		UncheckedArgs: strings.TrimSpace(schema) == "",
 		Fn: func(_ context.Context, args json.RawMessage) (Result, error) {
 			p.calls++
 			p.lastArgs = append(p.lastArgs[:0], args...)
@@ -144,7 +145,7 @@ func TestRegistrySchemaCompatibilityAndCompiledCoercion(t *testing.T) {
 		}
 	})
 
-	t.Run("empty schema remains fail-open", func(t *testing.T) {
+	t.Run("explicitly unchecked empty schema remains fail-open", func(t *testing.T) {
 		p := newValidationProbe(t, "")
 		p.requireValid(t, `not-json`)
 	})

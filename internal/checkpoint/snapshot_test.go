@@ -321,7 +321,7 @@ func TestFullCaptureOverLimitRunsCommandWithWarningAndNoBlobWrites(t *testing.T)
 		}
 	})
 	called := false
-	spec := turn.Wrap(tools.Tool{Name: "ctx_execute", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+	spec := turn.Wrap(tools.Tool{UncheckedArgs: true, Name: "ctx_execute", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 		called = true
 		return tools.Result{Text: "ok"}, nil
 	}})
@@ -334,7 +334,7 @@ func TestFullCaptureOverLimitRunsCommandWithWarningAndNoBlobWrites(t *testing.T)
 	}
 	// Tools other than ctx_execute keep the strict refusal.
 	// read_zip without an explicit target also needs a whole-workspace baseline.
-	other := turn.Wrap(tools.Tool{Name: "read_zip", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+	other := turn.Wrap(tools.Tool{UncheckedArgs: true, Name: "read_zip", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 		t.Fatal("whole-workspace tool ran without a baseline")
 		return tools.Result{}, nil
 	}})
@@ -434,7 +434,7 @@ func TestWebDownloadCheckpointIncludesDestinationOnly(t *testing.T) {
 	writeCheckpointFixture(t, filepath.Join(home, "download.bin"), "before")
 	m := openSnapshotTestManager(t, home)
 	turn := m.NewTurn("download", "download replacement")
-	download := turn.Wrap(tools.Tool{Name: "web_download", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+	download := turn.Wrap(tools.Tool{UncheckedArgs: true, Name: "web_download", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 		return tools.Result{}, os.WriteFile(filepath.Join(home, "download.bin"), []byte{0, 255, 0, 128}, 0600)
 	}})
 	runSnapshotTool(t, download, `{"path":"download.bin"}`)

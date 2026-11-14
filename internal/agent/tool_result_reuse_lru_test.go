@@ -264,7 +264,7 @@ func TestToolResultReuseLRUStillHonorsCurrentBoundaries(t *testing.T) {
 			case "refresh":
 				fresh, denied = true, true
 			case "effect":
-				reg.MustRegister(tools.Tool{Name: "change_access", Description: "controlled state change", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+				reg.MustRegister(tools.Tool{UncheckedArgs: true, Name: "change_access", Description: "controlled state change", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 					denied = true
 					return tools.Result{Err: errors.New("state changed before failure")}, nil
 				}})

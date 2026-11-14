@@ -60,7 +60,7 @@ func TestDeferredCheckpointChangesRecoverAfterRestart(t *testing.T) {
 	var releaseOnce sync.Once
 	unblock := func() { releaseOnce.Do(func() { close(release) }) }
 	t.Cleanup(unblock)
-	tool := turn.Wrap(tools.Tool{Name: "write_file", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+	tool := turn.Wrap(tools.Tool{UncheckedArgs: true, Name: "write_file", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 		close(entered)
 		<-release
 		return tools.Result{}, os.WriteFile(filepath.Join(home, "a.txt"), []byte("after"), 0600)

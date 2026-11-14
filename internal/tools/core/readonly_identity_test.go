@@ -36,7 +36,7 @@ func TestReadOnlyCallKeyUsesExecutionCoercion(t *testing.T) {
 			t.Fatalf("invalid call eligible: %s", args)
 		}
 	}
-	reg.MustRegister(Tool{Name: "write", Description: "mutation", Fn: func(context.Context, json.RawMessage) (Result, error) { return Result{}, nil }})
+	reg.MustRegister(Tool{UncheckedArgs: true, Name: "write", Description: "mutation", Fn: func(context.Context, json.RawMessage) (Result, error) { return Result{}, nil }})
 	for _, name := range []string{"write", "unknown"} {
 		if _, ok := reg.ReadOnlyCallKey(name, json.RawMessage("{}")); ok {
 			t.Fatalf("%s eligible for coalescing", name)

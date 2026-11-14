@@ -168,7 +168,7 @@ func TestConsoleActualHomeProbeWindows(t *testing.T) {
 	// native execution have independent caps. The native phase below still uses
 	// the production wrapped ctx_execute implementation and actual cmd process.
 	var admissionReached bool
-	beforeSpec := turn.Wrap(tools.Tool{Name: "ctx_execute", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+	beforeSpec := turn.Wrap(tools.Tool{UncheckedArgs: true, Name: "ctx_execute", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 		admissionReached = true
 		return tools.Result{}, nil
 	}})

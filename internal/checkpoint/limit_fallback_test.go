@@ -14,7 +14,7 @@ import (
 
 func runLimitedCommand(t *testing.T, turn *Turn, args string, fn func()) tools.Result {
 	t.Helper()
-	spec := turn.Wrap(tools.Tool{Name: "ctx_execute", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+	spec := turn.Wrap(tools.Tool{UncheckedArgs: true, Name: "ctx_execute", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 		fn()
 		return tools.Result{Text: "done", ModelPreview: "done"}, nil
 	}})

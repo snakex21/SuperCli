@@ -70,7 +70,7 @@ func TestFailedTurnAppendRollsBackNewRecordRefsWithoutLosingBaseline(t *testing.
 	// write_file itself correctly refuses existing binary files. This fixture
 	// tests checkpoint bytes/scope, so use a real file write behind its named
 	// checkpoint wrapper rather than the production text editor.
-	write := tools.Tool{Name: "write_file", Fn: func(ctx context.Context, _ json.RawMessage) (tools.Result, error) {
+	write := tools.Tool{UncheckedArgs: true, Name: "write_file", Fn: func(ctx context.Context, _ json.RawMessage) (tools.Result, error) {
 		if err := ctx.Err(); err != nil {
 			return tools.Result{Err: err}, nil
 		}

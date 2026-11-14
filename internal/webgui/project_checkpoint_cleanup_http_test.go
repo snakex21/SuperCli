@@ -74,7 +74,7 @@ func seedProjectCleanupCheckpoint(t *testing.T, eng *Engine, home string) {
 		t.Fatal(err)
 	}
 	turn := manager.NewTurn("cleanup-fixture", "synthetic checkpoint")
-	wrapped := turn.Wrap(tools.Tool{Name: "write_file", Description: "fixture", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+	wrapped := turn.Wrap(tools.Tool{UncheckedArgs: true, Name: "write_file", Description: "fixture", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 		return tools.Result{Text: "written"}, os.WriteFile(filepath.Join(home, "keep.txt"), []byte("Current project file"), 0600)
 	}})
 	result, err := wrapped.Fn(context.Background(), json.RawMessage(`{"path":"keep.txt"}`))
@@ -317,7 +317,7 @@ func TestProjectCheckpointHTTPActiveLeaseKeepsRegistrationAndCache(t *testing.T)
 	var once sync.Once
 	unblock := func() { once.Do(func() { close(release) }) }
 	t.Cleanup(unblock)
-	wrapped := turn.Wrap(tools.Tool{Name: "write_file", Description: "fixture", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+	wrapped := turn.Wrap(tools.Tool{UncheckedArgs: true, Name: "write_file", Description: "fixture", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 		close(entered)
 		<-release
 		return tools.Result{Text: "written"}, os.WriteFile(filepath.Join(home, "pending.txt"), []byte("pending"), 0600)

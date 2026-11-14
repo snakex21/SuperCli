@@ -22,7 +22,7 @@ func TestRegistryRevisionTracksContractChanges(t *testing.T) {
 			}
 		}},
 		{"invalid register", false, func() {
-			if r.Register(Tool{}) == nil {
+			if r.Register(Tool{UncheckedArgs: true}) == nil {
 				t.Fatal("invalid accepted")
 			}
 		}},

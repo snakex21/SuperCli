@@ -16,7 +16,7 @@ import (
 
 type benchmarkEcho struct{}
 
-func (b *benchmarkEcho) Name() string        { return "bench-echo" }
+func (b *benchmarkEcho) Name() string         { return "bench-echo" }
 func (b *benchmarkEcho) SupportsVision() bool { return false }
 func (b *benchmarkEcho) Complete(ctx context.Context, msgs []llm.Message, _ []llm.ToolDef) (<-chan llm.Delta, error) {
 	ch := make(chan llm.Delta, 128)
@@ -64,8 +64,9 @@ func BenchmarkTokenThroughput(b *testing.B) {
 func BenchmarkToolDispatch(b *testing.B) {
 	reg := tools.NewRegistry()
 	reg.MustRegister(tools.Tool{
-		Name:        "bench_tool",
-		Description: "Benchmark tool.",
+		UncheckedArgs: true,
+		Name:          "bench_tool",
+		Description:   "Benchmark tool.",
 		Fn: func(ctx context.Context, args json.RawMessage) (tools.Result, error) {
 			return tools.Result{Text: "ok"}, nil
 		},

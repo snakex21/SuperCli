@@ -117,7 +117,7 @@ func TestWorkflowNativeFallbackAndRegistryReplacement(t *testing.T) {
 func TestWorkflowCapabilityDoesNotAuthorizeDownloads(t *testing.T) {
 	l := workflowFixture(t, true)
 	l.registry.MustRegister(tools.NewWebDownload(t.TempDir()).Spec())
-	l.registry.MustRegister(tools.Tool{Name: "asset_source", Description: "Selected assets", NextTools: []string{"web_download"}, Fn: func(context.Context, json.RawMessage) (tools.Result, error) { return tools.Result{}, nil }})
+	l.registry.MustRegister(tools.Tool{UncheckedArgs: true, Name: "asset_source", Description: "Selected assets", NextTools: []string{"web_download"}, Fn: func(context.Context, json.RawMessage) (tools.Result, error) { return tools.Result{}, nil }})
 	l.learnWorkflowTools([]llm.ToolCall{{Name: "asset_source"}}, []callOutcome{{}})
 	if !requestContainsToolContract(l.providerMessages(), "web_download", l.buildToolDefs()) {
 		t.Fatal("metadata did not provide the download capability")

@@ -39,7 +39,7 @@ func TestSchemaCacheMatchesUncachedCompilerAndPreparation(t *testing.T) {
 			if schemaCacheErrorText(oracleErr) != schemaCacheErrorText(cachedErr) || !reflect.DeepEqual(oracle, cached) {
 				t.Fatalf("compilation differs: cached=%v oracle=%v", cachedErr, oracleErr)
 			}
-			tool := Tool{Name: "fixture"}
+			tool := Tool{UncheckedArgs: true, Name: "fixture"}
 			for _, raw := range test.args {
 				want, wantErr := prepareRegisteredArgs(tool, oracle, json.RawMessage(raw))
 				got, gotErr := prepareRegisteredArgs(tool, cached, json.RawMessage(raw))

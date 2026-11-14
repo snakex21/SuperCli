@@ -45,7 +45,7 @@ func TestFullAccessExternalEditsHaveSeparatePortableCheckpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := 0
-	wrapped := turn.Wrap(tools.Tool{Name: "patch_file", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+	wrapped := turn.Wrap(tools.Tool{UncheckedArgs: true, Name: "patch_file", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 		calls++
 		return tools.Result{Text: "Patched"}, os.WriteFile(path, []byte("after"), 0600)
 	}})
@@ -126,7 +126,7 @@ func TestExternalCaptureFailureStopsActualTool(t *testing.T) {
 	}
 	file.Close()
 	called := false
-	wrapped := turn.Wrap(tools.Tool{Name: "write_file", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+	wrapped := turn.Wrap(tools.Tool{UncheckedArgs: true, Name: "write_file", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 		called = true
 		return tools.Result{}, nil
 	}})

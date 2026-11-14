@@ -173,7 +173,7 @@ func TestPreparedInvocationPreservesNilEmptyAndFailOpenArguments(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := core.NewRegistry()
 			var seenNil bool
-			reg.MustRegister(core.Tool{Name: "permissive", Description: "existing fail-open contract", Schema: tc.schema, Fn: func(_ context.Context, args json.RawMessage) (core.Result, error) {
+			reg.MustRegister(core.Tool{Name: "permissive", Description: "existing fail-open contract", Schema: tc.schema, UncheckedArgs: tc.schema == "", Fn: func(_ context.Context, args json.RawMessage) (core.Result, error) {
 				seenNil = args == nil
 				return core.Result{Text: string(args)}, nil
 			}})

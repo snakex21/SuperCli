@@ -243,7 +243,7 @@ func TestMetadataLimitFailedTurnKeepsBeforeAfterRecoveryPins(t *testing.T) {
 			}
 		}
 	})
-	write := tools.Tool{Name: "write_file", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+	write := tools.Tool{UncheckedArgs: true, Name: "write_file", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 		return tools.Result{Err: os.WriteFile(path, after, 0600)}, nil
 	}}
 	runSnapshotTool(t, turn.Wrap(write), `{"path":"source.txt"}`)

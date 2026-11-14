@@ -201,7 +201,7 @@ func TestCancelledStoreAdmissionCompletesWithoutReacquiringHeldGate(t *testing.T
 	defer cancel()
 	probe := &checkpointAdmissionContext{Context: ctx, entered: make(chan struct{})}
 	var calls atomic.Int32
-	spec := turn.Wrap(tools.Tool{Name: "ctx_execute", Fn: func(context.Context, json.RawMessage) (tools.Result, error) { calls.Add(1); return tools.Result{}, nil }})
+	spec := turn.Wrap(tools.Tool{UncheckedArgs: true, Name: "ctx_execute", Fn: func(context.Context, json.RawMessage) (tools.Result, error) { calls.Add(1); return tools.Result{}, nil }})
 	done := make(chan checkpointLifetimeResult, 1)
 	go func() {
 		result, err := spec.Fn(probe, json.RawMessage(`{"command":["synthetic-no-network"]}`))
@@ -257,7 +257,7 @@ func TestCancelledCommandStillCapturesAfterAndCanUndo(t *testing.T) {
 	m := openSnapshotTestManager(t, home)
 	turn := m.NewTurn("synthetic-cancel-after", "mutating command interrupted")
 	entered := make(chan struct{})
-	spec := turn.Wrap(tools.Tool{Name: "ctx_execute", Fn: func(ctx context.Context, _ json.RawMessage) (tools.Result, error) {
+	spec := turn.Wrap(tools.Tool{UncheckedArgs: true, Name: "ctx_execute", Fn: func(ctx context.Context, _ json.RawMessage) (tools.Result, error) {
 		if err := os.WriteFile(path, after, 0600); err != nil {
 			return tools.Result{}, err
 		}

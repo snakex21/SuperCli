@@ -68,7 +68,7 @@ func TestRegisterFromErrorsLeaveTargetUnchanged(t *testing.T) {
 	source := NewRegistry()
 	source.MustRegister(Tool{Name: "existing", Description: "source", Schema: "false", Fn: func(context.Context, json.RawMessage) (Result, error) { return Result{Text: "wrong"}, nil }})
 	target := NewRegistry()
-	target.MustRegister(Tool{Name: "existing", Description: "target", Schema: "", Fn: func(context.Context, json.RawMessage) (Result, error) { return Result{Text: "unchanged"}, nil }})
+	target.MustRegister(Tool{Name: "existing", Description: "target", UncheckedArgs: true, Fn: func(context.Context, json.RawMessage) (Result, error) { return Result{Text: "unchanged"}, nil }})
 	if !errors.Is(target.RegisterFrom(source, "missing"), ErrUnknownTool) {
 		t.Fatal("missing source not reported")
 	}
@@ -90,7 +90,7 @@ func TestRegisterFromErrorsLeaveTargetUnchanged(t *testing.T) {
 func TestRegisterFromAllowsEmptyAndBooleanSchemas(t *testing.T) {
 	for _, schema := range []string{"", "true", "false", "{}"} {
 		source, target := NewRegistry(), NewRegistry()
-		source.MustRegister(Tool{Name: "fixture", Description: "fixture", Schema: schema, Fn: func(context.Context, json.RawMessage) (Result, error) { return Result{Text: "ok"}, nil }})
+		source.MustRegister(Tool{Name: "fixture", Description: "fixture", Schema: schema, UncheckedArgs: schema == "", Fn: func(context.Context, json.RawMessage) (Result, error) { return Result{Text: "ok"}, nil }})
 		if err := target.RegisterFrom(source, "fixture"); err != nil {
 			t.Fatal(err)
 		}

@@ -9,7 +9,7 @@ import (
 func TestWorkflowMetadataRemainsImmutableAcrossRegistries(t *testing.T) {
 	reg := NewRegistry()
 	names := []string{"next"}
-	reg.MustRegister(Tool{Name: "parent", Description: "fixture", NextTools: names, Fn: func(context.Context, json.RawMessage) (Result, error) { return Result{}, nil }})
+	reg.MustRegister(Tool{UncheckedArgs: true, Name: "parent", Description: "fixture", NextTools: names, Fn: func(context.Context, json.RawMessage) (Result, error) { return Result{}, nil }})
 	reg.MarkAlwaysOn("parent")
 	names[0] = "injected"
 	tool, _ := reg.Get("parent")

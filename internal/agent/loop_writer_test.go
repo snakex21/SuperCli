@@ -87,7 +87,8 @@ func TestLoop_NoWriter_NoPanic(t *testing.T) {
 
 func TestLoop_PersistsToolResult(t *testing.T) {
 	tool := tools.Tool{
-		Name: "echo",
+		UncheckedArgs: true,
+		Name:          "echo",
 		Fn: func(ctx context.Context, args json.RawMessage) (tools.Result, error) {
 			return tools.Result{Text: "echoed!"}, nil
 		},

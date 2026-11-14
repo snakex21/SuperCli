@@ -126,7 +126,7 @@ func TestClearCheckpointManagersPreservesPendingAndUncachedStores(t *testing.T) 
 		borrow.Close()
 		_, _ = turn.Complete(context.Background())
 	})
-	spec := turn.Wrap(tools.Tool{Name: "task", Fn: func(ctx context.Context, _ json.RawMessage) (tools.Result, error) {
+	spec := turn.Wrap(tools.Tool{UncheckedArgs: true, Name: "task", Fn: func(ctx context.Context, _ json.RawMessage) (tools.Result, error) {
 		var err error
 		borrow, err = checkpoint.BorrowInvocation(ctx, true)
 		return tools.Result{Err: err}, nil

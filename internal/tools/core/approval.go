@@ -59,6 +59,15 @@ type ApprovalRequest struct {
 	Target string `json:"target,omitempty"`
 	// Summary is one plain English sentence describing the effect.
 	Summary string `json:"summary"`
+	// SummaryKey optionally names a UI catalogue message that localizes
+	// Summary; SummaryArgs fills its {name} placeholders. Both are set by
+	// trusted tool code only. Summary stays the English fallback.
+	SummaryKey  string            `json:"summary_key,omitempty"`
+	SummaryArgs map[string]string `json:"summary_args,omitempty"`
+	// SummaryDetail is untranslated data (for example the exact effective
+	// arguments) shown after the localized summary. Summary already ends
+	// with it.
+	SummaryDetail string `json:"summary_detail,omitempty"`
 	// Scope identifies "similar" operations: tool, operation, account, folder
 	// and (for transfers) destination. Session grants and the config allowlist
 	// match it segment by segment.
@@ -69,6 +78,11 @@ type ApprovalRequest struct {
 	PreApproved string `json:"-"`
 	// NoSessionGrant hides "approve similar" for irreversible operations.
 	NoSessionGrant bool `json:"no_session_grant,omitempty"`
+	// Binding is opaque host state the approval covers (for example a hash of
+	// the exact effective arguments or of the approved goal). Fn reads it back
+	// with ApprovedRequest and refuses to run when the state changed between
+	// the prompt and execution. It is never shown or logged.
+	Binding string `json:"-"`
 	// Preview is optional and called at most once, only before a human prompt.
 	Preview func(context.Context) ApprovalPreview `json:"-"`
 	// Filled by the approver from Preview.
@@ -168,12 +182,28 @@ func ApprovalSession(ctx context.Context) string {
 	return s
 }
 
+type approvalGrant struct {
+	decision ApprovalDecision
+	request  ApprovalRequest
+}
+
 // ApprovalGranted reports the decision under which the current tool call runs.
 // Tools use it to remember host state (for example continuation tokens) that
 // only an approved call may create.
 func ApprovalGranted(ctx context.Context) (ApprovalDecision, bool) {
-	d, ok := ctx.Value(approvalGrantKey{}).(ApprovalDecision)
-	return d, ok && d.Approved
+	g, ok := ctx.Value(approvalGrantKey{}).(approvalGrant)
+	return g.decision, ok && g.decision.Approved
+}
+
+// ApprovedRequest returns the request the host approved for the current tool
+// call. Tools whose Fn must not run without approval check it (and its
+// Binding) instead of trusting that Fn is only reached through the registry.
+func ApprovedRequest(ctx context.Context) (ApprovalRequest, bool) {
+	g, ok := ctx.Value(approvalGrantKey{}).(approvalGrant)
+	if !ok || !g.decision.Approved {
+		return ApprovalRequest{}, false
+	}
+	return g.request, true
 }
 
 type denyApprover struct{}
@@ -207,7 +237,12 @@ func gateInvocation(ctx context.Context, t Tool, args json.RawMessage) (json.Raw
 	// The host owns the confirmation argument: whatever the model sent is
 	// discarded before the risk is assessed.
 	if t.ApprovalArg != "" {
-		args = deleteJSONField(args, t.ApprovalArg)
+		var ok bool
+		if args, ok = deleteJSONField(args, t.ApprovalArg); !ok {
+			// Fail closed: arguments the host cannot parse could still carry a
+			// model-supplied confirmation.
+			return nil, ctx, &Result{Err: fmt.Errorf("%w: %s arguments are not a JSON object; nothing was executed", ErrInvalidToolArgs, t.Name)}
+		}
 	}
 	req, err := t.Approval(ctx, args)
 	if err != nil {
@@ -236,23 +271,28 @@ func gateInvocation(ctx context.Context, t Tool, args json.RawMessage) (json.Raw
 	if t.ApprovalArg != "" {
 		args = setJSONTrue(args, t.ApprovalArg)
 	}
-	return args, context.WithValue(ctx, approvalGrantKey{}, decision), nil
+	return args, context.WithValue(ctx, approvalGrantKey{}, approvalGrant{decision: decision, request: *req}), nil
 }
 
-func deleteJSONField(args json.RawMessage, field string) json.RawMessage {
+// deleteJSONField removes field from a JSON object. ok is false when args is
+// not empty and not a JSON object, so the caller can refuse the call.
+func deleteJSONField(args json.RawMessage, field string) (json.RawMessage, bool) {
+	if len(bytes.TrimSpace(args)) == 0 {
+		return args, true
+	}
 	var m map[string]json.RawMessage
-	if len(bytes.TrimSpace(args)) == 0 || json.Unmarshal(args, &m) != nil {
-		return args
+	if json.Unmarshal(args, &m) != nil || m == nil {
+		return args, false
 	}
 	if _, ok := m[field]; !ok {
-		return args
+		return args, true
 	}
 	delete(m, field)
 	out, err := json.Marshal(m)
 	if err != nil {
-		return args
+		return args, false
 	}
-	return out
+	return out, true
 }
 
 func setJSONTrue(args json.RawMessage, field string) json.RawMessage {
