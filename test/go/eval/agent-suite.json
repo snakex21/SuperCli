@@ -5,7 +5,8 @@
   "ignoreChangedFiles": [
     "**/__pycache__/**",
     "**/*.pyc",
-    "**/node_modules/**"
+    "**/node_modules/**",
+    ".supercli/**"
   ],
   "tasks": [
     {

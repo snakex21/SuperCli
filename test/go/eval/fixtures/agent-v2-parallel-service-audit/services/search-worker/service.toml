@@ -1,0 +1,13 @@
+# search-worker service manifest
+name = "search-worker"
+port = 7053
+owner = "team-growth"
+deps = ["tax-api"]
+
+[health]
+path = "/healthz"
+interval = "30s"
+
+[resources]
+cpu = "100m"
+memory = "256Mi"

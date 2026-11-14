@@ -1,0 +1,13 @@
+# cart-api service manifest
+name = "cart-api"
+port = 7012
+owner = "team-pay"
+deps = ["cart-worker", "ledger-worker", "search-worker"]
+
+[health]
+path = "/healthz"
+interval = "10s"
+
+[resources]
+cpu = "250m"
+memory = "128Mi"

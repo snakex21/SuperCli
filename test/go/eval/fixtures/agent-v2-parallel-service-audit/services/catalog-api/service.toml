@@ -1,0 +1,13 @@
+# catalog-api service manifest
+name = "catalog-api"
+port = 7017
+owner = "team-pay"
+deps = ["feed-api", "inbox-worker", "kyc-worker"]
+
+[health]
+path = "/healthz"
+interval = "30s"
+
+[resources]
+cpu = "100m"
+memory = "128Mi"

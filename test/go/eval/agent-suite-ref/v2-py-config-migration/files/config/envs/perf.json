@@ -1,0 +1,22 @@
+{
+  "schema": 2,
+  "name": "api-perf",
+  "timeout": "250ms",
+  "db": {
+    "host": "perfdb",
+    "port": 5432,
+    "name": "bench"
+  },
+  "features": [],
+  "logging": {
+    "level": "error"
+  },
+  "extra": {
+    "profile": true,
+    "samples": [
+      1,
+      2,
+      3
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+# feed-worker service manifest
+name = "feed-worker"
+port = 7028
+owner = "team-core"
+deps = []
+
+[health]
+path = "/healthz"
+interval = "10s"
+
+[resources]
+cpu = "100m"
+memory = "256Mi"

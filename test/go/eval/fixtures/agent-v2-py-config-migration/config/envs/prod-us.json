@@ -1,0 +1,8 @@
+{
+  "name": "api-prod-us",
+  "timeout_ms": 30000,
+  "db_url": "postgres://db.us.internal:5433/app_us",
+  "features": "search, export, audit, search",
+  "log_level": "warning",
+  "region": "us-east-1"
+}

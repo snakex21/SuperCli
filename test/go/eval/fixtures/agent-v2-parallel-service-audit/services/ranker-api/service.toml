@@ -1,0 +1,13 @@
+# ranker-api service manifest
+name = "ranker-api"
+port = 7017
+owner = "team-search"
+deps = ["ranker-worker", "search-worker", "tax-api"]
+
+[health]
+path = "/healthz"
+interval = "10s"
+
+[resources]
+cpu = "100m"
+memory = "128Mi"

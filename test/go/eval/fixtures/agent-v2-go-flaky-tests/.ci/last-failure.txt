@@ -1,0 +1,6 @@
+=== RUN   TestRank
+    board_test.go:12: Rank = [{bob 7} {ann 7} {fay 5} {cid 5} {dora 5} {eve 1}], want [{ann 7} {bob 7} {cid 5} {dora 5} {fay 5} {eve 1}]
+--- FAIL: TestRank (0.00s)
+=== RUN   TestCollect
+--- PASS: TestCollect (0.00s)
+FAIL

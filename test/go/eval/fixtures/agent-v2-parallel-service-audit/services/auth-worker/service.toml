@@ -1,0 +1,13 @@
+# auth-worker service manifest
+name = "auth-worker"
+port = 7004
+owner = "team-pay"
+deps = ["quota-api"]
+
+[health]
+path = "/healthz"
+interval = "15s"
+
+[resources]
+cpu = "500m"
+memory = "512Mi"

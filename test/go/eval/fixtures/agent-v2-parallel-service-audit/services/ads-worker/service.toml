@@ -1,0 +1,13 @@
+# ads-worker service manifest
+name = "ads-worker"
+port = 7002
+owner = "team-core"
+deps = ["inbox-api", "ranker-worker"]
+
+[health]
+path = "/healthz"
+interval = "15s"
+
+[resources]
+cpu = "500m"
+memory = "128Mi"

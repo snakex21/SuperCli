@@ -1,0 +1,13 @@
+# ledger-worker service manifest
+name = "ledger-worker"
+port = 7044
+owner = "team-core"
+deps = ["orders-worker", "pricing-worker", "ranker-worker"]
+
+[health]
+path = "/healthz"
+interval = "30s"
+
+[resources]
+cpu = "500m"
+memory = "256Mi"

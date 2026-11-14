@@ -1,0 +1,8 @@
+{
+  "name": "api-staging",
+  "timeout_ms": 10000,
+  "db_url": "postgres://db.staging.internal:6432/app",
+  "features": "search,export,,beta",
+  "log_level": "Info",
+  "replicas": 2
+}

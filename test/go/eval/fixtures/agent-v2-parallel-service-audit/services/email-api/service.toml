@@ -1,0 +1,13 @@
+# email-api service manifest
+name = "email-api"
+port = 7021
+owner = "team-pay"
+deps = ["ledger-worker", "media-api", "media-worker"]
+
+[health]
+path = "/healthz"
+interval = "15s"
+
+[resources]
+cpu = "250m"
+memory = "256Mi"

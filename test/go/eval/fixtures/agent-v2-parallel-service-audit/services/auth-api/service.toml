@@ -1,0 +1,13 @@
+# auth-api service manifest
+name = "auth-api"
+port = 7003
+owner = "team-data"
+deps = ["geo-api", "kyc-worker"]
+
+[health]
+path = "/healthz"
+interval = "15s"
+
+[resources]
+cpu = "500m"
+memory = "128Mi"

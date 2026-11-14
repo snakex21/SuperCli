@@ -1,0 +1,13 @@
+# pricing-worker service manifest
+name = "pricing-worker"
+port = 7057
+owner = "team-search"
+deps = ["kyc-worker"]
+
+[health]
+path = "/healthz"
+interval = "30s"
+
+[resources]
+cpu = "100m"
+memory = "512Mi"

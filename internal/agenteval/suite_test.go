@@ -39,6 +39,20 @@ func TestBenchScoresFilesChecksAndModelMatrix(t *testing.T) {
 	}
 }
 
+// The checked-in agent suites must stay loadable (strict decode, fixtures
+// and grader overlays present, valid graders).
+func TestRepositoryAgentSuitesLoad(t *testing.T) {
+	for _, name := range []string{"agent-suite.json", "agent-suite-v2.json"} {
+		suite, err := LoadSuite(filepath.Join("..", "..", "test", "go", "eval", name))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if len(suite.Tasks) < 15 {
+			t.Fatalf("%s: only %d tasks", name, len(suite.Tasks))
+		}
+	}
+}
+
 func TestLoadSuiteRejectsUnknownAndTraversal(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, "fixture"), 0o755); err != nil {

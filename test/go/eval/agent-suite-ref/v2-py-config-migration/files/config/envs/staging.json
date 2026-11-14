@@ -1,0 +1,19 @@
+{
+  "schema": 2,
+  "name": "api-staging",
+  "timeout": "10s",
+  "db": {
+    "host": "db.staging.internal",
+    "port": 6432,
+    "name": "app"
+  },
+  "features": [
+    "search",
+    "export",
+    "beta"
+  ],
+  "logging": {
+    "level": "info"
+  },
+  "replicas": 2
+}

@@ -1,0 +1,7 @@
+{
+  "name": "api-ci",
+  "timeout_ms": 2000,
+  "db_url": "postgres://127.0.0.1:55432/ci",
+  "features": "beta,search",
+  "log_level": "debug"
+}

@@ -1,0 +1,13 @@
+# geo-worker service manifest
+name = "geo-worker"
+port = 7033
+owner = "team-data"
+deps = ["inbox-worker", "pricing-api", "quota-api"]
+
+[health]
+path = "/healthz"
+interval = "10s"
+
+[resources]
+cpu = "100m"
+memory = "128Mi"

@@ -1,0 +1,13 @@
+# quota-worker service manifest
+name = "quota-worker"
+port = 7061
+owner = "team-legacy"
+deps = ["ranker-api", "search-api", "search-worker"]
+
+[health]
+path = "/healthz"
+interval = "10s"
+
+[resources]
+cpu = "500m"
+memory = "512Mi"

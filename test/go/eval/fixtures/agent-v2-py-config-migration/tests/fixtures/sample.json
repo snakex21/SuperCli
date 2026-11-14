@@ -1,0 +1,7 @@
+{
+  "name": "svc",
+  "timeout_ms": 2500,
+  "db_url": "postgres://h:7000/d",
+  "features": "a, b, a",
+  "log_level": "WARNING"
+}

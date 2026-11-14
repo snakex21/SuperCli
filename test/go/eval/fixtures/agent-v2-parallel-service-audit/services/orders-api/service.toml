@@ -1,0 +1,13 @@
+# orders-api service manifest
+name = "orders-api"
+port = 7051
+owner = "team-search"
+deps = []
+
+[health]
+path = "/healthz"
+interval = "30s"
+
+[resources]
+cpu = "100m"
+memory = "512Mi"

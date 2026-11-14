@@ -1,0 +1,13 @@
+# media-worker service manifest
+name = "media-worker"
+port = 7050
+owner = "team-search"
+deps = ["search-api"]
+
+[health]
+path = "/healthz"
+interval = "10s"
+
+[resources]
+cpu = "500m"
+memory = "512Mi"

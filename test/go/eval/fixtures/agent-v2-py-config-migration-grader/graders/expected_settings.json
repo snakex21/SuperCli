@@ -1,0 +1,101 @@
+{
+  "dev": [
+    "api-dev",
+    5000,
+    "postgres://localhost:5432/app_dev",
+    [
+      "search",
+      "export"
+    ],
+    "debug"
+  ],
+  "test": [
+    "api-test",
+    1500,
+    "postgres://db-test:5432/app_test",
+    [
+      "search"
+    ],
+    "info"
+  ],
+  "staging": [
+    "api-staging",
+    10000,
+    "postgres://db.staging.internal:6432/app",
+    [
+      "search",
+      "export",
+      "beta"
+    ],
+    "info"
+  ],
+  "prod": [
+    "api-prod",
+    30000,
+    "postgres://db.prod.internal:5432/app",
+    [
+      "search",
+      "export",
+      "audit"
+    ],
+    "warning"
+  ],
+  "prod-us": [
+    "api-prod-us",
+    30000,
+    "postgres://db.us.internal:5433/app_us",
+    [
+      "search",
+      "export",
+      "audit"
+    ],
+    "warning"
+  ],
+  "perf": [
+    "api-perf",
+    250,
+    "postgres://perfdb:5432/bench",
+    [],
+    "error"
+  ],
+  "demo": [
+    "api-demo",
+    60000,
+    "postgres://demo-db:5432/demo",
+    [
+      "export"
+    ],
+    "info"
+  ],
+  "ci": [
+    "api-ci",
+    2000,
+    "postgres://127.0.0.1:55432/ci",
+    [
+      "beta",
+      "search"
+    ],
+    "debug"
+  ],
+  "sandbox": [
+    "api-sandbox",
+    7500,
+    "postgres://sandbox.db.internal:5432/sbx",
+    [
+      "search",
+      "beta",
+      "export"
+    ],
+    "info"
+  ],
+  "dr": [
+    "api-dr",
+    45000,
+    "postgres://dr-db.internal:5432/app",
+    [
+      "search",
+      "export"
+    ],
+    "critical"
+  ]
+}

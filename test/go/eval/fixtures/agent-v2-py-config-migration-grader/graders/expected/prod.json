@@ -1,0 +1,20 @@
+{
+  "schema": 2,
+  "name": "api-prod",
+  "timeout": "30s",
+  "db": {
+    "host": "db.prod.internal",
+    "port": 5432,
+    "name": "app"
+  },
+  "features": [
+    "search",
+    "export",
+    "audit"
+  ],
+  "logging": {
+    "level": "warning"
+  },
+  "replicas": 6,
+  "region": "eu-west-1"
+}

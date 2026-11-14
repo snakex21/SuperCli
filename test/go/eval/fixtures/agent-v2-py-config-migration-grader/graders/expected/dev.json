@@ -1,0 +1,18 @@
+{
+  "schema": 2,
+  "name": "api-dev",
+  "timeout": "5s",
+  "db": {
+    "host": "localhost",
+    "port": 5432,
+    "name": "app_dev"
+  },
+  "features": [
+    "search",
+    "export"
+  ],
+  "logging": {
+    "level": "debug"
+  },
+  "region": "local"
+}

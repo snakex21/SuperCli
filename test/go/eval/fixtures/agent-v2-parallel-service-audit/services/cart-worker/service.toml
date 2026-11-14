@@ -1,0 +1,13 @@
+# cart-worker service manifest
+name = "cart-worker"
+port = 7014
+owner = "team-pay"
+deps = ["fraud-api", "media-worker", "pricing-api"]
+
+[health]
+path = "/healthz"
+interval = "10s"
+
+[resources]
+cpu = "250m"
+memory = "256Mi"

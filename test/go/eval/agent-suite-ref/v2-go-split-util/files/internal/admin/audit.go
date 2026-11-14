@@ -1,0 +1,28 @@
+// Package admin implements the admin console backend.
+package admin
+
+import (
+	"fmt"
+	"time"
+
+	"gateway/internal/clock"
+	"gateway/internal/ids"
+	"gateway/internal/textutil"
+)
+
+// Event is an audit event.
+type Event struct {
+	ID   string
+	What string
+	At   time.Time
+}
+
+// Describe renders an event line.
+func Describe(e Event, now time.Time, width int) string {
+	return textutil.Truncate(fmt.Sprintf("%s %s (%s)", e.ID, e.What, clock.FormatAgo(now.Sub(e.At))), width)
+}
+
+// Record creates an event.
+func Record(what string, at time.Time) Event {
+	return Event{ID: ids.New("evt"), What: what, At: at}
+}

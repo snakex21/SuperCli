@@ -1,0 +1,15 @@
+{
+  "name": "api-perf",
+  "timeout_ms": 250,
+  "db_url": "postgres://perfdb:5432/bench",
+  "features": "",
+  "log_level": "ERROR",
+  "extra": {
+    "profile": true,
+    "samples": [
+      1,
+      2,
+      3
+    ]
+  }
+}

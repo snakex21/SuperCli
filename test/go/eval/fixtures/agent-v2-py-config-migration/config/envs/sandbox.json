@@ -1,0 +1,8 @@
+{
+  "name": "api-sandbox",
+  "timeout_ms": 7500,
+  "db_url": "postgres://sandbox.db.internal/sbx",
+  "features": "search,beta,export,beta",
+  "log_level": "INFO",
+  "owner": "team-sbx"
+}

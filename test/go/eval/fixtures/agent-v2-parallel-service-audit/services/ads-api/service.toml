@@ -1,0 +1,13 @@
+# ads-api service manifest
+name = "ads-api"
+port = 7001
+owner = "team-core"
+deps = []
+
+[health]
+path = "/healthz"
+interval = "30s"
+
+[resources]
+cpu = "500m"
+memory = "128Mi"

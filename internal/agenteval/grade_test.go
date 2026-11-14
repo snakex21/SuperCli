@@ -2,8 +2,10 @@ package agenteval
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -38,6 +40,20 @@ func TestChangedLineCount(t *testing.T) {
 	}
 	if n := ChangedLineCount("a\nb\n", "x\na\nb\ny\n"); n != 2 {
 		t.Fatalf("two added = %d, want 2", n)
+	}
+	// Beyond the LCS size cap, equal-length inputs fall back to a
+	// positional count instead of reporting every line as changed.
+	var before, after strings.Builder
+	for i := 0; i < 12000; i++ {
+		fmt.Fprintf(&before, "row %d\n", i)
+		if i == 10 || i == 11990 {
+			fmt.Fprintf(&after, "row %d fixed\n", i)
+		} else {
+			fmt.Fprintf(&after, "row %d\n", i)
+		}
+	}
+	if n := ChangedLineCount(before.String(), after.String()); n != 4 {
+		t.Fatalf("two scattered fixes in a large file = %d, want 4", n)
 	}
 }
 
