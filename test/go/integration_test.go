@@ -129,8 +129,9 @@ func TestIntegration_ToolCall(t *testing.T) {
 
 	reg := tools.NewRegistry()
 	reg.MustRegister(tools.Tool{
-		Name:        "echo",
-		Description: "Returns the input unchanged.",
+		UncheckedArgs: true,
+		Name:          "echo",
+		Description:   "Returns the input unchanged.",
 		Fn: func(ctx context.Context, args json.RawMessage) (tools.Result, error) {
 			return tools.Result{Text: string(args)}, nil
 		},

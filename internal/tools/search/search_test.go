@@ -247,9 +247,10 @@ func TestToolSearcher_Execute_LimitClamped(t *testing.T) {
 	reg := NewRegistry()
 	for i := 0; i < 15; i++ {
 		reg.MustRegister(Tool{
-			Name:        "t_" + string(rune('a'+i%26)) + "_" + string(rune('a'+i/26)),
-			Description: "search related tool " + string(rune('a'+i)),
-			Fn:          func(_ context.Context, _ json.RawMessage) (Result, error) { return Result{}, nil },
+			Name:          "t_" + string(rune('a'+i%26)) + "_" + string(rune('a'+i/26)),
+			Description:   "search related tool " + string(rune('a'+i)),
+			UncheckedArgs: true,
+			Fn:            func(_ context.Context, _ json.RawMessage) (Result, error) { return Result{}, nil },
 		})
 	}
 	idx, _ := NewInMemoryIndex()

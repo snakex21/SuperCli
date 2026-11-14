@@ -28,7 +28,7 @@ func TestDeferredCompletionWaitsForActualFnWithoutBlockingForeground(t *testing.
 	var releaseOnce sync.Once
 	unblock := func() { releaseOnce.Do(func() { close(release) }) }
 	defer unblock()
-	tool := turn.Wrap(tools.Tool{Name: "write_file", Fn: func(ctx context.Context, _ json.RawMessage) (tools.Result, error) {
+	tool := turn.Wrap(tools.Tool{UncheckedArgs: true, Name: "write_file", Fn: func(ctx context.Context, _ json.RawMessage) (tools.Result, error) {
 		close(entered)
 		select {
 		case <-release:

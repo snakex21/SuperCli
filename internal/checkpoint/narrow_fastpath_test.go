@@ -104,7 +104,7 @@ func runFastpathFixtureMutation(t *testing.T, turn *Turn, name string, args map[
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec := turn.Wrap(tools.Tool{Name: name, Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+	spec := turn.Wrap(tools.Tool{UncheckedArgs: true, Name: name, Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 		return tools.Result{}, mutate()
 	}})
 	runSnapshotTool(t, spec, string(data))

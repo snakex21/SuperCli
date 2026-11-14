@@ -153,8 +153,14 @@ type Tool struct {
 	Approval func(context.Context, json.RawMessage) (*ApprovalRequest, error) `json:"-"`
 	// ApprovalArg names a boolean argument owned by the host: the registry
 	// removes any model-supplied value before Approval runs and sets it to
-	// true only after the user (or explicit policy) approved the call.
+	// true only after the user (or explicit policy) approved the call. It
+	// requires Approval and a boolean property of that name in Schema.
 	ApprovalArg string `json:"-"`
+	// UncheckedArgs explicitly opts out of registry argument validation for a
+	// tool registered without a Schema; Fn must validate its own arguments.
+	// An empty Schema without this flag is rejected by Validate, so a missing
+	// schema can never silently disable validation.
+	UncheckedArgs bool `json:"-"`
 }
 
 // Validate returns nil if the tool has the minimum required fields
@@ -169,7 +175,7 @@ func (t Tool) Validate() error {
 	if t.Fn == nil {
 		return fmt.Errorf("tool %q: Fn is nil", t.Name)
 	}
-	return nil
+	return t.validateContract()
 }
 
 // Registry stores tools by name. It is safe for concurrent use

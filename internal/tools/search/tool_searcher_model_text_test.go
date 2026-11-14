@@ -26,7 +26,7 @@ func TestToolSearcherModelTextPreservesCompleteResponse(t *testing.T) {
 	reg := NewRegistry()
 	for _, spec := range []Tool{
 		{Name: "contract_tool", Description: "Contract fixture", Schema: discoveryContractSchema},
-		{Name: "empty_tool", Description: "Empty contract fixture"},
+		{Name: "empty_tool", Description: "Empty contract fixture", UncheckedArgs: true},
 		{Name: "boolean_tool", Description: "Boolean contract fixture", Schema: "true"},
 	} {
 		spec.Fn = func(context.Context, json.RawMessage) (Result, error) { return Result{Text: "ok"}, nil }

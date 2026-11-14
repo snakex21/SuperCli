@@ -68,7 +68,7 @@ func TestWorkerEffectsInvalidateEvidenceBeforeAndAfterPartialFailure(t *testing.
 	parent.identicalFails.recordFailure("ctx_execute", "{}")
 	parent.concreteFailure.Store(true)
 	r := tools.NewRegistry()
-	r.MustRegister(tools.Tool{Name: "ctx_execute", Description: "fixture command", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+	r.MustRegister(tools.Tool{UncheckedArgs: true, Name: "ctx_execute", Description: "fixture command", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 		if parent.completedOps.context() != "" || len(parent.resultReuse.entries) != 0 {
 			t.Error("worker started effect with stale parent evidence")
 		}
@@ -130,10 +130,10 @@ func operationFixture(t *testing.T) (*Loop, *int, *int) {
 			}
 			return tools.Result{Text: "Existing successful export verified", Inert: true, Operation: prior.Operation}, true
 		}})
-	r.MustRegister(tools.Tool{Name: "inspect_fixture", Description: "read", ReadOnly: true, Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+	r.MustRegister(tools.Tool{UncheckedArgs: true, Name: "inspect_fixture", Description: "read", ReadOnly: true, Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 		return tools.Result{Text: "inspection completed"}, nil
 	}})
-	r.MustRegister(tools.Tool{Name: "modify_fixture", Description: "edit", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+	r.MustRegister(tools.Tool{UncheckedArgs: true, Name: "modify_fixture", Description: "edit", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 		return tools.Result{Text: "changed"}, nil
 	}})
 	for _, name := range []string{"export_asset", "inspect_fixture", "modify_fixture"} {
@@ -284,7 +284,7 @@ func TestCompletedOperationBoundsAndResetRejectLateReceipts(t *testing.T) {
 	if len(c.entries) != 0 || c.context() != "" {
 		t.Fatal("old instruction resurrected receipt")
 	}
-	tool := tools.Tool{Name: "fixture", ReplaySuccess: func(context.Context, json.RawMessage, tools.Result) (tools.Result, bool) { panic("bad checker") }}
+	tool := tools.Tool{UncheckedArgs: true, Name: "fixture", ReplaySuccess: func(context.Context, json.RawMessage, tools.Result) (tools.Result, bool) { panic("bad checker") }}
 	if result, handled := replayCompletedOperation(context.Background(), tool, nil, tools.Result{}); !handled || result.Err == nil {
 		t.Fatal("panic escaped replay boundary")
 	}

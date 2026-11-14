@@ -110,7 +110,7 @@ func TestNestedRepositoriesAreExcludedAndPreservedByRestore(t *testing.T) {
 					toolName, args = "read_zip", `{"action":"extract","target_dir":"container"}`
 				}
 				called := false
-				tool := turn.Wrap(tools.Tool{Name: toolName, Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+				tool := turn.Wrap(tools.Tool{UncheckedArgs: true, Name: toolName, Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 					called = true
 					writeCheckpointFixture(t, app, "after")
 					writeCheckpointFixture(t, created, "created")

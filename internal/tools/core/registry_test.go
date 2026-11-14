@@ -25,9 +25,9 @@ func TestTool_Validate(t *testing.T) {
 		wantErr bool
 	}{
 		{"valid", okTool("x"), false},
-		{"empty name", Tool{Description: "d", Fn: okTool("x").Fn}, true},
-		{"empty desc", Tool{Name: "x", Fn: okTool("x").Fn}, true},
-		{"nil fn", Tool{Name: "x", Description: "d"}, true},
+		{"empty name", Tool{UncheckedArgs: true, Description: "d", Fn: okTool("x").Fn}, true},
+		{"empty desc", Tool{UncheckedArgs: true, Name: "x", Fn: okTool("x").Fn}, true},
+		{"nil fn", Tool{UncheckedArgs: true, Name: "x", Description: "d"}, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -62,13 +62,13 @@ func TestRegistry_RejectsDuplicate(t *testing.T) {
 
 func TestRegistry_RejectsInvalid(t *testing.T) {
 	r := NewRegistry()
-	if err := r.Register(Tool{Name: "", Description: "x", Fn: okTool("x").Fn}); err == nil {
+	if err := r.Register(Tool{UncheckedArgs: true, Name: "", Description: "x", Fn: okTool("x").Fn}); err == nil {
 		t.Fatal("expected error on empty name")
 	}
-	if err := r.Register(Tool{Name: "y", Description: "", Fn: okTool("y").Fn}); err == nil {
+	if err := r.Register(Tool{UncheckedArgs: true, Name: "y", Description: "", Fn: okTool("y").Fn}); err == nil {
 		t.Fatal("expected error on empty desc")
 	}
-	if err := r.Register(Tool{Name: "z", Description: "z"}); err == nil {
+	if err := r.Register(Tool{UncheckedArgs: true, Name: "z", Description: "z"}); err == nil {
 		t.Fatal("expected error on nil Fn")
 	}
 }
@@ -125,7 +125,7 @@ func TestMustRegister_PanicsOnError(t *testing.T) {
 			t.Fatal("expected panic")
 		}
 	}()
-	r.MustRegister(Tool{Name: ""})
+	r.MustRegister(Tool{UncheckedArgs: true, Name: ""})
 }
 
 func TestRegistry_Execute_Success(t *testing.T) {

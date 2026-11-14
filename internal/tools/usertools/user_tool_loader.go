@@ -196,10 +196,16 @@ func buildUserTool(d UserToolDef) Tool {
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
+	schema := d.Schema
+	if strings.TrimSpace(schema) == "" {
+		// A user tool without a schema still gets an argument envelope check
+		// (one JSON object) instead of silently skipping validation.
+		schema = `{"type":"object"}`
+	}
 	return Tool{
 		Name:        d.Name,
 		Description: d.Description,
-		Schema:      d.Schema,
+		Schema:      schema,
 		Fn:          makeUserToolFn(d, timeout),
 	}
 }
