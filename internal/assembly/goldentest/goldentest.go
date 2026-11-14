@@ -64,6 +64,8 @@ func Check(t *testing.T, path, got string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// core.autocrlf checkouts may turn LF into CRLF; goldens are LF.
+	want = []byte(strings.ReplaceAll(string(want), "\r\n", "\n"))
 	if string(want) == got {
 		return
 	}
