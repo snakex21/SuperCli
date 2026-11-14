@@ -182,7 +182,7 @@ func (m Model) renderAccountsMenu() string {
 		body.WriteString(m.palette.Dim.Render(m.tr("tui.menu_accounts.ea033c0bc1")))
 	}
 
-	panel := lipgloss.NewStyle().
+	panel := m.palette.renderColors().renderer.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorFaint).
 		Padding(0, 2).
@@ -205,7 +205,7 @@ func (m Model) renderAccountLabelMenu() string {
 	body.WriteString(m.tr("tui.menu_accounts.1aca80e8b5") + "  " + field + "\n\n")
 	body.WriteString(m.palette.Dim.Render(m.tr("tui.menu_accounts.393e7ffde5")))
 
-	panel := lipgloss.NewStyle().
+	panel := m.palette.renderColors().renderer.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorAccent).
 		Padding(0, 2).

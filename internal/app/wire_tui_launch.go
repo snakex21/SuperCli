@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -61,6 +62,23 @@ type tuiLaunchDeps struct {
 	showGenerationSpeed                           *bool
 	cfg                                           config.Config
 	redrawStatus                                  func()
+	// noColorConfig is the merged config.toml no_color option.
+	noColorConfig bool
+	// getenv reads the environment for NO_COLOR; nil means os.Getenv.
+	getenv func(string) string
+}
+
+// tuiNoColor reports whether the TUI must render without colour:
+// config no_color = true, or NO_COLOR set to any non-empty value
+// (https://no-color.org).
+func tuiNoColor(configNoColor bool, getenv func(string) string) bool {
+	if configNoColor {
+		return true
+	}
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	return getenv("NO_COLOR") != ""
 }
 
 // buildTUIOptions assembles tui.Options for the interactive CLI.
@@ -106,6 +124,7 @@ func buildTUIOptions(d tuiLaunchDeps) tui.Options {
 			}
 			return nil
 		},
+		NoColor:             tuiNoColor(d.noColorConfig, d.getenv),
 		Version:             d.version,
 		Tier:                string(d.modelTier),
 		Language:            d.uiLanguage,
