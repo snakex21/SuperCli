@@ -277,7 +277,7 @@ func TestLiveContextLegacyStartupGoalReproducesStaleBriefing(t *testing.T) {
 	if svc.Active() != nil || len(provider.reqs) != 2 {
 		t.Fatalf("terminal action failed or extra inference: active=%t calls=%d", svc.Active() != nil, len(provider.reqs))
 	}
-	if !strings.Contains(provider.reqs[1][len(provider.reqs[1])-1].Content, "LEGACY_ACTIVE_GOAL") {
+	if !strings.Contains(liveRequestText(provider.reqs[1]), "LEGACY_ACTIVE_GOAL") {
 		t.Fatal("fixture no longer reproduces the old one-time LiveContext producer")
 	}
 	t.Log("legacy GUI-style startup snapshot: active goal in DB=0 but next request active-goal blocks=1; 2 calls; reproduces stale producer without editing user state")

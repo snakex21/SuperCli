@@ -201,6 +201,7 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		ThinTools:              thin,
 		StableToolset:          stable,
 		CatalogHoist:           hoist,
+		ReplaceContextTail:     a.ParentLoop != nil && a.ParentLoop.tailReplace,
 		BaseDir:                baseDir,
 		CreditTracker:          budget,
 		WindowFor:              windowFor,

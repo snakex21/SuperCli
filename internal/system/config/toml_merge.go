@@ -71,6 +71,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.StableToolset != nil {
 		dst.StableToolset = src.StableToolset
 	}
+	if src.ContextTailPinning != nil {
+		dst.ContextTailPinning = src.ContextTailPinning
+	}
 	if src.TaskMaxSteps != 0 {
 		dst.TaskMaxSteps = src.TaskMaxSteps
 	}

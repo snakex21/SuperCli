@@ -77,6 +77,9 @@ func TestPreparedMediaPreservesWireAndOwnership(t *testing.T) {
 						t.Run(fmt.Sprintf("thin=%v/stable=%v/hoist=%v/active=%v/%s", thin, stable, hoist, active, place), func(t *testing.T) {
 							l := contextPreparationFixture(t, thin)
 							l.stableToolset, l.catalogHoist, l.discardPreviousReasoning = stable, hoist, false
+							// The reference rebuilds the tail at the end; tail pinning has
+							// its own tests (loop_tail_pins_test.go).
+							l.tailReplace = true
 							img := &llm.ImageRef{ID: "fixture-image", Name: "zrzut ☃ \"image\".png", Active: active}
 							block := &llm.ReasoningBlock{Format: llm.ReasoningResponses, Data: json.RawMessage("{\"type\":\"reasoning\",\"encrypted_content\":\"opaque\",\"signature\":\"untouched\"}"), Tokens: 3}
 							l.Messages = []llm.Message{

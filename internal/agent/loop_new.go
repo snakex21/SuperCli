@@ -88,6 +88,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		thinTools:                cfg.ThinTools,
 		stableToolset:            cfg.StableToolset,
 		catalogHoist:             cfg.CatalogHoist,
+		tailReplace:              cfg.ReplaceContextTail,
 		orchestrator:             cfg.Orchestrator,
 		taskParallel:             cfg.TaskParallel,
 		taskParallelWarnLocal:    cfg.TaskParallelWarnLocal,

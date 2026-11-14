@@ -30,16 +30,20 @@ type batchContextCall struct {
 	ToolDefs int `json:"toolDefs"`
 	History  int `json:"history"`
 	// Tail is the request-only trailing system message (time stamp, live
-	// context). It is rebuilt every request by design and sits after the
-	// conversation, so replacing it never breaks the cached prefix.
+	// context) when it is the last message. With tail pinning it stays where
+	// it was first sent and counts as history afterwards.
 	Tail     int `json:"tail"`
 	Messages int `json:"messages"`
 	// SharedPrefix counts leading messages identical to the previous main
 	// request. PrefixBreak means the previous request is not a prefix of
 	// this one (something earlier changed); ToolsChanged means the tool
 	// definitions differ from the previous request.
-	SharedPrefix     int     `json:"sharedPrefix"`
-	PrefixBreak      bool    `json:"prefixBreak,omitempty"`
+	SharedPrefix int  `json:"sharedPrefix"`
+	PrefixBreak  bool `json:"prefixBreak,omitempty"`
+	// TailMove means the previous request was not sent again as a whole
+	// (only its trailing tail was replaced). Hosted caches that only reuse
+	// previously sent prompts then miss everything after the system block.
+	TailMove         bool    `json:"tailMove,omitempty"`
 	ToolsChanged     bool    `json:"toolsChanged,omitempty"`
 	Input            int     `json:"input,omitempty"`
 	Cached           int     `json:"cached,omitempty"`
@@ -56,6 +60,7 @@ type batchTraceContext struct {
 	Calls        []batchContextCall `json:"calls"`
 	Tools        []batchToolSize    `json:"tools,omitempty"`
 	PrefixBreaks int                `json:"prefixBreaks"`
+	TailMoves    int                `json:"tailMoves"`
 	ToolsChanged int                `json:"toolsChanged"`
 }
 
@@ -102,6 +107,7 @@ func (p *batchContextProbe) observe(purpose string, msgs []llm.Message, tools []
 			kept--
 		}
 		call.PrefixBreak = call.SharedPrefix < kept
+		call.TailMove = !call.PrefixBreak && call.SharedPrefix < len(p.prev)
 		call.ToolsChanged = toolsDigest != p.prevTools
 	}
 	if p.tools == nil {
@@ -138,6 +144,9 @@ func (p *batchContextProbe) report(calls []stats.Call) *batchTraceContext {
 	for _, c := range out.Calls {
 		if c.PrefixBreak {
 			out.PrefixBreaks++
+		}
+		if c.TailMove {
+			out.TailMoves++
 		}
 		if c.ToolsChanged {
 			out.ToolsChanged++
