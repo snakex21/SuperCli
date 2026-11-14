@@ -63,7 +63,7 @@ cache telemetry, stored portably in `supercli-data/prefill-profiles.json`.
 | `openai_reasoning_responses` | unset = **ON** | an `openai`-type provider on `https://api.openai.com` sends official reasoning models (`gpt-5*`, `o1`/`o3`/`o4*`, `codex*`) through the Responses API, the only OpenAI API that keeps the selected reasoning level together with tools. `false` (or `SUPERCLI_OPENAI_REASONING_RESPONSES=0`) keeps Chat Completions; gateways, Azure, local servers and older chat models always use Chat Completions |
 | `discard_previous_reasoning` | unset = **OFF** (keep history) | optionally omit completed replies' reasoning from future requests; `/reasoning-history keep/drop/default` |
 | `max_steps` | 0 = built-in 300 on every surface | a runaway guard, not a work budget: normal work never reaches it, and the loop no longer ends a turn on a step count. A real loop (the same call with the same arguments) is answered with an injected error and work continues; only ~50 identical repeats in a row stop the run. An explicit positive value is a strict cap. |
-| `context_window` | 0 = auto (provider metadata/catalog > learned > 16384) | only as a global fallback when several models share the same hard ceiling |
+| `context_window` | 0 = auto (loaded size from a local server: LM Studio `/api/v1/models`, llama.cpp `/props`, Ollama `/api/ps`; then provider metadata/catalog > learned > 16384) | only as a global fallback when several models share the same hard ceiling |
 | `fallback_models` | empty = **OFF** | explicit local-to-cloud continuity, e.g. `["cloud/gpt-5-mini", "cloud/gpt-5"]`; the list itself is consent to call those backends |
 | `fallback_cooldown_seconds` | 0 = 30 | a remote/local host flaps and should be retried sooner or later |
 
@@ -103,6 +103,7 @@ in the instance-local `model-context-windows.json`; the UI manages the file.
 | knob | default | touch when |
 |---|---|---|
 | `stable_toolset` | unset = **ON** | debugging only; OFF re-enables the tools-list cache-killer |
+| `context_tail_pinning` | unset = **ON** (hosted and local) | `false` restores the legacy per-request tail, which breaks the KV prefix on every step (local Qwen measurement: median 498 re-evaluated tokens per follow-up request vs 1 when pinned) |
 | `cache_prompt` | unset = auto (local hosts only) | self-hosted server behind a public address (force on) |
 | `slot_cache` | unset = auto (local hosts only; first failure = permanent off) | same as above, or `false` to stop slot files being written |
 | `prune_protect_tokens` | 0 = 1/16 of the active window, clamped to 2048..65536 | override only for unusual tool-heavy workloads; negative disables pruning entirely |

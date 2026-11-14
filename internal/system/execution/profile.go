@@ -114,14 +114,25 @@ func TierRules(tc config.TomlConfig) []tier.Rule {
 	return out
 }
 
-// TailPinning resolves context_tail_pinning. Hosted prompt caches only reuse
-// a prefix a previous request ended with, so pinning is the default there.
-// Local llama.cpp-style servers reuse the longest common KV prefix anyway and
-// pay a re-evaluation whenever a pinned tail has to move, so they keep the
-// legacy per-request tail unless the config turns pinning on.
+// TailPinning resolves context_tail_pinning; it is on by default for every
+// backend. Hosted prompt caches only reuse a prefix a previous request ended
+// with. Local llama.cpp-style servers reuse the longest common KV prefix, but
+// the legacy per-request tail still breaks that prefix on EVERY step: the
+// tail sat where the next request has the assistant message, so the tail and
+// the whole previous output were re-evaluated each call. Hybrid-attention
+// models (Qwen3.5/3.6 Gated DeltaNet) cannot even truncate to an arbitrary
+// prefix and fall back to the nearest context checkpoint.
+//
+// Measured (LM Studio, qwen3.6-35b-a3b Q3_K_XL, 32k, 9 eval tasks): legacy
+// placement 0/63 append-only request pairs, median 498 needlessly
+// re-evaluated tokens per follow-up request; pinned 45/47 append-only (the
+// rest were tool-result prunes), median 1, follow-up prompt-eval median
+// 450 -> 245 ms, TTFT median 0.51 -> 0.31 s. localBackend is kept for
+// callers and future per-backend policy.
 func TailPinning(override *bool, localBackend bool) bool {
+	_ = localBackend
 	if override != nil {
 		return *override
 	}
-	return !localBackend
+	return true
 }
