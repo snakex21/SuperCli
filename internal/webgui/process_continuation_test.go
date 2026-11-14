@@ -55,7 +55,7 @@ func (p *webProcessContinuationProvider) Complete(ctx context.Context, msgs []ll
 	if step == 0 {
 		thinPrompt := false
 		for _, msg := range msgs {
-			thinPrompt = thinPrompt || strings.Contains(msg.Content, prompt.ThinToolProtocol)
+			thinPrompt = thinPrompt || strings.Contains(msg.Content, prompt.ThinToolProtocolCore)
 		}
 		if thinPrompt != p.thin {
 			return nil, fmt.Errorf("incorrect web tool profile: thin=%t want=%t", thinPrompt, p.thin)

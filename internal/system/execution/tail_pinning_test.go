@@ -9,8 +9,8 @@ func TestTailPinningDefaultsByBackend(t *testing.T) {
 		local    bool
 		want     bool
 	}{
-		{nil, false, true}, {nil, true, false},
-		{&off, false, false}, {&on, true, true},
+		{nil, false, true}, {nil, true, true},
+		{&off, false, false}, {&on, true, true}, {&off, true, false},
 	}
 	for _, c := range cases {
 		if got := TailPinning(c.override, c.local); got != c.want {

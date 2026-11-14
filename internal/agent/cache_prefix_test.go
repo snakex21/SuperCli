@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"supercli/internal/llm"
+	"supercli/internal/llm/prompt"
 	"supercli/internal/tools"
 )
 
@@ -307,5 +308,26 @@ func TestCache_StableToolset_TailToolExecutesWithoutPromotion(t *testing.T) {
 	fu := res.followUps[0]
 	if fu.Role != llm.RoleTool || fu.Name != "web_search" || fu.Content != "x" {
 		t.Fatalf("unexpected follow-up: %+v", fu)
+	}
+}
+
+// The direct-call rule is stated once: a catalog with simple read-only tools
+// carries it in its header, so the protocol's generic copy is dropped.
+func TestThinPreambleStatesDirectToolRuleOnce(t *testing.T) {
+	l := newCacheTestLoop(t)
+	l.stableToolset = true
+	l.registry.MustRegister(tools.Tool{Name: "read_context", Description: "read lines around a target", ReadOnly: true,
+		Schema: `{"type":"object","properties":{"file":{"type":"string"},"line":{"type":"integer"}}}`,
+		Fn:     func(context.Context, json.RawMessage) (tools.Result, error) { return tools.Result{Text: "x"}, nil }})
+	l.registry.MarkAlwaysOn("read_context")
+	pre := l.thinToolsPreamble()
+	if !strings.Contains(pre, "Simple read-only tools, no tool_search needed") || !strings.Contains(pre, "read_context") {
+		t.Fatalf("direct read-only tool missing from the catalog:\n%s", pre)
+	}
+	if strings.Contains(pre, prompt.ThinDirectToolHint) {
+		t.Fatalf("direct-call rule sent twice:\n%s", pre)
+	}
+	if !strings.HasPrefix(pre, prompt.ThinToolProtocolCore) {
+		t.Fatalf("protocol text changed beyond the duplicate line:\n%s", pre)
 	}
 }

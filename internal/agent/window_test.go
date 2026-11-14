@@ -459,3 +459,54 @@ func TestResolveContextWindowExactMatchKeepsPriorityOverAmbiguousAlias(t *testin
 		t.Fatalf("exact catalog match lost priority: %+v", got)
 	}
 }
+
+// A server that silently truncates an over-long prompt (LM Studio
+// truncateMiddle, Ollama) reports the SHORTENED prompt as usage. That number
+// must not become the exact baseline, or the loop believes it has room again
+// and keeps sending prompts the server keeps cutting.
+func TestServerTruncatedUsageDoesNotResetBaseline(t *testing.T) {
+	echo, _ := llm.NewEcho("test")
+	l := &Loop{provider: echo, route: RouteCoordinator}
+	l.Messages = []llm.Message{{Role: llm.RoleUser, Content: strings.Repeat("base ", 300)}}
+	raw1 := l.estimateNextRequestTokensRaw()
+	if l.recordContextBaseline(raw1, 32248) {
+		t.Fatal("first baseline reported as truncation")
+	}
+	l.Messages = append(l.Messages, llm.Message{Role: llm.RoleTool, Content: strings.Repeat("new-result ", 60)})
+	raw2 := l.estimateNextRequestTokensRaw()
+	if !l.recordContextBaseline(raw2, 16022) {
+		t.Fatal("a grown request reported with half the tokens was not recognized as truncation")
+	}
+	if !l.takeServerTruncated() || l.takeServerTruncated() {
+		t.Fatal("truncation must request exactly one context-limit repair")
+	}
+	got := l.nextRequestTokenEstimate()
+	if want := 32248 + got.Raw - raw1; got.Effective != want || got.ExactBase != 32248 {
+		t.Fatalf("estimate after truncation = %+v, want effective %d from the last trustworthy base", got, want)
+	}
+	// Ordinary tokenizer jitter on a grown request is not truncation.
+	if l.recordContextBaseline(raw2, 32248-200) {
+		t.Fatal("a <2% drop was treated as truncation")
+	}
+	// A shrinking local projection (prune/compaction) legitimately lowers usage.
+	if l.recordContextBaseline(raw2-50, 9000) {
+		t.Fatal("a shrink after compaction was treated as truncation")
+	}
+}
+
+func TestServerTruncatedPrompt(t *testing.T) {
+	cases := []struct {
+		prevEst, prevExact, est, exact int
+		want                           bool
+	}{
+		{0, 0, 100, 50, false},           // no previous baseline
+		{1000, 32248, 1100, 16022, true}, // grew locally, server count halved
+		{1000, 32248, 1100, 32000, false},
+		{1000, 32248, 900, 16022, false}, // local projection shrank
+	}
+	for _, c := range cases {
+		if got := serverTruncatedPrompt(c.prevEst, c.prevExact, c.est, c.exact); got != c.want {
+			t.Errorf("serverTruncatedPrompt(%d,%d,%d,%d)=%v want %v", c.prevEst, c.prevExact, c.est, c.exact, got, c.want)
+		}
+	}
+}

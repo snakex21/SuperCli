@@ -375,6 +375,8 @@ The three historical cache-killers and their fixes, all live-measured:
 | minute-granular time stamp hoisted to prompt front | demote mid-conversation system msgs to tail (`system_demote.go`) | minute tick: eval 2216 â†’ 371 (Qwen3.5-9B) |
 | tools list changing on tool_search activation | `stable_toolset` ON: activated tools stay in catalog | tools block byte-identical all session |
 | reflection/ultrawork system injections | same demote path | no front re-eval on checkpoints |
+| request-only context tail rebuilt at the end of every request (it sat where the next request has the assistant message) | `context_tail_pinning` ON for local backends too (1.0.26) | Qwen3.6-35B-A3B @ LM Studio 32k, 9 tasks: append-only request pairs 0/63 → 45/47; re-evaluated tokens per follow-up request median 498 → 1; follow-up prompt eval median 450 → 245 ms |
+| server silently truncating an over-long prompt (LM Studio truncateMiddle, Ollama) and reporting the shortened prompt as usage | the shrunken count is not trusted as the exact baseline; the next step handles it like a context-limit rejection (completed older turns are compacted; a single over-long turn stops at the window guard instead of continuing on cut prompts); above the generation reserve the prune accepts gains ≥ max(overage, reserve/2) (1.0.26) | one 32k run had sent 15 truncated requests at ~13.9k re-evaluated tokens each (71.7 s prompt eval in one task) |
 
 ## Warm cache across sessions (`slot_cache`, auto on local hosts)
 

@@ -229,8 +229,11 @@ func (l *Loop) thinToolsPreamble() string {
 		}
 	}
 	if body := tools.RenderCatalog(direct, l.thinHintMaxOrDefault()); body != "" {
-		out += "\n\nSimple read-only tools, callable now through invoke_tool " +
-			"(tool: name, arg.<field>: value):\n" + body
+		// The header carries the direct-call rule, so drop the protocol's
+		// generic copy of the same line from the cached prefix.
+		out = prompt.ThinToolProtocolCore
+		out += "\n\nSimple read-only tools, no tool_search needed; call invoke_tool " +
+			"with \"tool: name\" and one \"arg.<field>: value\" line per argument:\n" + body
 	}
 	if len(loadable) > 0 {
 		if body := tools.RenderCatalog(loadable, l.thinHintMaxOrDefault()); body != "" {

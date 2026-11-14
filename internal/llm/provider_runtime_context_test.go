@@ -137,14 +137,15 @@ func TestUnsupportedLocalMetadataIsNotRetriedUntilExplicitInvalidation(t *testin
 			t.Fatal(err)
 		}
 	}
-	if calls.Load() != 2 {
+	// One probe = LM Studio v1 + v0, llama.cpp /props, Ollama /api/ps.
+	if calls.Load() != 4 {
 		t.Fatalf("unsupported server repeatedly probed: %d", calls.Load())
 	}
 	InvalidateProviderModelCache(base)
 	if err := RefreshLocalModelContexts(context.Background(), base, ""); err != nil {
 		t.Fatal(err)
 	}
-	if calls.Load() != 4 {
+	if calls.Load() != 8 {
 		t.Fatalf("explicit scan did not retry: %d", calls.Load())
 	}
 }
@@ -225,6 +226,10 @@ func TestOlderUnsupportedDiscoveryCannotDisableNewerSupportedSnapshot(t *testing
 		if r.URL.Path == "/api/v0/models" {
 			v0Calls.Add(1)
 			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Path != "/api/v1/models" {
+			http.NotFound(w, r) // llama.cpp /props, Ollama /api/ps
 			return
 		}
 		if v1Calls.Add(1) == 1 {
