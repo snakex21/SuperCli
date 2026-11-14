@@ -327,7 +327,7 @@ func TestThinPreambleStatesDirectToolRuleOnce(t *testing.T) {
 	if strings.Contains(pre, prompt.ThinDirectToolHint) {
 		t.Fatalf("direct-call rule sent twice:\n%s", pre)
 	}
-	if !strings.HasPrefix(pre, strings.TrimSuffix(prompt.ThinToolProtocol, "\n"+prompt.ThinDirectToolHint)) {
+	if !strings.HasPrefix(pre, prompt.ThinToolProtocolCore) {
 		t.Fatalf("protocol text changed beyond the duplicate line:\n%s", pre)
 	}
 }

@@ -1,8 +1,6 @@
 package agent
 
 import (
-	"strings"
-
 	"supercli/internal/llm"
 	"supercli/internal/llm/prompt"
 	"supercli/internal/tools"
@@ -233,7 +231,7 @@ func (l *Loop) thinToolsPreamble() string {
 	if body := tools.RenderCatalog(direct, l.thinHintMaxOrDefault()); body != "" {
 		// The header carries the direct-call rule, so drop the protocol's
 		// generic copy of the same line from the cached prefix.
-		out = strings.TrimSuffix(out, "\n"+prompt.ThinDirectToolHint)
+		out = prompt.ThinToolProtocolCore
 		out += "\n\nSimple read-only tools, no tool_search needed; call invoke_tool " +
 			"with \"tool: name\" and one \"arg.<field>: value\" line per argument:\n" + body
 	}

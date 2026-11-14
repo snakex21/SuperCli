@@ -56,7 +56,7 @@ func (p *continuationReplayProvider) Complete(ctx context.Context, messages []ll
 		messages = append([]llm.Message(nil), messages...)
 		for i := range messages {
 			if messages[i].Role == llm.RoleSystem {
-				messages[i].Content = strings.Replace(messages[i].Content, prompt.ThinToolProtocol, hint, 1)
+				messages[i].Content = strings.Replace(messages[i].Content, prompt.ThinToolProtocolCore, hint, 1)
 			}
 		}
 	}
