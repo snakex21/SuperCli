@@ -53,9 +53,9 @@ var TUICore = []Entry{
 	{Tool: "search_history"},
 }
 
-// TUIAfterLoop is registered once the agent loop exists (hide_messages binds
-// to the loop, consult emits loop events); the MCP bridge sits between them.
-var TUIAfterLoop = []Entry{{Tool: "mcp_bridge", AlwaysOn: true}, {Tool: "consult"}}
+// MCPBridge is the one thin bridge to every configured MCP server (servers
+// start lazily on first use). The TUI registers it after the agent loop.
+var MCPBridge = []Entry{{Tool: "mcp_bridge", AlwaysOn: true}}
 
 // TUILate holds the file, web and line tools registered last, after the loop
 // and slash wiring; tool_search is re-indexed afterwards.

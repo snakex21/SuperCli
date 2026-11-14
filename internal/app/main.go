@@ -38,6 +38,7 @@ import (
 	"supercli/internal/account/usagecost"
 	"supercli/internal/agent"
 	"supercli/internal/agent/darwin"
+	"supercli/internal/assembly"
 	"supercli/internal/buildinfo"
 	"supercli/internal/checkpoint"
 	"supercli/internal/llm"
@@ -53,8 +54,6 @@ import (
 	systemhostpower "supercli/internal/system/hostpower"
 	"supercli/internal/system/stats"
 	"supercli/internal/tools"
-	"supercli/internal/tools/ctxexec"
-	toolhostpower "supercli/internal/tools/hostpower"
 	"supercli/internal/ui/tui"
 )
 
@@ -282,24 +281,16 @@ func Main() {
 		return spec
 	}
 
+	// Toolset: the shared table (internal/assembly) registered in TUI phases.
 	registry := tools.NewRegistry()
-	wrap := toolWrappers{
-		checkpoint: checkpointSpec,
-		// diagnostic is set after codeIntel is created below.
-	}
-	askCh, codeIntel, processSession, toolSearcher, ftsClose := registerMediaAndOfficeTools(
-		registry, home, dataDir, caps, wrap,
-	)
-	defer codeIntel.Close()
-	defer processSession.Close()
+	toolset := newInteractiveToolset(registry, home, dataDir, tomlCfg, checkpointSpec)
+	askCh, toolSearcher := toolset.AskCh, toolset.ToolSearcher
+	defer toolset.CodeIntel.Close()
+	defer toolset.ProcessSession.Close()
 	// Close headless browsers on normal exit on every OS; the Windows job
 	// object only covers crashes.
 	defer tools.CloseBrowsers()
-	if ftsClose != nil {
-		defer ftsClose()
-	}
-	// wrap.diagnostic is set inside registerMediaAndOfficeTools once
-	// codeIntel exists; late file tools below use wrap.mut.
+	defer toolset.FTSClose()
 	installApprovalGate(dataDir, askCh, uiLanguage, "", false)
 
 	if err := toolSearcher.RebuildIndex(); err != nil {
@@ -335,26 +326,8 @@ func Main() {
 	memAutoSaver := memBundle.AutoSaver
 	memProg := memBundle.Progress
 	memoryBriefing = memBundle.Briefing
-	registerMemoryTools(registry, memBundle)
-
-	// F10: ctx_execute is the context-mode sandbox.
-	// The model uses it instead of file_read for
-	// large files: writes a small script, gets
-	// bounded stdout back. Always-on so it sees the
-	// token-savings tool from turn 1.
-	ctxRunner := ctxexec.New(home)
-	ctxTool := tools.NewCtxExecuteTool(ctxRunner, home)
-	registry.MustRegister(checkpointSpec(ctxTool.Spec()))
-
-	// F8: goal tool is always-on. It exposes the active
-	// goal and tasks to the model. Decomposition uses
-	// the main provider when available, else heuristic.
-	goalTool := tools.NewGoalTool(goalSvc)
-	goalTool.SetDecompose(goalProviderAdapter{Provider: provider}, provider.Name())
-	registry.MustRegister(goalTool.Spec())
 	hostPower := systemhostpower.New(systemhostpower.Options{Execute: systemhostpower.Shutdown})
 	defer hostPower.Close()
-	registry.MustRegister(toolhostpower.Spec())
 
 	darwinTool := darwin.NewDarwinTool(provider, registry, home, buildSystemPromptWithInstructions(goalSvc, ""))
 	darwinTool.SetUserInstructionsForRun(userInstructionsForRun(dataDir))
@@ -365,7 +338,7 @@ func Main() {
 	// its branch (and can be diffed, judged, and merged)
 	// instead of in the parent's cwd.
 	darwinTool.SetLoopFactory(darwin.AgentLoopAdapter(registry, func(root string) (*tools.Registry, error) {
-		return buildChildToolRegistry(root), nil
+		return assembly.ChildToolset(root), nil
 	}))
 	// Local backends run best-of-N sequentially: a single GPU serializes
 	// the requests anyway (N× wall time), and interleaved contexts thrash
@@ -405,8 +378,10 @@ func Main() {
 	}
 	darwinTool.SetAllowAutoMerge(tomlCfg.DarwinAutoMerge != nil && *tomlCfg.DarwinAutoMerge)
 	// darwin = false hides the tool from the model; /darwin still works.
+	var darwinSpec *tools.Tool
 	if config.DarwinEnabled(tomlCfg) {
-		registry.MustRegister(darwinTool.Spec())
+		spec := darwinTool.Spec()
+		darwinSpec = &spec
 	}
 
 	// Task delegation parallelism mirrors darwin: a batch of `task` calls
@@ -539,10 +514,16 @@ func Main() {
 	llm.InitRequestBudget(dataDir)
 
 	// F13: session store + optional search_history tool.
-	sessStore, sessWriter := openSessionStack(dataDir, sessionID, home, cfg.Model, registry, tomlCfg)
+	sessStore, sessWriter := openSessionStack(dataDir, sessionID, home, cfg.Model, nil, tomlCfg)
 	if sessStore != nil {
 		defer sessStore.Close()
 	}
+	// Memory tools, ctx_execute (context-mode sandbox), goal (decomposition
+	// on the main provider, else heuristic), host power, darwin and
+	// search_history: assembly.TUICore.
+	toolset.registerCore(memBundle, goalSvc, func(g *tools.GoalTool) {
+		g.SetDecompose(goalProviderAdapter{Provider: provider}, provider.Name())
+	}, darwinSpec, sessStore)
 	usageRates := usagecost.NewHistoryRates(dataDir)
 	defer usageRates.Close()
 
@@ -729,7 +710,7 @@ func Main() {
 		buildCouncilMember: buildCouncilMember,
 	})
 
-	registerFileWebAndLineTools(registry, home, dataDir, tomlCfg, wrap, toolSearcher)
+	toolset.registerLate()
 
 	darwinTool.SetProviderResolver(loop.Provider)
 
@@ -830,9 +811,7 @@ func Main() {
 	// lookups. Done as a one-shot swap before the first Run so the tool
 	// list is fixed for the whole session (KV-cache prefix stability).
 	if supercliOrchestratorMode {
-		rootRegistry := agent.OrchestratorRegistry(registry)
-		rootRegistry.MustRegister(toolhostpower.Spec())
-		loop.SetRegistry(rootRegistry)
+		loop.SetRegistry(assembly.OrchestratorRegistry(registry, true))
 	}
 
 	// redrawStatus forces a TUI re-render so the pull-based footer

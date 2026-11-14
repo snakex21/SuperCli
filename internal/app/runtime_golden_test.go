@@ -12,6 +12,7 @@ import (
 	"supercli/internal/account/tier"
 	"supercli/internal/agent"
 	"supercli/internal/agent/darwin"
+	"supercli/internal/assembly"
 	"supercli/internal/assembly/goldentest"
 	"supercli/internal/checkpoint"
 	"supercli/internal/llm"
@@ -25,8 +26,6 @@ import (
 	systemhostpower "supercli/internal/system/hostpower"
 	"supercli/internal/system/stats"
 	"supercli/internal/tools"
-	"supercli/internal/tools/ctxexec"
-	toolhostpower "supercli/internal/tools/hostpower"
 )
 
 // The goldens below pin the composition of the CLI surfaces (interactive TUI
@@ -219,9 +218,14 @@ func assembleInteractiveForGolden(t *testing.T, flags cliFlags) goldenInteractiv
 	var checkpointCtrl *checkpoint.Controller
 
 	registry := tools.NewRegistry()
-	wrap := toolWrappers{checkpoint: checkpointSpec}
-	askCh, codeIntel, processSession, toolSearcher, ftsClose := registerMediaAndOfficeTools(registry, home, dataDir, caps, wrap)
-	t.Cleanup(func() { codeIntel.Close(); processSession.Close(); tools.CloseBrowsers(); ftsClose() })
+	toolset := newInteractiveToolset(registry, home, dataDir, tomlCfg, checkpointSpec)
+	askCh, toolSearcher := toolset.AskCh, toolset.ToolSearcher
+	t.Cleanup(func() {
+		toolset.CodeIntel.Close()
+		toolset.ProcessSession.Close()
+		tools.CloseBrowsers()
+		toolset.FTSClose()
+	})
 	gate := installApprovalGate(dataDir, askCh, uiLanguage, "", false)
 	if err := toolSearcher.RebuildIndex(); err != nil {
 		t.Fatal(err)
@@ -242,17 +246,8 @@ func assembleInteractiveForGolden(t *testing.T, flags cliFlags) goldenInteractiv
 	})
 	memStore := memBundle.Project
 	memoryBriefing = memBundle.Briefing
-	registerMemoryTools(registry, memBundle)
-
-	ctxRunner := ctxexec.New(home)
-	ctxTool := tools.NewCtxExecuteTool(ctxRunner, home)
-	registry.MustRegister(checkpointSpec(ctxTool.Spec()))
-	goalTool := tools.NewGoalTool(goalSvc)
-	goalTool.SetDecompose(goalProviderAdapter{Provider: provider}, provider.Name())
-	registry.MustRegister(goalTool.Spec())
 	hostPower := systemhostpower.New(systemhostpower.Options{Execute: func(context.Context) error { return nil }})
 	t.Cleanup(func() { hostPower.Close() })
-	registry.MustRegister(toolhostpower.Spec())
 
 	darwinSystem := buildSystemPromptWithInstructions(goalSvc, "")
 	darwinTool := darwin.NewDarwinTool(provider, registry, home, darwinSystem)
@@ -260,7 +255,7 @@ func assembleInteractiveForGolden(t *testing.T, flags cliFlags) goldenInteractiv
 	darwinTool.SetReasoningEffort(tomlCfg.DarwinReasoningEffort)
 	darwinTool.SetPoolSize(tomlCfg.DarwinPoolSize)
 	darwinTool.SetLoopFactory(darwin.AgentLoopAdapter(registry, func(root string) (*tools.Registry, error) {
-		return buildChildToolRegistry(root), nil
+		return assembly.ChildToolset(root), nil
 	}))
 	darwinSequential := llm.IsLocalBaseURL(cfg.BaseURL)
 	if tomlCfg.DarwinParallel != nil {
@@ -268,8 +263,10 @@ func assembleInteractiveForGolden(t *testing.T, flags cliFlags) goldenInteractiv
 	}
 	darwinTool.SetSequential(darwinSequential)
 	darwinTool.SetAllowAutoMerge(tomlCfg.DarwinAutoMerge != nil && *tomlCfg.DarwinAutoMerge)
+	var darwinSpec *tools.Tool
 	if config.DarwinEnabled(tomlCfg) {
-		registry.MustRegister(darwinTool.Spec())
+		spec := darwinTool.Spec()
+		darwinSpec = &spec
 	}
 
 	taskWorkerCfg, taskWorkerOverride := resolveTaskWorkerConfig(tomlCfg, cfg)
@@ -293,10 +290,13 @@ func assembleInteractiveForGolden(t *testing.T, flags cliFlags) goldenInteractiv
 	tracker := credits.NewTracker(sessionID, credits.Budget{}, creditStorage)
 	t.Cleanup(func() { tracker.Close() })
 	llm.InitRequestBudget(dataDir)
-	sessStore, sessWriter := openSessionStack(dataDir, sessionID, home, cfg.Model, registry, tomlCfg)
+	sessStore, sessWriter := openSessionStack(dataDir, sessionID, home, cfg.Model, nil, tomlCfg)
 	if sessStore != nil {
 		t.Cleanup(func() { sessStore.Close() })
 	}
+	toolset.registerCore(memBundle, goalSvc, func(g *tools.GoalTool) {
+		g.SetDecompose(goalProviderAdapter{Provider: provider}, provider.Name())
+	}, darwinSpec, sessStore)
 	dr := wireDraftAndReflection(flags.DraftMode, flags.DraftModel, provider, provFactory, cfg, tierRules, tomlCfg, dataDir)
 	cw := wireContextWindows(dataDir, coordinatorCfg, tomlCfg, caps, compactProvider, registry, taskWorkerProvider, dr.Provider)
 
@@ -361,13 +361,11 @@ func assembleInteractiveForGolden(t *testing.T, flags cliFlags) goldenInteractiv
 	provMgr := setupProviderManager(dataDir, cwd, caps)
 	buildCouncilMember := makeCouncilMemberBuilder(provMgr, caps, cfg, provFactory)
 	wireConsultTool(provider, caps, cfg, provFactory, buildCouncilMember, loop, registry)
-	registerFileWebAndLineTools(registry, home, dataDir, tomlCfg, wrap, toolSearcher)
+	toolset.registerLate()
 	darwinTool.SetProviderResolver(loop.Provider)
 	loop.SetExternalSink(make(chan agent.Event, 16))
 	if supercliOrchestratorMode {
-		rootRegistry := agent.OrchestratorRegistry(registry)
-		rootRegistry.MustRegister(toolhostpower.Spec())
-		loop.SetRegistry(rootRegistry)
+		loop.SetRegistry(assembly.OrchestratorRegistry(registry, true))
 	}
 	return goldenInteractive{loop: loop, registry: registry, loopCfg: loopCfg, gate: gate, sessionID: sessionID, darwinSystem: darwinSystem, wrapped: recorder}
 }

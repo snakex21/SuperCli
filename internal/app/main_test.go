@@ -9,6 +9,7 @@ import (
 
 	"supercli/internal/account/pricing"
 	"supercli/internal/agent/darwin"
+	"supercli/internal/assembly"
 	"supercli/internal/llm"
 	"supercli/internal/storage"
 	"supercli/internal/storage/goal"
@@ -191,7 +192,7 @@ func testEchoConfig() config.Config {
 }
 
 func TestPlatformHint(t *testing.T) {
-	hint := platformHint()
+	hint := assembly.PlatformText()
 	switch runtime.GOOS {
 	case "windows":
 		if !strings.Contains(hint, "dir") || !strings.Contains(hint, "cmd /c") {

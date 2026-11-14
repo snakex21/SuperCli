@@ -3,7 +3,6 @@ package app
 import (
 	"log"
 	"os"
-	"runtime"
 	"strings"
 
 	"supercli/internal/llm"
@@ -13,16 +12,6 @@ import (
 
 // platformHint returns OS-specific shell hints so the model uses commands
 // appropriate for the current platform.
-func platformHint() string {
-	switch runtime.GOOS {
-	case "windows":
-		return "OS: Windows. Use 'dir' instead of 'ls', 'type' instead of 'cat', 'del' instead of 'rm', 'copy' instead of 'cp', 'move' instead of 'mv', backslash paths. For shell commands use cmd /c prefix."
-	case "darwin":
-		return "OS: macOS. Use standard Unix commands."
-	default:
-		return "OS: Linux. Use standard Unix commands."
-	}
-}
 
 func envTruthy(key string) bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
