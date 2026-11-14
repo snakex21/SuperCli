@@ -135,7 +135,13 @@ func forgetRuntimeContextRead(read *runtimeContextRead) {
 func ProviderRuntimeContext(baseURL, apiKey, model string) int {
 	runtimeContextState.Lock()
 	defer runtimeContextState.Unlock()
-	return runtimeContextState.snapshots[runtimeContextKey(baseURL, apiKey)].windows[model]
+	windows := runtimeContextState.snapshots[runtimeContextKey(baseURL, apiKey)].windows
+	if tokens := windows[model]; tokens > 0 {
+		return tokens
+	}
+	// Only single-model servers (llama-server) record the wildcard; it never
+	// crosses endpoints or credentials.
+	return windows[runtimeContextAnyModel]
 }
 
 func localNativeModelsRoot(baseURL string) string {
@@ -226,6 +232,17 @@ func RefreshLocalModelContexts(ctx context.Context, baseURL, apiKey string) erro
 		runtimeContextState.flights[key] = flight
 		go func() {
 			_, supported, err := fetchLocalNativeModelInfosForRead(workCtx, baseURL, apiKey, flight.read)
+			runtimeContextState.Lock()
+			stale := flight.read.invalidated
+			runtimeContextState.Unlock()
+			if !supported && err == nil && !stale {
+				// Not LM Studio: llama.cpp llama-server (/props) and Ollama
+				// (/api/ps) publish the loaded context in their own shapes.
+				if models, ok := fetchLocalServerRuntimeContexts(workCtx, baseURL, apiKey); ok {
+					rememberRuntimeContextRead(flight.read, models)
+					supported = true
+				}
+			}
 			cancel()
 			runtimeContextState.Lock()
 			flight.err, flight.closed = err, true
