@@ -27,7 +27,7 @@ func (l *Loop) completeOnce(ctx context.Context, toolRequest preparedToolRequest
 	// tool result. Never send a known oversized request (including retries),
 	// and never summarize the active user turn just to make it fit.
 	if estimate := l.nextRequestTokenEstimate(); requestEstimate > window.Tokens || estimate.Effective > window.Tokens {
-		return "", nil, nil, fmt.Errorf("agent: request exceeds context window after compaction (%d tokens, window %d); active user turn is preserved", max(requestEstimate, estimate.Effective), window.Tokens)
+		return "", nil, nil, fmt.Errorf("agent: request exceeds context window after compaction (%d tokens, window %d); active user turn is preserved. %s", max(requestEstimate, estimate.Effective), window.Tokens, contextWindowRemedy)
 	}
 	hardThreshold := autoCompactThreshold(window.Tokens)
 	effectiveThreshold, thresholdSource := l.effectiveCompactThreshold(hardThreshold, window.Source)
@@ -295,3 +295,8 @@ func (l *Loop) trailingContextMessage() llm.Message {
 	}
 	return llm.MessageWithContextBlocks(llm.RoleSystem, blocks)
 }
+
+// contextWindowRemedy tells the user how to get unstuck when a single turn no
+// longer fits the window. SuperCli stops instead of sending a prompt the server
+// would silently truncate (LM Studio/Ollama cut the middle and keep going).
+const contextWindowRemedy = "To continue: load the model with a larger context length in the model server (e.g. LM Studio or llama.cpp), or run /compact, or start a new conversation with a smaller request."
