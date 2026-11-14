@@ -70,7 +70,7 @@ func (t *ReadMany) execute(ctx context.Context, args json.RawMessage) (Result, e
 		return Result{Err: fmt.Errorf("read_many: reads is empty")}, nil
 	}
 	if len(requests) > maxReadManyRequests {
-		return Result{Err: fmt.Errorf("read_many: %d reads exceeds cap %d", len(requests), maxReadManyRequests)}, nil
+		return Result{Err: fmt.Errorf("read_many: %d reads exceeds cap %d; nothing read: split them into read_many calls of at most %d reads and send all of those calls in the same turn", len(requests), maxReadManyRequests, maxReadManyRequests)}, nil
 	}
 	work := expandReadManyRequests(t.BaseDir, requests)
 	if len(work) > maxReadManyRequests {
