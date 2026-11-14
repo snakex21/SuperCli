@@ -19,6 +19,9 @@ func (m Model) View() string {
 	if m.quitting {
 		return m.tr("tui.model_view.8f2ae4ad05")
 	}
+	if m.mode == modeAsking && m.pendingAsk != nil && m.pendingAsk.Confirmation && m.pendingAsk.Approval != nil {
+		return m.renderApprovalView()
+	}
 	if m.mode == modeAsking && m.pendingAsk != nil {
 		return renderAskView(m.pendingAsk, m.width, m.height, m.language)
 	}
@@ -134,6 +137,10 @@ func (m Model) renderHeader() string {
 	right := m.palette.Success.Inherit(bar).Render(mode) + bar.Render(" ")
 	if m.busy || m.mode == modeAsking || m.planMode {
 		right = m.palette.HeaderMode.Inherit(bar).Render(mode) + bar.Render(" ")
+	}
+	if m.mode == modeAsking && !m.planMode {
+		// The run waits for the user: pending (amber), not working.
+		right = m.palette.StatusPending.Inherit(bar).Render(mode) + bar.Render(" ")
 	}
 	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
