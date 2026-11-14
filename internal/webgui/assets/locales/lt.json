@@ -1141,5 +1141,5 @@
   "approval.summary.headless_close": "Uždaryti naršyklės seansą patikimame taikinyje „{target}“? Jo SuperCli profilis pašalinamas; tvarkyklė toliau veikia.",
   "approval.summary.headless_action": "Vykdyti „{action}“ patikimame taikinyje „{target}“? Tai pakeis pasirinktą virtualiąją mašiną arba naršyklės seansą.",
   "approval.field.warnings": "Įspėjimas",
-  "approval.summary.trash_outside_workspace": "Pašalinti {path}, kuris yra UŽ darbo srities ribų? Jis perkeliamas į projekto aplanką .supercli/trash, iš kurio jį galima atkurti."
+  "approval.summary.trash_outside_workspace": "Pašalinti {path}, kuris yra UŽ darbo srities ribų? Jis perkeliamas į projekto aplanką .supercli/trash ir iš ten jį galima atkurti."
 }

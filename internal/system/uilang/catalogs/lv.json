@@ -1018,5 +1018,5 @@
   "approval.summary.headless_close": "Vai aizvērt pārlūka sesiju uzticamajā mērķī “{target}”? Tās SuperCli profils tiek noņemts; draiveris turpina darboties.",
   "approval.summary.headless_action": "Vai izpildīt “{action}” uzticamajā mērķī “{target}”? Tas maina atlasīto virtuālo mašīnu vai pārlūka sesiju.",
   "approval.field.warnings": "Brīdinājums",
-  "approval.summary.trash_outside_workspace": "Noņemt {path}, kas atrodas ĀRPUS darbvietas? Tas tiek pārvietots uz projekta mapi .supercli/trash, no kurienes to var atjaunot."
+  "approval.summary.trash_outside_workspace": "Noņemt {path}, kas atrodas ĀRPUS darbvietas? Tas tiek pārvietots uz projekta mapi .supercli/trash un no turienes to var atjaunot."
 }
