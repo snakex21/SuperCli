@@ -61,6 +61,14 @@ var modelRates = map[string]Rate{
 
 	// OpenAI standard short-context API prices (July 2026). Codex OAuth
 	// is classified as subscription usage before these rates are consulted.
+	// GPT-6 family (developers.openai.com/docs/models, checked 2026-11-14):
+	// 1.05M context, 128k max output. Prompts over 272k input tokens are
+	// billed at 2x input/cache and 1.5x output; this table keeps the
+	// short-context rate.
+	"gpt-6-astra":         perMillion(10.00, 1.00, 50.00),
+	"gpt-6-sol":           perMillion(2.00, 0.20, 10.00),
+	"gpt-6.1-sol":         perMillion(2.00, 0.10, 10.00),
+	"gpt-6-luna":          perMillion(0.10, 0.01, 0.50),
 	"gpt-5.6-sol":         perMillion(5.00, 0.50, 30.00),
 	"gpt-5.6-terra":       perMillion(2.50, 0.25, 15.00),
 	"gpt-5.6-luna":        perMillion(1.00, 0.10, 6.00),
