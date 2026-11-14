@@ -78,9 +78,12 @@ func (l *Loop) runStep(
 	auxBefore := l.stepAuxWall
 	compactReason := ""
 	if l.takeServerTruncated() {
-		// The server silently cut the previous prompt to fit its n_ctx. Repair
-		// it exactly like a provider context-limit rejection (the full-history
-		// emergency split) instead of sending more prompts it will cut again.
+		// The server silently cut the previous prompt to fit its n_ctx. Handle
+		// it exactly like a provider context-limit rejection: compact completed
+		// older turns at the hard threshold (the running user turn is never
+		// summarized). When nothing older exists the window guard in
+		// completeOnce stops the run instead of sending prompts the server
+		// will keep cutting.
 		compactReason = "context-limit"
 	}
 	if !l.maybeModelHandoff(ctx, out) {
