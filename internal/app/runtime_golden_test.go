@@ -290,7 +290,7 @@ func assembleInteractiveForGolden(t *testing.T, flags cliFlags) goldenInteractiv
 	tracker := credits.NewTracker(sessionID, credits.Budget{}, creditStorage)
 	t.Cleanup(func() { tracker.Close() })
 	llm.InitRequestBudget(dataDir)
-	sessStore, sessWriter := openSessionStack(dataDir, sessionID, home, cfg.Model, nil, tomlCfg)
+	sessStore, sessWriter := openSessionStack(dataDir, sessionID, home, cfg.Model, tomlCfg)
 	if sessStore != nil {
 		t.Cleanup(func() { sessStore.Close() })
 	}

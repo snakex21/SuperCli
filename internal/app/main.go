@@ -514,7 +514,7 @@ func Main() {
 	llm.InitRequestBudget(dataDir)
 
 	// F13: session store + optional search_history tool.
-	sessStore, sessWriter := openSessionStack(dataDir, sessionID, home, cfg.Model, nil, tomlCfg)
+	sessStore, sessWriter := openSessionStack(dataDir, sessionID, home, cfg.Model, tomlCfg)
 	if sessStore != nil {
 		defer sessStore.Close()
 	}

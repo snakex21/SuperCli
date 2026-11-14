@@ -191,7 +191,7 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	batchErrorLog := openToolErrorLog(dataDir)
 	defer batchErrorLog.Close()
 	batchSessionID := fmt.Sprintf("batch-%d", time.Now().UnixNano())
-	usageStore, sessionWriter := openSessionStack(dataDir, batchSessionID, home, mainProvider.Name(), nil, tomlCfg)
+	usageStore, sessionWriter := openSessionStack(dataDir, batchSessionID, home, mainProvider.Name(), tomlCfg)
 	if usageStore != nil {
 		defer usageStore.Close()
 	}
