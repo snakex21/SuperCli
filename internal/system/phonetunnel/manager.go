@@ -43,6 +43,14 @@ type Manager struct {
 	active                      context.Context
 	process                     Process
 	done                        chan struct{}
+	now                         func() time.Time // test hook; nil means time.Now
+}
+
+func (m *Manager) clock() time.Time {
+	if m.now != nil {
+		return m.now()
+	}
+	return time.Now()
 }
 
 func New(dataDir string) *Manager {
@@ -55,7 +63,7 @@ func (m *Manager) Touch() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.status.State == "on" {
-		m.status.ExpiresAt = time.Now().Add(m.IdleTimeout)
+		m.status.ExpiresAt = m.clock().Add(m.IdleTimeout)
 	}
 }
 
@@ -164,7 +172,7 @@ func (m *Manager) run(ctx context.Context, target string, consent bool, progress
 		m.mu.Lock()
 		m.status.State = "on"
 		m.status.Host = host
-		m.status.ExpiresAt = time.Now().Add(m.IdleTimeout)
+		m.status.ExpiresAt = m.clock().Add(m.IdleTimeout)
 		m.mu.Unlock()
 	}
 	ticker := time.NewTicker(min(time.Second, m.IdleTimeout))
@@ -179,7 +187,7 @@ func (m *Manager) run(ctx context.Context, target string, consent bool, progress
 			return
 		case <-ticker.C:
 			m.mu.Lock()
-			idle := !time.Now().Before(m.status.ExpiresAt)
+			idle := !m.clock().Before(m.status.ExpiresAt)
 			if idle {
 				m.status.Reason = "idle"
 			}
