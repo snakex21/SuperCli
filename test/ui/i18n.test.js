@@ -119,3 +119,26 @@ test('dynamic translations refresh connected owners and stop updating removed pa
  ui.registerLanguageRefresh(active,()=>{active.textContent=ui.t('common.cancel');});ui.applyI18n();
  assert.equal(active.textContent,'Cancel');assert.equal(activeCalls,2,'replaced callbacks stop retaining and updating old content');
 });
+test('tn picks CLDR plural forms in every language and keeps "#" as the number',async()=>{
+ const ui=languageUI(); await ui.loadLanguage('pl');
+ assert.equal(ui.tn('run.toolCount',1),'1 narzędzie');
+ assert.equal(ui.tn('run.toolCount',3),'3 narzędzia');
+ assert.equal(ui.tn('run.toolCount',5),'5 narzędzi');
+ assert.equal(ui.tn('run.toolCount',22),'22 narzędzia');
+ ui.ui.lang='en';
+ assert.equal(ui.tn('run.toolCount',1),'1 tool');
+ assert.equal(ui.tn('run.toolCount',2),'2 tools');
+ for (const code of languages) {
+  const value=catalog(code)['run.toolCount'];
+  const forms=new Set([...value.matchAll(/(zero|one|two|few|many|other)\s*\{([^{}]*)\}/g)].map(m=>m[1]));
+  const rules=new Intl.PluralRules(code);
+  for (let n=0;n<120;n++) assert.ok(forms.has(rules.select(n)),code+' lacks the '+rules.select(n)+' form');
+ }
+});
+test('known backend notices and stop messages follow the UI language; unknown text stays',async()=>{
+ const ui=languageUI(); await ui.loadLanguage('pl');
+ assert.equal(ui.localizeSystemText('preflight: repo context ~42 tok (project turn)'),'Kontekst repozytorium ~42 tok (tura projektu)');
+ assert.match(ui.localizeSystemText('fake: provider error (HTTP 500) — retrying in 300ms (attempt 2/3)'),/^fake: błąd dostawcy AI \(HTTP 500\) — ponowienie za 300ms \(próba 2\/3\)$/);
+ assert.match(ui.localizeSystemText('agent: stopped — the last 8 consecutive tool rounds returned only previously observed successful results, with no new evidence'),/^Agent zatrzymany: .*: 8\./);
+ assert.equal(ui.localizeSystemText('something new from the backend'),'something new from the backend');
+});

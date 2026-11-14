@@ -128,6 +128,7 @@ function applyUI() {
   applyViewportScale();
   $("#shell").classList.toggle("sidebar-hidden", !!ui.sidebarHidden);
   applyI18n();
+  if (typeof refreshRunLabels === "function") refreshRunLabels();
   if (typeof activeModelID !== "undefined" && !activeModelID) $("#model-name").textContent = t("model.none");
   if (typeof promptQueue !== "undefined") renderPromptQueue();
 }
