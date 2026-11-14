@@ -179,16 +179,19 @@ func (l *Loop) prepareProviderMessages(estimate bool) ([]llm.Message, int) {
 			out = append(out, visible[lead:]...)
 		} else {
 			out = append(out, visible...)
+		}
+		trailing := make([]llm.Message, 0, 2)
+		if !(l.stableToolset && l.catalogHoist) {
 			if pre := l.thinToolsPreamble(); pre != "" {
-				out = append(out, llm.Message{Role: llm.RoleSystem, Content: pre, Origin: &llm.ContextOrigin{Source: llm.SourceInstructions}})
-				if cachedHistory {
-					tokens += llm.EstimateMessageTokens(out[len(out)-1])
-				}
+				trailing = append(trailing, llm.Message{Role: llm.RoleSystem, Content: pre, Origin: &llm.ContextOrigin{Source: llm.SourceInstructions}})
 			}
 		}
-		out = append(out, l.trailingContextMessage())
+		trailing = append(trailing, l.trailingContextMessage())
+		// Only a real request (estimate=true, completeOnce) pins its tail;
+		// previews render what the next request would send.
+		out, tailTokens := l.applyTailPins(out, trailing, estimate)
 		if cachedHistory {
-			tokens += llm.EstimateMessageTokens(out[len(out)-1])
+			tokens += tailTokens
 		}
 		if projectOwnedMediaProviderMessages(out) {
 			cachedHistory = false

@@ -26,6 +26,9 @@ type Profile struct {
 	NavigatorAuto         bool
 	NavigatorKeywordsOnly bool
 	CatalogHoist          bool
+	// ReplaceContextTail restores the legacy per-request tail placement
+	// (context_tail_pinning = false); the default keeps requests append-only.
+	ReplaceContextTail bool
 }
 
 // Resolve classifies model capability independently from the host. Small
@@ -59,7 +62,8 @@ func Resolve(cfg config.Config, tc config.TomlConfig, caps *llm.CapabilityRegist
 		// arms passing. Hoist is therefore the default whenever the thin
 		// catalog and stable toolset make it safe; the legacy env flag can
 		// still force the experiment for other profiles.
-		CatalogHoist: catalogHoist || (thinTools && stableToolset),
+		CatalogHoist:       catalogHoist || (thinTools && stableToolset),
+		ReplaceContextTail: !TailPinning(tc.ContextTailPinning, local),
 	}
 }
 
@@ -108,4 +112,16 @@ func TierRules(tc config.TomlConfig) []tier.Rule {
 		out = append(out, tier.Rule{Pattern: rule.Pattern, Tier: rule.Tier})
 	}
 	return out
+}
+
+// TailPinning resolves context_tail_pinning. Hosted prompt caches only reuse
+// a prefix a previous request ended with, so pinning is the default there.
+// Local llama.cpp-style servers reuse the longest common KV prefix anyway and
+// pay a re-evaluation whenever a pinned tail has to move, so they keep the
+// legacy per-request tail unless the config turns pinning on.
+func TailPinning(override *bool, localBackend bool) bool {
+	if override != nil {
+		return *override
+	}
+	return !localBackend
 }

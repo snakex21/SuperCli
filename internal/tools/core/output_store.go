@@ -71,7 +71,7 @@ func (s *OutputStore) CompactContext(ctx context.Context, toolName, text string)
 			fmt.Sprintf("\n[output preview only: %d bytes; result could not be retained within the store limit]", len(text))
 	}
 	preview, headEnd := headTailWithHeadEnd(text, outputPreviewHead, outputPreviewTail)
-	offset, limit := nextChunkHint(len(text), headEnd)
+	offset, limit := nextChunkHint(len(text), headEnd, readOutputMax(ctx))
 	return fmt.Sprintf("[large tool output: %d bytes; preview follows; handle=%s]\n%s\n"+
 		"[inspect more with read_output {\"handle\":%q,\"offset\":%d,\"limit\":%d}; %s]",
 		len(text), handle, preview, handle, offset, limit, outputLifetime(saved))
@@ -135,12 +135,24 @@ func (s *OutputStore) retainBehind(ctx context.Context, content, text string) st
 // actually stopped after line/UTF-8 alignment, and the limit is
 // the largest chunk read_output returns, clamped to what is left so the
 // hint never points past the end. Larger requests use the same output cap.
-func nextChunkHint(total, headEnd int) (offset, limit int) {
+func nextChunkHint(total, headEnd, pageMax int) (offset, limit int) {
 	offset = headEnd
-	if limit = total - offset; limit > outputReadMax {
-		limit = outputReadMax
+	if limit = total - offset; limit > pageMax {
+		limit = pageMax
 	}
 	return offset, limit
+}
+
+// outputReadLargeMax is the read_output page cap for large-context models.
+const outputReadLargeMax = 32 * 1024
+
+// readOutputMax sizes one read_output page from the active model's context
+// window: about 1/16 of the window (4 bytes per token), between the classic
+// 8 KiB page and 32 KiB. Paging a 30 KiB stored result 8 KiB at a time cost
+// four extra model turns, each re-sending the whole conversation; small
+// local contexts keep the 8 KiB page.
+func readOutputMax(ctx context.Context) int {
+	return min(max(ModelWindow(ctx)*4/16, outputReadMax), outputReadLargeMax)
 }
 
 func (s *OutputStore) put(text string) (string, bool) {
@@ -196,8 +208,8 @@ func (s *OutputStore) readContext(ctx context.Context, handle string, offset, li
 	if limit <= 0 {
 		limit = outputReadDefault
 	}
-	if limit > outputReadMax {
-		limit = outputReadMax
+	if pageMax := readOutputMax(ctx); limit > pageMax {
+		limit = pageMax
 	}
 	start := runeStartForward(text, offset)
 	end := start + limit
@@ -245,7 +257,7 @@ func (s *OutputStore) ReadOutputTool() Tool {
 		Name:        "read_output",
 		Description: "Read a byte range or search a stored tool result. query is a case-sensitive literal; offset resumes reading or searching.",
 		ReadOnly:    true,
-		Schema:      `{"type":"object","properties":{"handle":{"type":"string"},"offset":{"type":"integer"},"limit":{"type":"integer","description":"Bytes; capped at 8192"},"query":{"type":"string","maxLength":512}},"required":["handle"]}`,
+		Schema:      `{"type":"object","properties":{"handle":{"type":"string"},"offset":{"type":"integer"},"limit":{"type":"integer","description":"Bytes; up to 32768 on large-context models"},"query":{"type":"string","maxLength":512}},"required":["handle"]}`,
 		Fn: func(ctx context.Context, raw json.RawMessage) (Result, error) {
 			var args readOutputArgs
 			if err := json.Unmarshal(raw, &args); err != nil {

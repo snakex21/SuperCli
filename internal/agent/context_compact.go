@@ -41,6 +41,7 @@ func (l *Loop) LoadConversation(msgs []llm.Message) {
 	copy(messages, l.Messages[:keep])
 	copy(messages[keep:], cleaned)
 	l.Messages = messages
+	l.resetTailPins()
 	// The loaded body may come from a different session than this loop's
 	// writer (/resume); its model identity is unknown until the next call.
 	l.contextModel = contextModelState{loaded: true}
@@ -101,6 +102,7 @@ func (l *Loop) CompactPrefixWithSummary(summary string, upto int) int {
 	messages[keep] = sum
 	copy(messages[keep+1:], tail)
 	l.Messages = messages
+	l.resetTailPins()
 	l.resetHidden()
 	// Only the replaced prefix disappears. Preserve visibility for surviving
 	// system messages and the untouched tail after their indices shift.

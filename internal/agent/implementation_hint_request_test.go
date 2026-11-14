@@ -34,7 +34,15 @@ func TestImplementationGuidanceDoesNotAccumulateOrLeakIntoReadOnlyTurn(t *testin
 			if turn == 2 {
 				want = 0
 			}
-			if count != want || (want == 1 && !strings.Contains(request[len(request)-1].Content, implementationVerificationInstruction)) {
+			// The guidance lives in the request-only system tail (pinned where it
+			// was first sent, see loop_tail_pins.go), never in a user message.
+			inTail := false
+			for _, message := range request {
+				if message.Role == llm.RoleSystem && strings.Contains(message.Content, implementationVerificationInstruction) {
+					inTail = true
+				}
+			}
+			if count != want || (want == 1 && !inTail) {
 				t.Fatalf("thin=%v turn=%d guidance copies=%d, want=%d", thin, turn, count, want)
 			}
 			for _, message := range loop.AllMessages() {

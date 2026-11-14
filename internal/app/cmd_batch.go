@@ -255,6 +255,7 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		ThinTools:             execProfile.ThinTools,
 		StableToolset:         execProfile.StableToolset,
 		CatalogHoist:          execProfile.CatalogHoist,
+		ReplaceContextTail:    execProfile.ReplaceContextTail,
 		Orchestrator:          orchHard,
 		// Batch uses the same source-aware cascade as TUI/WebGUI. This is
 		// memory-only: explicit budget bounded by the loaded runtime capacity,
@@ -295,7 +296,7 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	// discovery turns as in the TUI. Appended to the user prompt side.
 	if resolvePreflightRepo(tomlCfg.PreflightRepo) {
 		l.SetNextCoordinatorAddonSource(func(ctx context.Context) string {
-			block := preflight.BuildContext(ctx, home, preflight.Options{})
+			block := preflight.BuildContext(ctx, home, preflight.Options{Layout: true})
 			if block != "" && ctx.Err() == nil {
 				fmt.Fprintf(os.Stderr, "[preflight] repo context ~%d tok (project turn)\n", preflight.EstimateTokens(block))
 			}
@@ -333,7 +334,7 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	// coordinator's first turn (cold contexts benefit most).
 	if resolvePreflightRepo(tomlCfg.PreflightRepo) {
 		at.PreflightContext = func(ctx context.Context) string {
-			return preflight.BuildContext(ctx, home, preflight.Options{})
+			return preflight.BuildContext(ctx, home, preflight.Options{Layout: true})
 		}
 	}
 	if orchMode.hard() {
