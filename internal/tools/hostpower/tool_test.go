@@ -66,6 +66,19 @@ func invoke(ctx context.Context, args string) core.Result {
 	}
 	return r
 }
+
+// invokeGated runs the call the way the agent loop does: through a registry
+// whose approver is the host approval gate.
+func invokeGated(ctx context.Context, args string) core.Result {
+	registry := core.NewRegistry()
+	registry.MustRegister(Spec())
+	ctx = core.WithApprover(ctx, &interactive.ApprovalGate{})
+	r, err := registry.Execute(ctx, "host_power", json.RawMessage(args))
+	if err != nil {
+		return core.Result{Err: err}
+	}
+	return r
+}
 func armArgs(e *testEnv) string {
 	b, _ := json.Marshal(map[string]string{"action": "arm", "goal_id": e.goal.ID})
 	return string(b)
@@ -81,11 +94,11 @@ func consent(t *testing.T, ctx context.Context, args string, respond func(intera
 	ch := make(chan interactive.AskRequest, 1)
 	ctx = interactive.WithAskChannel(ctx, ch)
 	result := make(chan core.Result, 1)
-	go func() { result <- invoke(ctx, args) }()
+	go func() { result <- invokeGated(ctx, args) }()
 	select {
 	case request := <-ch:
-		if !request.Confirmation {
-			t.Fatal("not trusted confirmation")
+		if !request.Confirmation || request.Approval == nil {
+			t.Fatal("not a trusted approval card")
 		}
 		respond(request)
 	case r := <-result:
@@ -102,7 +115,7 @@ func consent(t *testing.T, ctx context.Context, args string, respond func(intera
 	}
 }
 func allow(r interactive.AskRequest) {
-	r.Respond <- interactive.AskAnswer{Selected: []string{"Allow once"}}
+	r.Respond <- interactive.AskAnswer{Selected: []string{r.Approval.ApproveLabel}}
 }
 func complete(t *testing.T, e *testEnv) {
 	t.Helper()
@@ -154,6 +167,7 @@ func TestUnboundAndWorkersDeniedBeforeAsking(t *testing.T) {
 			ctx = interactive.WithAskChannel(ctx, ch)
 			for _, args := range []string{armArgs(e), `{"action":"status"}`, `{"action":"cancel"}`} {
 				requireError(t, invoke(ctx, args), "bound root")
+				requireError(t, invokeGated(ctx, args), "bound root")
 			}
 			if len(ch) != 0 {
 				t.Fatal("unauthorized caller asked for confirmation")
@@ -167,25 +181,34 @@ func TestConsentRejection(t *testing.T) {
 		name   string
 		answer interactive.AskAnswer
 	}{
-		{"cancel choice", interactive.AskAnswer{Selected: []string{"Cancel"}}},
-		{"cancel flag", interactive.AskAnswer{Selected: []string{"Allow once"}, Cancelled: true}},
-		{"custom text", interactive.AskAnswer{Custom: "Allow once"}},
-		{"custom plus choice", interactive.AskAnswer{Selected: []string{"Allow once"}, Custom: "yes"}},
-		{"multiple", interactive.AskAnswer{Selected: []string{"Allow once", "Cancel"}}},
+		{"deny choice", interactive.AskAnswer{Selected: []string{"Deny"}}},
+		{"legacy allow label", interactive.AskAnswer{Selected: []string{"Allow once"}}},
+		{"cancel flag", interactive.AskAnswer{Selected: []string{"Approve"}, Cancelled: true}},
+		{"custom text", interactive.AskAnswer{Custom: "Approve"}},
+		{"custom plus choice", interactive.AskAnswer{Selected: []string{"Approve"}, Custom: "yes"}},
+		{"multiple", interactive.AskAnswer{Selected: []string{"Approve", "Deny"}}},
 		{"empty", interactive.AskAnswer{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := env(t)
 			r := consent(t, e.ctx, armArgs(e), func(q interactive.AskRequest) { q.Respond <- tc.answer })
-			requireError(t, r, "not approved")
+			requireError(t, r, "NOT executed")
 			if e.controller.Snapshot().Status != "idle" {
 				t.Fatal(e.controller.Snapshot())
 			}
 		})
 	}
 	e := env(t)
-	requireError(t, invoke(e.ctx, armArgs(e)), "interactive GUI or TUI")
+	// Execute reached without the gate never arms.
+	requireError(t, invoke(e.ctx, armArgs(e)), "not approved")
+	// Without an interactive UI the gate denies by default.
+	requireError(t, invokeGated(e.ctx, armArgs(e)), "no interactive approval UI")
+	// The model cannot confirm on its own: there is no such argument.
 	requireError(t, invoke(e.ctx, `{"action":"arm","goal_id":"`+e.goal.ID+`","confirmed":true}`), "unknown field")
+	requireError(t, invokeGated(e.ctx, `{"action":"arm","goal_id":"`+e.goal.ID+`","confirm":true}`), "invalid tool arguments")
+	if e.controller.Snapshot().Status != "idle" {
+		t.Fatal(e.controller.Snapshot())
+	}
 }
 
 func TestConsentSuccessTrustedTitleAndSnapshot(t *testing.T) {
@@ -195,6 +218,9 @@ func TestConsentSuccessTrustedTitleAndSnapshot(t *testing.T) {
 		asks++
 		if !strings.Contains(q.Question, e.goal.Title) || !strings.Contains(q.Question, e.goal.ID) {
 			t.Error(q.Question)
+		}
+		if a := q.Approval; a.Tool != "host_power" || a.Operation != "arm_shutdown" || a.Risk != core.RiskExternal || a.Reversible || a.SimilarLabel != "" {
+			t.Errorf("approval card = %+v", a)
 		}
 		allow(q)
 	})

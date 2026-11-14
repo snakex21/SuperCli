@@ -110,3 +110,27 @@ test('Polish catalog localizes the card', async () => {
   assert.equal(h.button('approval-deny').textContent, 'Odrzuć');
   assert.match(h.button('approval-similar').textContent, /Zatwierdź podobne w tej sesji/);
 });
+
+test('summary_key re-localizes host_power and headless cards; argument text stays literal', async () => {
+  const h = harness(polish);
+  h.c.showApprovalCard(request({tool: 'host_power', operation: 'arm_shutdown', risk: 'external_side_effect', reversible: false,
+    similar_label: '', count: -1, account: '', account_name: '', folder: '', destination: '', samples: [],
+    summary: 'English fallback', summary_key: 'hostPower.confirm', summary_args: {goal: 'Ship {seconds} release'}}));
+  const op = h.card().querySelector('.approval-op').textContent;
+  assert.equal(op, polish['hostPower.confirm'].replace('{goal}', 'Ship {seconds} release'));
+  assert.equal(h.card().querySelector('.approval-detail').hidden, true);
+
+  const k = harness(polish);
+  k.c.showApprovalCard(request({tool: 'headless_control', operation: 'type', risk: 'external_side_effect', reversible: false,
+    similar_label: '', count: -1, samples: [], summary: 'English fallback', summary_key: 'approval.summary.headless_action',
+    summary_args: {target: 'lab', action: 'type'}, summary_detail: '{"text":"<b>hi</b>"}'}));
+  assert.equal(k.card().querySelector('.approval-op').textContent, polish['approval.summary.headless_action'].replace('{action}', 'type').replace('{target}', 'lab'));
+  const detail = k.card().querySelector('.approval-detail');
+  assert.equal(detail.hidden, false);
+  assert.equal(detail.textContent, '{"text":"<b>hi</b>"}');
+  assert.equal(detail.querySelectorAll('b').length, 0, 'detail is text, never markup');
+
+  const u = harness();
+  u.c.showApprovalCard(request({operation: 'unknown_op', summary: 'Server summary', summary_key: 'approval.summary.missing'}));
+  assert.equal(u.card().querySelector('.approval-op').textContent, 'Server summary');
+});

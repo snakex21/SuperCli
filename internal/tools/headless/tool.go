@@ -13,7 +13,6 @@ import (
 	"strings"
 	"supercli/internal/system/config"
 	"supercli/internal/tools/core"
-	"supercli/internal/tools/interactive"
 	"supercli/internal/tools/media"
 	"sync"
 	"time"
@@ -23,20 +22,17 @@ type Tool struct {
 	BaseDir, DataDir string
 	scope            config.HeadlessConf
 	scopeErr         error
-	confirmation     chan<- interactive.AskRequest
 }
 
-func New(baseDir, dataDir string, confirmation ...chan<- interactive.AskRequest) *Tool {
+// New snapshots the trusted [headless.targets] scope. Mutating actions are
+// approved through the host approval gate (Tool.Approval), never by the model.
+func New(baseDir, dataDir string) *Tool {
 	scope, err := config.LoadHeadless(dataDir)
-	t := &Tool{BaseDir: baseDir, DataDir: dataDir, scope: scope, scopeErr: err}
-	if len(confirmation) > 0 {
-		t.confirmation = confirmation[0]
-	}
-	return t
+	return &Tool{BaseDir: baseDir, DataDir: dataDir, scope: scope, scopeErr: err}
 }
 func (t *Tool) Spec() core.Tool {
 	return core.Tool{Name: "headless_control", Description: "Control an operator-allowlisted local headless QEMU (qmp) or browser (webdriver). Requires global [headless.targets] configuration; mutations require interactive per-action approval. Start QEMU/driver once with process_session; reuse endpoint/session. QMP: status, keys (one chord), type (text as keystrokes, \n = Enter; one call instead of per-key calls; layout must match the guest keyboard: us = ASCII, pl = Polish programmer adds ąćęłńóśźż via AltGr), click, screenshot, wait_event; screenshot_after=true on keys/click/type returns the resulting screen in the same call. For text output from the guest, start QEMU with -serial file:<path> or -serial stdio and read that instead of inferring text from screenshots. WebDriver: open headless browser, status, inspect semantic DOM, navigate, click/type CSS selector, screenshot, close. Prefer inspect/status over image inference. Chat preview is automatic; attach=true only for pixel analysis. Does not change host mouse/keyboard or foreground window.",
-		Schema: `{"type":"object","properties":{"protocol":{"type":"string","enum":["qmp","webdriver"]},"endpoint":{"type":"string","description":"Explicit loopback endpoint: tcp://127.0.0.1:4444 QMP or http://127.0.0.1:9515 WebDriver"},"action":{"type":"string","enum":["open","status","inspect","navigate","keys","click","type","screenshot","wait_event","close"]},"session_id":{"type":"string"},"browser":{"type":"string","enum":["chrome","firefox"],"default":"chrome"},"binary":{"type":"string","description":"Optional browser executable"},"url":{"type":"string"},"selector":{"type":"string","description":"WebDriver CSS selector"},"text":{"type":"string","maxLength":4096,"description":"WebDriver type text, or QMP type text"},"layout":{"type":"string","enum":["us","pl"],"default":"us","description":"QMP type: guest keyboard layout"},"delay_ms":{"type":"integer","minimum":0,"maximum":1000,"description":"QMP type: pause between characters, default 40"},"screenshot_after":{"type":"boolean","default":false,"description":"QMP keys/click/type: capture the screen after the action in the same call"},"settle_ms":{"type":"integer","minimum":0,"maximum":10000,"description":"Wait before screenshot_after, default 300"},"keys":{"type":"array","items":{"type":"string"},"maxItems":16,"description":"QMP qcode chord, e.g. [ctrl,alt,delete]"},"x":{"type":"integer","minimum":0,"maximum":32767},"y":{"type":"integer","minimum":0,"maximum":32767},"button":{"type":"string","enum":["left","right","middle"],"default":"left"},"event":{"type":"string","description":"QMP event to await without polling, e.g. SHUTDOWN"},"attach":{"type":"boolean","default":false},"image_detail":{"type":"string","enum":["auto","original"],"default":"auto"},"timeout_ms":{"type":"integer","minimum":1000,"maximum":300000,"default":30000}},"required":["protocol","endpoint","action"]}`, Fn: t.Execute}
+		Schema: `{"type":"object","properties":{"protocol":{"type":"string","enum":["qmp","webdriver"]},"endpoint":{"type":"string","description":"Explicit loopback endpoint: tcp://127.0.0.1:4444 QMP or http://127.0.0.1:9515 WebDriver"},"action":{"type":"string","enum":["open","status","inspect","navigate","keys","click","type","screenshot","wait_event","close"]},"session_id":{"type":"string"},"browser":{"type":"string","enum":["chrome","firefox"],"default":"chrome"},"binary":{"type":"string","description":"Optional browser executable"},"url":{"type":"string"},"selector":{"type":"string","description":"WebDriver CSS selector"},"text":{"type":"string","maxLength":4096,"description":"WebDriver type text, or QMP type text"},"layout":{"type":"string","enum":["us","pl"],"default":"us","description":"QMP type: guest keyboard layout"},"delay_ms":{"type":"integer","minimum":0,"maximum":1000,"description":"QMP type: pause between characters, default 40"},"screenshot_after":{"type":"boolean","default":false,"description":"QMP keys/click/type: capture the screen after the action in the same call"},"settle_ms":{"type":"integer","minimum":0,"maximum":10000,"description":"Wait before screenshot_after, default 300"},"keys":{"type":"array","items":{"type":"string"},"maxItems":16,"description":"QMP qcode chord, e.g. [ctrl,alt,delete]"},"x":{"type":"integer","minimum":0,"maximum":32767},"y":{"type":"integer","minimum":0,"maximum":32767},"button":{"type":"string","enum":["left","right","middle"],"default":"left"},"event":{"type":"string","description":"QMP event to await without polling, e.g. SHUTDOWN"},"attach":{"type":"boolean","default":false},"image_detail":{"type":"string","enum":["auto","original"],"default":"auto"},"timeout_ms":{"type":"integer","minimum":1000,"maximum":300000,"default":30000}},"required":["protocol","endpoint","action"]}`, Fn: t.Execute, Approval: t.approval}
 }
 
 type params struct {
@@ -64,34 +60,36 @@ type params struct {
 	Layout          string `json:"layout"`
 }
 
-func (t *Tool) Execute(ctx context.Context, raw json.RawMessage) (core.Result, error) {
-	if len(raw) > 64<<10 {
-		return core.Result{Err: fmt.Errorf("headless_control: arguments exceed 64 KiB")}, nil
-	}
+// normalize decodes and canonicalizes one call. Both the approval request and
+// Execute use it, so the user approves exactly the arguments that run.
+func normalize(raw json.RawMessage) (params, time.Duration, error) {
 	var p params
+	if len(raw) > 64<<10 {
+		return p, 0, fmt.Errorf("headless_control: arguments exceed 64 KiB")
+	}
 	if err := json.Unmarshal(raw, &p); err != nil {
-		return core.Result{Err: fmt.Errorf("headless_control: invalid arguments: %w", err)}, nil
+		return p, 0, fmt.Errorf("headless_control: invalid arguments: %w", err)
 	}
 	if p.Protocol == "qmp" && p.Action == "click" {
 		var fields map[string]json.RawMessage
 		_ = json.Unmarshal(raw, &fields)
 		if len(fields["x"]) == 0 || len(fields["y"]) == 0 || string(fields["x"]) == "null" || string(fields["y"]) == "null" {
-			return core.Result{Err: fmt.Errorf("QMP click requires x and y absolute coordinates")}, nil
+			return p, 0, fmt.Errorf("QMP click requires x and y absolute coordinates")
 		}
 	}
 	if p.Protocol != "qmp" && p.Protocol != "webdriver" {
-		return core.Result{Err: fmt.Errorf("headless_control: protocol must be qmp or webdriver")}, nil
+		return p, 0, fmt.Errorf("headless_control: protocol must be qmp or webdriver")
 	}
 	if p.Protocol == "webdriver" && (p.ScreenshotAfter || p.DelayMS != 0 || p.SettleMS != 0 || p.Layout != "") {
-		return core.Result{Err: fmt.Errorf("headless_control: delay_ms, screenshot_after, settle_ms and layout are QMP-only")}, nil
+		return p, 0, fmt.Errorf("headless_control: delay_ms, screenshot_after, settle_ms and layout are QMP-only")
 	}
 	if p.ImageDetail != "" && p.ImageDetail != "auto" && p.ImageDetail != "original" {
-		return core.Result{Err: fmt.Errorf("headless_control: image_detail must be auto or original")}, nil
+		return p, 0, fmt.Errorf("headless_control: image_detail must be auto or original")
 	}
 	duration := 30 * time.Second
 	if p.TimeoutMS != 0 {
 		if p.TimeoutMS < 1000 || p.TimeoutMS > 300000 {
-			return core.Result{Err: fmt.Errorf("headless_control: timeout_ms must be 1000..300000")}, nil
+			return p, 0, fmt.Errorf("headless_control: timeout_ms must be 1000..300000")
 		}
 		duration = time.Duration(p.TimeoutMS) * time.Millisecond
 	}
@@ -101,7 +99,7 @@ func (t *Tool) Execute(ctx context.Context, raw json.RawMessage) (core.Result, e
 	}
 	endpoint, err := localEndpoint(p.Endpoint, scheme)
 	if err != nil {
-		return core.Result{Err: err}, nil
+		return p, 0, err
 	}
 	p.Endpoint = endpoint.String()
 	if p.TimeoutMS == 0 {
@@ -115,6 +113,14 @@ func (t *Tool) Execute(ctx context.Context, raw json.RawMessage) (core.Result, e
 	}
 	if p.Action == "click" && p.Button == "" {
 		p.Button = "left"
+	}
+	return p, duration, nil
+}
+
+func (t *Tool) Execute(ctx context.Context, raw json.RawMessage) (core.Result, error) {
+	p, duration, err := normalize(raw)
+	if err != nil {
+		return core.Result{Err: err}, nil
 	}
 	if err := t.authorize(ctx, p); err != nil {
 		return core.Result{Err: fmt.Errorf("headless_control: %w", err)}, nil

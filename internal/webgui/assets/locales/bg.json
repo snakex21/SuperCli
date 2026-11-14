@@ -1134,5 +1134,10 @@
   "approval.op.create_address_book": "Create an address book?",
   "approval.op.add_contacts": "Add contacts?",
   "approval.op.update_contact": "Update a contact?",
-  "approval.op.trash_outside_workspace": "Remove a file outside the workspace?"
+  "approval.op.trash_outside_workspace": "Remove a file outside the workspace?",
+  "approval.summary.generate_image": "Да се генерира ли едно изображение с модела {model} на {provider}? Подканата и параметрите се изпращат до {endpoint}, а доставчикът може да таксува генерирането. Няма автоматичен повторен опит или платена резервна опция.",
+  "approval.summary.generate_video": "Да се генерира ли едно видео с модела {model} на {provider}? Подканата и параметрите се изпращат до {endpoint}, а доставчикът може да таксува генерирането. Няма автоматичен повторен опит или платена резервна опция.",
+  "approval.summary.headless_open": "Да се стартира ли сесия на браузър без графичен интерфейс на доверената цел „{target}“? Профилът ѝ се създава в преносимата директория за данни и сесията може да отвори заявения адрес.",
+  "approval.summary.headless_close": "Да се затвори ли сесия на браузър на доверената цел „{target}“? Профилът ѝ в SuperCli се премахва; драйверът продължава да работи.",
+  "approval.summary.headless_action": "Да се изпълни ли „{action}“ на доверената цел „{target}“? Това променя избраната виртуална машина или сесия на браузър."
 }

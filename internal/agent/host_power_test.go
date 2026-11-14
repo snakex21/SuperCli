@@ -135,18 +135,25 @@ func hostPowerTestApproval(t *testing.T) (context.Context, *atomic.Int32) {
 			select {
 			case request := <-requests:
 				count.Add(1)
-				request.Respond <- interactive.AskAnswer{Selected: []string{"Allow once"}}
+				if request.Approval == nil {
+					request.Respond <- interactive.AskAnswer{Cancelled: true}
+					continue
+				}
+				request.Respond <- interactive.AskAnswer{Selected: []string{request.Approval.ApproveLabel}}
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
-	return interactive.WithAskChannel(ctx, requests), count
+	// host_power arms only through the host approval gate.
+	return interactive.WithAskChannel(tools.WithApprover(ctx, &interactive.ApprovalGate{}), requests), count
 }
 
 func armHostPowerToolTest(ctx context.Context, goalID string) error {
 	args, _ := json.Marshal(map[string]string{"action": "arm", "goal_id": goalID})
-	result, err := toolhostpower.Spec().Fn(ctx, args)
+	registry := tools.NewRegistry()
+	registry.MustRegister(toolhostpower.Spec())
+	result, err := registry.Execute(ctx, "host_power", args)
 	if err != nil {
 		return err
 	}

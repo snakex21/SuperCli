@@ -1134,5 +1134,10 @@
   "approval.op.create_address_book": "Create an address book?",
   "approval.op.add_contacts": "Add contacts?",
   "approval.op.update_contact": "Update a contact?",
-  "approval.op.trash_outside_workspace": "Remove a file outside the workspace?"
+  "approval.op.trash_outside_workspace": "Remove a file outside the workspace?",
+  "approval.summary.generate_image": "Eén afbeelding genereren met het {provider}-model {model}? De prompt en parameters worden naar {endpoint} verzonden en de provider kan kosten in rekening brengen voor het genereren. Er is geen automatische nieuwe poging en geen betaald alternatief.",
+  "approval.summary.generate_video": "Eén video genereren met het {provider}-model {model}? De prompt en parameters worden naar {endpoint} verzonden en de provider kan kosten in rekening brengen voor het genereren. Er is geen automatische nieuwe poging en geen betaald alternatief.",
+  "approval.summary.headless_open": "Een headless browsersessie starten op het vertrouwde doel ‘{target}’? Het profiel wordt aangemaakt in de draagbare gegevensmap en de sessie kan het gevraagde adres openen.",
+  "approval.summary.headless_close": "Een browsersessie sluiten op het vertrouwde doel ‘{target}’? Het SuperCli-profiel wordt verwijderd; de driver blijft actief.",
+  "approval.summary.headless_action": "‘{action}’ uitvoeren op het vertrouwde doel ‘{target}’? Dit wijzigt de geselecteerde virtuele machine of browsersessie."
 }

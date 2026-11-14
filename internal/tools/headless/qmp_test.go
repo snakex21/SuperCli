@@ -88,7 +88,7 @@ func executeQMP(t *testing.T, tool *Tool, endpoint, action string, extra map[str
 	}
 	data, _ := json.Marshal(p)
 	ctx := fixtureApproval(t, context.Background(), tool, "qmp", endpoint)
-	result, err := tool.Execute(ctx, data)
+	result, err := gatedExecute(tool, ctx, data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +270,7 @@ func TestQMPCancelClosesOnlyControlConnection(t *testing.T) {
 	raw, _ := json.Marshal(map[string]any{"protocol": "qmp", "endpoint": "tcp://" + listener.Addr().String(), "action": "wait_event", "event": "SHUTDOWN"})
 	tool := New(t.TempDir(), t.TempDir())
 	ctx = fixtureApproval(t, ctx, tool, "qmp", "tcp://"+listener.Addr().String())
-	go func() { result, _ := tool.Execute(ctx, raw); resultCh <- result }()
+	go func() { result, _ := gatedExecute(tool, ctx, raw); resultCh <- result }()
 	<-ready
 	cancel()
 	result := <-resultCh

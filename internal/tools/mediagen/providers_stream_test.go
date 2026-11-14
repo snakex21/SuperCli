@@ -16,7 +16,7 @@ import (
 
 func TestFalStatusStreamURLPreservesScopeAndEscaping(t *testing.T) {
 	base, _ := url.Parse("https://queue.fal.run")
-	tool := NewVideo(".", nil, nil)
+	tool := NewVideo(".", nil)
 	rc := runtimeConfig{base: base}
 	for _, tc := range []struct{ raw, want string }{
 		{"https://queue.fal.run/jobs/job/status", "https://queue.fal.run/jobs/job/status/stream"},

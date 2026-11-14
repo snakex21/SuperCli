@@ -2,7 +2,8 @@
 .approval-card { border-left-color: var(--accent); }
 .approval-card.irreversible { border-left-color: var(--danger); }
 .approval-card:focus { outline: none; }
-.approval-summary { margin-top: 8px; color: var(--muted); line-height: 1.45; overflow-wrap: anywhere; }
+.approval-summary { margin-top: 8px; color: var(--muted); line-height: 1.45; overflow-wrap: anywhere; white-space: pre-line; }
+.approval-detail { margin: 8px 0 0; max-height: 12em; overflow: auto; padding: 8px 10px; border-radius: 6px; background: rgba(127, 127, 127, 0.12); font-size: 12px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
 .approval-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .approval-badge { font: 10.5px var(--mono); text-transform: uppercase; letter-spacing: .06em; padding: 3px 7px; border: 1px solid var(--line); color: var(--muted); }
 .approval-badge.irreversible, .approval-badge.risk-destructive { color: var(--danger); border-color: var(--danger); }

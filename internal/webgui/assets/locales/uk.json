@@ -1134,5 +1134,10 @@
   "approval.op.create_address_book": "Create an address book?",
   "approval.op.add_contacts": "Add contacts?",
   "approval.op.update_contact": "Update a contact?",
-  "approval.op.trash_outside_workspace": "Remove a file outside the workspace?"
+  "approval.op.trash_outside_workspace": "Remove a file outside the workspace?",
+  "approval.summary.generate_image": "Згенерувати одне зображення за допомогою моделі {model} від {provider}? Запит і параметри надсилаються на {endpoint}, і провайдер може стягнути плату за генерацію. Автоматичного повтору та платного резервного варіанта немає.",
+  "approval.summary.generate_video": "Згенерувати одне відео за допомогою моделі {model} від {provider}? Запит і параметри надсилаються на {endpoint}, і провайдер може стягнути плату за генерацію. Автоматичного повтору та платного резервного варіанта немає.",
+  "approval.summary.headless_open": "Запустити сеанс браузера без інтерфейсу на довіреній цілі «{target}»? Його профіль створюється в портативному каталозі даних, і він може відкрити запитану адресу.",
+  "approval.summary.headless_close": "Закрити сеанс браузера на довіреній цілі «{target}»? Його профіль SuperCli видаляється; драйвер продовжує працювати.",
+  "approval.summary.headless_action": "Виконати «{action}» на довіреній цілі «{target}»? Це змінить вибрану віртуальну машину або сеанс браузера."
 }

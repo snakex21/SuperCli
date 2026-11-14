@@ -1134,5 +1134,10 @@
   "approval.op.create_address_book": "Create an address book?",
   "approval.op.add_contacts": "Add contacts?",
   "approval.op.update_contact": "Update a contact?",
-  "approval.op.trash_outside_workspace": "Remove a file outside the workspace?"
+  "approval.op.trash_outside_workspace": "Remove a file outside the workspace?",
+  "approval.summary.generate_image": "{provider} sağlayıcısının {model} modeliyle bir görüntü oluşturulsun mu? İstem ve parametreler {endpoint} adresine gönderilir ve sağlayıcı oluşturma için ücret alabilir. Otomatik yeniden deneme veya ücretli yedek seçenek yoktur.",
+  "approval.summary.generate_video": "{provider} sağlayıcısının {model} modeliyle bir video oluşturulsun mu? İstem ve parametreler {endpoint} adresine gönderilir ve sağlayıcı oluşturma için ücret alabilir. Otomatik yeniden deneme veya ücretli yedek seçenek yoktur.",
+  "approval.summary.headless_open": "Güvenilir “{target}” hedefinde başsız bir tarayıcı oturumu başlatılsın mı? Oturumun profili taşınabilir veri dizininde oluşturulur ve oturum istenen adresi açabilir.",
+  "approval.summary.headless_close": "Güvenilir “{target}” hedefindeki bir tarayıcı oturumu kapatılsın mı? Oturumun SuperCli profili kaldırılır; sürücü çalışmaya devam eder.",
+  "approval.summary.headless_action": "Güvenilir “{target}” hedefinde “{action}” çalıştırılsın mı? Bu, seçili sanal makineyi veya tarayıcı oturumunu değiştirir."
 }

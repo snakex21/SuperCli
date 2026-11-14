@@ -280,6 +280,7 @@ type (
 var (
 	SetDefaultApprover  = core.SetDefaultApprover
 	WithApprovalSession = core.WithApprovalSession
+	WithApprover        = core.WithApprover
 )
 
 // Workflow / agent-facing tools.

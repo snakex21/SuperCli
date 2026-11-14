@@ -10,6 +10,26 @@ function approvalText(key, fallback) {
   return value === key ? fallback : value;
 }
 
+/* A trusted summary_key localizes the summary in the current UI language; its
+   {name} placeholders are filled in one pass from summary_args, so argument
+   text is never re-expanded. summary_detail is untranslated data (exact
+   arguments) shown below it. Without a catalog entry the server text, which
+   already ends with the detail, stays. */
+function approvalSummary(a, q) {
+  var key = a.summary_key;
+  if (key) {
+    var text = t(key);
+    if (text !== key) {
+      var args = a.summary_args || {};
+      text = text.replace(/\{([a-z_]+)\}/g, function (match, name) {
+        return Object.prototype.hasOwnProperty.call(args, name) ? String(args[name]) : match;
+      });
+      return { text: text, detail: a.summary_detail || "" };
+    }
+  }
+  return { text: a.summary || q.question || "", detail: "" };
+}
+
 function approvalRow(list, labelKey, value) {
   if (value === undefined || value === null || value === "") return;
   var row = el("div", "approval-row");
@@ -35,17 +55,26 @@ function showApprovalCard(q) {
   head.appendChild(i18nEl("span", "question-kicker", "approval.title"));
   var title = el("h2", "question-text approval-op");
   title.id = titleId;
+  var summary = el("p", "approval-summary", "");
+  summary.id = descId;
+  var detail = el("pre", "approval-detail", "");
   function refreshTitle() {
-    title.textContent = approvalText("approval.op." + a.operation, a.summary || q.question || "");
+    var s = approvalSummary(a, q);
+    var heading = approvalText("approval.op." + a.operation, "");
+    // Without an operation title the summary itself is the heading; it is
+    // not repeated below it.
+    title.textContent = heading || s.text;
+    summary.textContent = heading ? s.text : "";
+    summary.hidden = !heading;
+    detail.textContent = s.detail;
+    detail.hidden = !s.detail;
   }
   registerLanguageRefresh(title, refreshTitle);
   refreshTitle();
   head.appendChild(title);
   panel.appendChild(head);
-
-  var summary = el("p", "approval-summary", a.summary || "");
-  summary.id = descId;
   panel.appendChild(summary);
+  panel.appendChild(detail);
 
   var badges = el("div", "approval-badges");
   badges.appendChild(i18nEl("span", "approval-badge risk-" + (a.risk || "unknown"), "approval.risk." + (a.risk || "write_reversible")));

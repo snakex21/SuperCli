@@ -8,6 +8,10 @@ import (
 // ConfirmAction is a trusted UI gate, independent of model-generated arguments.
 // Only the exact UI choice allows one invocation; free-form text never approves.
 // With no interactive UI, it fails closed rather than treating silence as yes.
+//
+// Deprecated: risky tool operations declare Tool.Approval and go through the
+// host ApprovalGate (audit log, allowlist, non-interactive policy). No tool
+// uses this prompt any more; it is kept only for embedders.
 func ConfirmAction(ctx context.Context, fallback chan<- AskRequest, question string) error {
 	return ConfirmActionLocalized(ctx, fallback, question, "", nil)
 }

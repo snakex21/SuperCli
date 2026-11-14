@@ -1134,5 +1134,10 @@
   "approval.op.create_address_book": "Create an address book?",
   "approval.op.add_contacts": "Add contacts?",
   "approval.op.update_contact": "Update a contact?",
-  "approval.op.trash_outside_workspace": "Remove a file outside the workspace?"
+  "approval.op.trash_outside_workspace": "Remove a file outside the workspace?",
+  "approval.summary.generate_image": "Vygenerovať jeden obrázok modelom {model} od {provider}? Prompt a parametre sa odošlú na {endpoint} a poskytovateľ môže generovanie spoplatniť. Neexistuje žiadne automatické opakovanie ani platené náhradné riešenie.",
+  "approval.summary.generate_video": "Vygenerovať jedno video modelom {model} od {provider}? Prompt a parametre sa odošlú na {endpoint} a poskytovateľ môže generovanie spoplatniť. Neexistuje žiadne automatické opakovanie ani platené náhradné riešenie.",
+  "approval.summary.headless_open": "Spustiť reláciu prehliadača bez grafického rozhrania na dôveryhodnom cieli „{target}“? Jej profil sa vytvorí v prenosnom dátovom adresári a relácia môže otvoriť požadovanú adresu.",
+  "approval.summary.headless_close": "Zavrieť reláciu prehliadača na dôveryhodnom cieli „{target}“? Jej profil SuperCli sa odstráni; ovládač beží ďalej.",
+  "approval.summary.headless_action": "Spustiť „{action}“ na dôveryhodnom cieli „{target}“? Tým sa zmení vybraný virtuálny počítač alebo relácia prehliadača."
 }

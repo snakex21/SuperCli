@@ -1134,5 +1134,10 @@
   "approval.op.create_address_book": "Create an address book?",
   "approval.op.add_contacts": "Add contacts?",
   "approval.op.update_contact": "Update a contact?",
-  "approval.op.trash_outside_workspace": "Remove a file outside the workspace?"
+  "approval.op.trash_outside_workspace": "Remove a file outside the workspace?",
+  "approval.summary.generate_image": "Sugeneruoti vieną vaizdą naudojant {provider} modelį {model}? Užklausa ir parametrai siunčiami į {endpoint}, o teikėjas gali imti mokestį už generavimą. Automatinio pakartojimo ar mokamos atsarginės parinkties nėra.",
+  "approval.summary.generate_video": "Sugeneruoti vieną vaizdo įrašą naudojant {provider} modelį {model}? Užklausa ir parametrai siunčiami į {endpoint}, o teikėjas gali imti mokestį už generavimą. Automatinio pakartojimo ar mokamos atsarginės parinkties nėra.",
+  "approval.summary.headless_open": "Paleisti naršyklės seansą be grafinės sąsajos patikimame taikinyje „{target}“? Jo profilis sukuriamas perkeliamame duomenų kataloge, ir seansas gali atidaryti prašomą adresą.",
+  "approval.summary.headless_close": "Uždaryti naršyklės seansą patikimame taikinyje „{target}“? Jo SuperCli profilis pašalinamas; tvarkyklė toliau veikia.",
+  "approval.summary.headless_action": "Vykdyti „{action}“ patikimame taikinyje „{target}“? Tai pakeis pasirinktą virtualiąją mašiną arba naršyklės seansą."
 }

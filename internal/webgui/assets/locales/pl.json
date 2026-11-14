@@ -1134,5 +1134,10 @@
   "approval.op.create_address_book": "Utworzyć książkę adresową?",
   "approval.op.add_contacts": "Dodać kontakty?",
   "approval.op.update_contact": "Zmienić kontakt?",
-  "approval.op.trash_outside_workspace": "Usunąć plik spoza obszaru roboczego?"
+  "approval.op.trash_outside_workspace": "Usunąć plik spoza obszaru roboczego?",
+  "approval.summary.generate_image": "Wygenerować jeden obraz modelem {model} dostawcy {provider}? Treść polecenia i parametry zostaną wysłane do {endpoint}, a dostawca może naliczyć opłatę za generowanie. Nie ma automatycznego ponawiania ani płatnego rozwiązania zapasowego.",
+  "approval.summary.generate_video": "Wygenerować jeden film modelem {model} dostawcy {provider}? Treść polecenia i parametry zostaną wysłane do {endpoint}, a dostawca może naliczyć opłatę za generowanie. Nie ma automatycznego ponawiania ani płatnego rozwiązania zapasowego.",
+  "approval.summary.headless_open": "Uruchomić sesję przeglądarki bez interfejsu graficznego na zaufanym celu „{target}”? Jej profil zostanie utworzony w przenośnym katalogu danych i może ona otworzyć żądany adres.",
+  "approval.summary.headless_close": "Zamknąć sesję przeglądarki na zaufanym celu „{target}”? Jej profil SuperCli zostanie usunięty; sterownik nadal będzie działać.",
+  "approval.summary.headless_action": "Wykonać „{action}” na zaufanym celu „{target}”? Zmieni to wybraną maszynę wirtualną lub sesję przeglądarki."
 }

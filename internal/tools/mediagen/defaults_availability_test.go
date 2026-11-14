@@ -61,15 +61,15 @@ func TestDefaultsWithinAllowlistProduceNoNote(t *testing.T) {
 func TestEnabledToolDescriptionIsAuthoritativeAboutAvailability(t *testing.T) {
 	for _, kind := range []string{"image", "video"} {
 		on := &config.MediaGenerationProviderConf{Enabled: true}
-		desc := newTool(t.TempDir(), kind, on, nil).Spec().Description
+		desc := newTool(t.TempDir(), kind, on).Spec().Description
 		if !strings.Contains(desc, "configured and available now") || !strings.Contains(desc, "outdated") {
 			t.Fatalf("%s: enabled description lacks availability note: %s", kind, desc)
 		}
-		off := newTool(t.TempDir(), kind, &config.MediaGenerationProviderConf{}, nil).Spec().Description
+		off := newTool(t.TempDir(), kind, &config.MediaGenerationProviderConf{}).Spec().Description
 		if strings.Contains(off, "available now") {
 			t.Fatalf("%s: disabled tool claims availability: %s", kind, off)
 		}
-		if nilCfg := newTool(t.TempDir(), kind, nil, nil).Spec().Description; strings.Contains(nilCfg, "available now") {
+		if nilCfg := newTool(t.TempDir(), kind, nil).Spec().Description; strings.Contains(nilCfg, "available now") {
 			t.Fatalf("%s: unconfigured tool claims availability", kind)
 		}
 	}

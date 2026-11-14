@@ -1134,5 +1134,10 @@
   "approval.op.create_address_book": "Create an address book?",
   "approval.op.add_contacts": "Add contacts?",
   "approval.op.update_contact": "Update a contact?",
-  "approval.op.trash_outside_workspace": "Remove a file outside the workspace?"
+  "approval.op.trash_outside_workspace": "Remove a file outside the workspace?",
+  "approval.summary.generate_image": "¿Generar una imagen con el modelo {model} de {provider}? El prompt y los parámetros se envían a {endpoint}, y el proveedor puede cobrar por la generación. No hay reintento automático ni alternativa de pago.",
+  "approval.summary.generate_video": "¿Generar un vídeo con el modelo {model} de {provider}? El prompt y los parámetros se envían a {endpoint}, y el proveedor puede cobrar por la generación. No hay reintento automático ni alternativa de pago.",
+  "approval.summary.headless_open": "¿Iniciar una sesión de navegador sin interfaz en el destino de confianza «{target}»? Su perfil se crea en el directorio de datos portátil y puede abrir la dirección solicitada.",
+  "approval.summary.headless_close": "¿Cerrar una sesión de navegador en el destino de confianza «{target}»? Se elimina su perfil de SuperCli; el controlador sigue en ejecución.",
+  "approval.summary.headless_action": "¿Ejecutar «{action}» en el destino de confianza «{target}»? Esto modifica la máquina virtual o la sesión de navegador seleccionada."
 }

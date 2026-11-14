@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"supercli/internal/system/uilang"
 	core "supercli/internal/tools/core"
 )
 
@@ -18,23 +19,28 @@ import (
 // that know it (SuperCli GUI and TUI) render a dedicated card; other overlays
 // (for example a branded launcher) still get Question text and option labels.
 type ApprovalCard struct {
-	Tool         string                `json:"tool"`
-	Operation    string                `json:"operation"`
-	Risk         core.RiskLevel        `json:"risk"`
-	Reversible   bool                  `json:"reversible"`
-	Account      string                `json:"account,omitempty"`
-	AccountName  string                `json:"account_name,omitempty"`
-	Folder       string                `json:"folder,omitempty"`
-	Destination  string                `json:"destination,omitempty"`
-	Target       string                `json:"target,omitempty"`
-	Summary      string                `json:"summary"`
-	Count        int                   `json:"count"`
-	Samples      []core.ApprovalSample `json:"samples,omitempty"`
-	Scope        string                `json:"scope"`
-	ApproveLabel string                `json:"approve_label"`
-	DenyLabel    string                `json:"deny_label"`
-	SimilarLabel string                `json:"similar_label,omitempty"`
-	GrantMinutes int                   `json:"grant_minutes,omitempty"`
+	Tool        string         `json:"tool"`
+	Operation   string         `json:"operation"`
+	Risk        core.RiskLevel `json:"risk"`
+	Reversible  bool           `json:"reversible"`
+	Account     string         `json:"account,omitempty"`
+	AccountName string         `json:"account_name,omitempty"`
+	Folder      string         `json:"folder,omitempty"`
+	Destination string         `json:"destination,omitempty"`
+	Target      string         `json:"target,omitempty"`
+	Summary     string         `json:"summary"`
+	// SummaryKey/SummaryArgs/SummaryDetail let a UI re-localize Summary
+	// when its language changes; Summary is already in the gate language.
+	SummaryKey    string                `json:"summary_key,omitempty"`
+	SummaryArgs   map[string]string     `json:"summary_args,omitempty"`
+	SummaryDetail string                `json:"summary_detail,omitempty"`
+	Count         int                   `json:"count"`
+	Samples       []core.ApprovalSample `json:"samples,omitempty"`
+	Scope         string                `json:"scope"`
+	ApproveLabel  string                `json:"approve_label"`
+	DenyLabel     string                `json:"deny_label"`
+	SimilarLabel  string                `json:"similar_label,omitempty"`
+	GrantMinutes  int                   `json:"grant_minutes,omitempty"`
 }
 
 // ApprovalAuditEntry is one line of the approvals audit log. It carries no
@@ -146,24 +152,27 @@ func (g *ApprovalGate) decide(ctx context.Context, req *core.ApprovalRequest) co
 
 func (g *ApprovalGate) language() string {
 	if g.Language == nil {
-		return "en"
+		return uilang.English
 	}
-	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(g.Language())), "pl") {
-		return "pl"
-	}
-	return "en"
+	return uilang.Normalize(g.Language())
 }
 
 type approvalTexts struct {
+	lang                           string
 	header, approve, deny, similar string
-	question                       func(core.ApprovalRequest) string
 }
 
+// texts returns the prompt labels in the UI language. All UI languages come
+// from the uilang catalogue; a missing key falls back to English there.
 func (g *ApprovalGate) texts() approvalTexts {
-	if g.language() == "pl" {
-		return approvalTexts{header: "Wymagana zgoda", approve: "Zatwierdź", deny: "Odrzuć", similar: "Zatwierdź podobne w tej sesji", question: approvalQuestionPL}
+	lang := g.language()
+	return approvalTexts{
+		lang:    lang,
+		header:  uilang.Text(lang, "approval.header"),
+		approve: uilang.Text(lang, "approval.approve"),
+		deny:    uilang.Text(lang, "approval.deny"),
+		similar: uilang.Text(lang, "approval.similar"),
 	}
-	return approvalTexts{header: "Approval required", approve: "Approve", deny: "Deny", similar: "Approve similar in this session", question: approvalQuestionEN}
 }
 
 func (g *ApprovalGate) ask(ctx context.Context, in chan<- AskRequest, req core.ApprovalRequest, grantKey string) core.ApprovalDecision {
@@ -171,7 +180,8 @@ func (g *ApprovalGate) ask(ctx context.Context, in chan<- AskRequest, req core.A
 	card := &ApprovalCard{
 		Tool: req.Tool, Operation: req.Operation, Risk: req.Risk, Reversible: req.Reversible,
 		Account: req.Account, AccountName: req.AccountName, Folder: req.Folder, Destination: req.Destination,
-		Target: req.Target, Summary: req.Summary, Count: req.Count, Samples: req.Samples, Scope: req.ScopeKey(),
+		Target: req.Target, Summary: localizedApprovalSummary(tx.lang, req),
+		SummaryKey: req.SummaryKey, SummaryArgs: req.SummaryArgs, SummaryDetail: req.SummaryDetail, Count: req.Count, Samples: req.Samples, Scope: req.ScopeKey(),
 		ApproveLabel: tx.approve, DenyLabel: tx.deny,
 	}
 	options := []AskOption{{Label: tx.deny}, {Label: tx.approve}}
@@ -187,7 +197,7 @@ func (g *ApprovalGate) ask(ctx context.Context, in chan<- AskRequest, req core.A
 	done := make(chan struct{})
 	defer close(done)
 	response := make(chan AskAnswer, 1)
-	request := AskRequest{ID: newAskID(), Header: tx.header, Question: tx.question(req), Confirmation: true, Approval: card, Options: options, Respond: response, Done: done}
+	request := AskRequest{ID: newAskID(), Header: tx.header, Question: approvalQuestion(tx.lang, req), Confirmation: true, Approval: card, Options: options, Respond: response, Done: done}
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
@@ -297,62 +307,57 @@ func MatchApprovalAllowlist(patterns []string, scope string) (string, bool) {
 	return "", false
 }
 
-func approvalQuestionEN(r core.ApprovalRequest) string {
-	var b strings.Builder
-	b.WriteString(r.Summary)
-	b.WriteString("\n\nTool: " + r.Tool + " / " + r.Operation)
-	if account := approvalAccountLabel(r); account != "" {
-		b.WriteString("\nAccount: " + account)
+// localizedApprovalSummary renders the trusted SummaryKey in lang. The
+// placeholders are substituted in one pass, so argument text containing
+// "{name}" stays literal. Without a catalogue entry the English Summary stays.
+func localizedApprovalSummary(lang string, r core.ApprovalRequest) string {
+	if r.SummaryKey == "" {
+		return r.Summary
 	}
-	if r.Folder != "" {
-		b.WriteString("\nFolder: " + r.Folder)
+	text := uilang.Text(lang, r.SummaryKey)
+	if text == r.SummaryKey {
+		return r.Summary
 	}
-	if r.Destination != "" {
-		b.WriteString("\nDestination: " + r.Destination)
+	pairs := make([]string, 0, 2*len(r.SummaryArgs))
+	for name, value := range r.SummaryArgs {
+		pairs = append(pairs, "{"+name+"}", value)
 	}
-	if r.Target != "" {
-		b.WriteString("\nTarget: " + r.Target)
+	text = strings.NewReplacer(pairs...).Replace(text)
+	if r.SummaryDetail != "" {
+		text += "\n" + r.SummaryDetail
 	}
-	if r.Count >= 0 {
-		fmt.Fprintf(&b, "\nMessages: %d", r.Count)
-	}
-	for _, s := range r.Samples {
-		b.WriteString("\n  - " + approvalSampleLine(s))
-	}
-	if r.Reversible {
-		b.WriteString("\nReversible: yes")
-	} else {
-		b.WriteString("\nReversible: NO - this cannot be undone")
-	}
-	return b.String()
+	return text
 }
 
-func approvalQuestionPL(r core.ApprovalRequest) string {
+// approvalQuestion is the plain-text prompt for UIs without a dedicated card
+// (TUI details, branded overlays). Labels come from the uilang catalogue.
+func approvalQuestion(lang string, r core.ApprovalRequest) string {
+	label := func(key string) string { return uilang.Text(lang, key) + ": " }
 	var b strings.Builder
-	b.WriteString(r.Summary)
-	b.WriteString("\n\nNarzędzie: " + r.Tool + " / " + r.Operation)
+	b.WriteString(localizedApprovalSummary(lang, r))
+	b.WriteString("\n\n" + label("approval.field.tool") + r.Tool + " / " + r.Operation)
 	if account := approvalAccountLabel(r); account != "" {
-		b.WriteString("\nKonto: " + account)
+		b.WriteString("\n" + label("approval.field.account") + account)
 	}
 	if r.Folder != "" {
-		b.WriteString("\nFolder: " + r.Folder)
+		b.WriteString("\n" + label("approval.field.folder") + r.Folder)
 	}
 	if r.Destination != "" {
-		b.WriteString("\nCel: " + r.Destination)
+		b.WriteString("\n" + label("approval.field.destination") + r.Destination)
 	}
 	if r.Target != "" {
-		b.WriteString("\nObiekt: " + r.Target)
+		b.WriteString("\n" + label("approval.field.target") + r.Target)
 	}
 	if r.Count >= 0 {
-		fmt.Fprintf(&b, "\nWiadomości: %d", r.Count)
+		fmt.Fprintf(&b, "\n%s%d", label("approval.field.count"), r.Count)
 	}
 	for _, s := range r.Samples {
-		b.WriteString("\n  - " + approvalSampleLine(s))
+		b.WriteString("\n  - " + approvalSampleLine(lang, s))
 	}
 	if r.Reversible {
-		b.WriteString("\nOdwracalne: tak")
+		b.WriteString("\n" + uilang.Text(lang, "approval.reversible.yes"))
 	} else {
-		b.WriteString("\nOdwracalne: NIE - tego nie da się cofnąć")
+		b.WriteString("\n" + uilang.Text(lang, "approval.reversible.no"))
 	}
 	return b.String()
 }
@@ -367,7 +372,7 @@ func approvalAccountLabel(r core.ApprovalRequest) string {
 	return r.Account
 }
 
-func approvalSampleLine(s core.ApprovalSample) string {
+func approvalSampleLine(lang string, s core.ApprovalSample) string {
 	parts := []string{}
 	if s.Date != "" {
 		parts = append(parts, s.Date)
@@ -377,7 +382,7 @@ func approvalSampleLine(s core.ApprovalSample) string {
 	}
 	subject := s.Subject
 	if subject == "" {
-		subject = "(no subject)"
+		subject = uilang.Text(lang, "approval.no_subject")
 	}
 	parts = append(parts, "\""+subject+"\"")
 	return strings.Join(parts, " · ")
