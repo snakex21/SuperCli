@@ -1074,7 +1074,15 @@ function addEventLine(text, cls, tag) {
     var tg = el("span", "tag", "[" + tag + "] ");
     line.appendChild(tg);
   }
-  line.appendChild(document.createTextNode(text));
+  var localize = typeof localizeSystemText === "function" ? localizeSystemText : String;
+  var body = document.createTextNode(localize(text));
+  line.appendChild(body);
+  if (body.nodeValue !== text) {
+    // Known fixed backend texts follow the UI language; the original stays
+    // available as a tooltip for bug reports.
+    line.title = text;
+    registerLanguageRefresh(line, function () { body.nodeValue = localize(text); });
+  }
   appendStream(line);
   smartScroll();
   return line;
@@ -1857,7 +1865,13 @@ function setToolResultStatus(row, elapsed, err, changes) {
   row._stat.innerHTML = "";
   if (changes && changes.added) row._stat.appendChild(el("span", "change-add", "+" + changes.added));
   if (changes && changes.removed) row._stat.appendChild(el("span", "change-remove", "−" + changes.removed));
-  row._stat.appendChild(el("span", err ? "status-error" : "", (err ? "× · " : "") + fmtDuration(elapsed)));
+  // A timing that would print as "0.0s" is noise; show it as "<0.1s".
+  var took = elapsed < 50 ? "<0.1s" : fmtDuration(elapsed);
+  if (err && row._denied) {
+    row._stat.appendChild(el("span", "status-denied", "⊘ " + t("tool.denied")));
+    return;
+  }
+  row._stat.appendChild(el("span", err ? "status-error" : "", (err ? "✕ · " : "") + took));
 }
 
 // task results use a compact XML envelope for the model. Keep that protocol
@@ -2170,7 +2184,8 @@ function addToolCall(name, args, id, at) {
   }
   row.classList.add("running");
   function updateElapsed() {
-    stat.textContent = t("tool.running") + " · " + fmtDuration(toolElapsed(row)) + (row._progressText ? " · " + row._progressText : "");
+    var label = row._pendingApproval ? "⏸ " + t("tool.pendingApproval") : t("tool.running");
+    stat.textContent = label + " · " + fmtDuration(toolElapsed(row)) + (row._progressText ? " · " + row._progressText : "");
   }
   row._updateElapsed = updateElapsed;
   updateElapsed();
@@ -2181,6 +2196,24 @@ function addToolCall(name, args, id, at) {
   openToolOrder.push(key);
   runToolCount++;
   smartScroll();
+}
+// An approval card blocks the newest running call of that tool. The row shows
+// that the user, not the tool, holds the run; a denial is kept for its result.
+function approvalToolRow(toolName) {
+  for (var i = openToolOrder.length - 1; i >= 0; i--) {
+    var row = toolRows[openToolOrder[i]];
+    if (row && row.classList.contains("running") && (!toolName || row._toolName === toolName)) return row;
+  }
+  return null;
+}
+function setToolApprovalState(toolName, state) {
+  var row = approvalToolRow(toolName);
+  if (!row) return null;
+  row._pendingApproval = state === "pending";
+  row._denied = state === "denied";
+  row.classList.toggle("pending-approval", row._pendingApproval);
+  if (row._updateElapsed) row._updateElapsed();
+  return row;
 }
 // Live tool progress (e.g. MCP notifications/progress); UI-only text.
 function setToolProgress(id, text) {
@@ -2197,8 +2230,9 @@ function addToolResult(id, output, err, at) {
   if (!row) return;
   clearInterval(row._clock);
   row._clock = null;
-  row.classList.remove("running");
-  row.classList.add(err ? "failed" : "done");
+  row.classList.remove("running", "pending-approval");
+  row._pendingApproval = false;
+  row.classList.add(err && row._denied ? "denied" : err ? "failed" : "done");
   var ms = toolElapsed(row, at);
   var task = (row._toolName === "task" || row._toolName === "send_message") ? parseTaskNotification(output || err) : null;
   if (task) {
@@ -2622,7 +2656,7 @@ function addTurnMeta(ev, elapsed, toolCount, seq) {
   }
   if (ev.cache_hit_pct) parts.push(ev.cache_hit_pct + "% " + t("run.cached"));
   if (ev.reasoning_tok) parts.push(t("run.think") + " " + fmtTok(ev.reasoning_tok));
-	if (toolCount) parts.push(toolCount + " " + t("run.tools"));
+	if (toolCount) parts.push(typeof tn === "function" ? tn("run.toolCount", toolCount) : toolCount + " " + t("run.tools"));
   var line = el("div", "turn-meta");
 	line.innerHTML = parts.map(function (p, i) { return i === 0 ? "<b>" + escHtml(p) + "</b>" : escHtml(p); }).join(" · ");
 	var speed = generationSpeedText(ev);

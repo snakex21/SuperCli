@@ -56,6 +56,61 @@ function t(key) {
   var lang = normalizeLanguage(ui.lang) || "en";
   return (I18N[lang] && I18N[lang][key]) || I18N.en[key] || key;
 }
+// Plural messages use one catalog key with CLDR forms, e.g.
+// "one {# tool} few {# tools} other {# tools}" ("#" is the number). The form
+// is picked by Intl.PluralRules for the UI language; "other" is the fallback.
+// Go uses the same format (uilang.Plural), so TUI and GUI agree.
+var pluralRulesCache = Object.create(null);
+function pluralCategory(lang, n) {
+  try {
+    if (!pluralRulesCache[lang]) pluralRulesCache[lang] = new Intl.PluralRules(lang);
+    return pluralRulesCache[lang].select(n);
+  } catch (e) {
+    return n === 1 ? "one" : "other";
+  }
+}
+function pluralForms(text) {
+  var forms = Object.create(null), re = /(zero|one|two|few|many|other)\s*\{([^{}]*)\}/g, m;
+  while ((m = re.exec(text))) forms[m[1]] = m[2];
+  return forms;
+}
+function tn(key, n) {
+  var lang = normalizeLanguage(ui.lang) || "en";
+  var forms = pluralForms(t(key));
+  var form = forms[pluralCategory(lang, Math.abs(Number(n) || 0))];
+  if (form === undefined) form = forms.other;
+  if (form === undefined) return n + " " + t(key);
+  return form.replace(/#/g, String(n));
+}
+
+// The agent loop still emits a few fixed English notices and stop messages.
+// Known ones are shown in the UI language by key (named groups fill {args});
+// anything unknown stays as received. The original text is kept for title=.
+var SYSTEM_TEXTS = [
+  { key: "notice.preflight", re: /^preflight: repo context ~(\d+) tok \(project turn\)$/, args: ["n"] },
+  { key: "notice.loopWarning", re: /^repeated tool evidence: loop warning injected$/, args: [] },
+  { key: "notice.rateLimitRetry", re: /^(.+): rate limited \(HTTP 429\) — retrying in (\S+) \(attempt (\d+)\/(\d+)\)$/, args: ["model", "wait", "attempt", "max"] },
+  { key: "notice.providerRetry", re: /^(.+): (?:temporary )?provider error \(HTTP (\d+)\) — retrying in (\S+) \(attempt (\d+)\/(\d+)\)$/, args: ["model", "status", "wait", "attempt", "max"] },
+  { key: "notice.connectionRetry", re: /^connection to the model dropped \(([\s\S]*)\) — retrying in (\S+) \(attempt (\d+)\/(\d+)\)$/, args: ["reason", "wait", "attempt", "max"] },
+  { key: "error.loopUnchanged", re: /^agent: stopped — the last (\d+) consecutive tool rounds returned only previously observed successful results/, args: ["n"] },
+  { key: "error.loopSource", re: /^agent: stopped — the last (\d+) source-reading rounds only revisited unchanged lines/, args: ["n"] },
+  { key: "error.loopFailure", re: /^agent: stopped — the same tool call failed (\d+) consecutive times/, args: ["n"] },
+];
+function localizeSystemText(text) {
+  text = String(text || "");
+  for (var i = 0; i < SYSTEM_TEXTS.length; i++) {
+    var entry = SYSTEM_TEXTS[i], m = entry.re.exec(text);
+    if (!m) continue;
+    var message = t(entry.key);
+    if (message === entry.key) return text;
+    var args = {};
+    entry.args.forEach(function (name, index) { args[name] = m[index + 1]; });
+    return message.replace(/\{([a-z_]+)\}/g, function (all, name) {
+      return Object.prototype.hasOwnProperty.call(args, name) ? args[name] : all;
+    });
+  }
+  return text;
+}
 
 function selectedModelID(value) {
   var model = String(value || "").trim();

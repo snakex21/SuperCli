@@ -184,7 +184,7 @@ func (m Model) renderAccountsMenu() string {
 
 	panel := m.palette.renderColors().renderer.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorFaint).
+		BorderForeground(colorBorderUI).
 		Padding(0, 2).
 		Render(body.String())
 

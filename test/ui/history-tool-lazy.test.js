@@ -205,7 +205,7 @@ test('open live results render immediately and failures retain their diagnostic 
   const failed = harness(), errorRow = resultRow(failed, 'ctx_execute');
   failed.c.addToolResult('read-1', '', 'command_failed exit=7\nmissing file');
   assert.equal(errorRow._body.children.length, 0);
-  assert.ok(errorRow._stat.textContent.includes('×'));
+  assert.ok(errorRow._stat.textContent.includes('✕'));
   errorRow.open = true; errorRow.dispatch('toggle');
   assert.equal(errorRow._body.children[0].textContent, 'tool.error');
   assert.equal(errorRow._body.children[1].textContent, 'command_failed exit=7\nmissing file');
@@ -378,7 +378,7 @@ test('folded live inputs defer formatting and retain exact input before output o
   assert.equal(row._toolArgs, args, 'original arguments remain available');
   h.c.addToolResult('create-1', 'file ready', '');
   assert.equal(row._clock, null);
-  assert.equal(row._stat.textContent, '0.1s');
+  assert.equal(row._stat.textContent, '<0.1s', 'a 0 ms tool shows <0.1s, not 0.0s');
   assert.equal(row._body.children.length, 0);
   assert.deepEqual(h.formats, []);
   row.open = true; row.dispatch('toggle');

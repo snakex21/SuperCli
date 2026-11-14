@@ -95,7 +95,17 @@ function showApprovalCard(q) {
   panel.appendChild(badges);
 
   var list = el("dl", "approval-details");
-  approvalRow(list, "approval.field.tool", (a.tool || "") + (a.operation ? " · " + a.operation : ""));
+  // Human operation name; the internal tool/operation ids stay in title=.
+  var rawOp = (a.tool || "") + (a.operation ? " · " + a.operation : "");
+  var opLabel = el("span", "approval-op-name", "");
+  opLabel.title = rawOp;
+  function refreshOpLabel() {
+    var human = a.tool ? approvalText("tool." + a.tool, "") : "";
+    opLabel.textContent = human ? human + " (" + a.tool + ")" : rawOp;
+  }
+  registerLanguageRefresh(opLabel, refreshOpLabel);
+  refreshOpLabel();
+  approvalRow(list, "approval.field.tool", rawOp ? opLabel : "");
   var account = a.account_name && a.account && a.account_name.toLowerCase() !== a.account.toLowerCase()
     ? a.account_name + " (" + a.account + ")" : (a.account_name || a.account);
   approvalRow(list, "approval.field.account", account);
@@ -119,15 +129,27 @@ function showApprovalCard(q) {
   var error = el("div", "question-error");
   panel.appendChild(error);
   var actions = el("div", "question-actions approval-actions");
-  var deny = i18nEl("button", "btn approval-deny", "approval.deny"); deny.type = "button";
-  var approve = i18nEl("button", "btn primary approval-approve", "approval.approve"); approve.type = "button";
+  // Keyboard shortcuts match the TUI: N deny, Y approve, A approve similar.
+  function keyed(button, key) {
+    var kbd = el("kbd", "approval-key", key);
+    kbd.setAttribute("aria-hidden", "true");
+    button.appendChild(kbd);
+    button.setAttribute("aria-keyshortcuts", key);
+    return button;
+  }
+  var deny = keyed(i18nEl("button", "btn approval-deny", "approval.deny"), "N"); deny.type = "button";
+  // An irreversible operation never gets the inviting accent fill.
+  var approve = keyed(i18nEl("button", "btn approval-approve " + (a.reversible ? "primary" : "danger-outline"), "approval.approve"), "Y"); approve.type = "button";
   actions.appendChild(deny);
   var similar = null;
   if (a.similar_label) {
     similar = el("button", "btn approval-similar");
     similar.type = "button";
+    var similarText = document.createTextNode("");
+    similar.appendChild(similarText);
+    keyed(similar, "A");
     function refreshSimilar() {
-      similar.textContent = t("approval.similar").replace("{minutes}", String(a.grant_minutes || 30));
+      similarText.nodeValue = t("approval.similar").replace("{minutes}", String(a.grant_minutes || 30));
     }
     registerLanguageRefresh(similar, refreshSimilar);
     refreshSimilar();
@@ -138,6 +160,8 @@ function showApprovalCard(q) {
   overlay.appendChild(panel);
   appendStream(overlay);
   questionOverlays[q.id] = overlay; activeQuestionOverlay = overlay; smartScroll(true);
+  if (typeof setToolApprovalState === "function") setToolApprovalState(a.tool, "pending");
+  setRunState("pending", t("question.waiting"));
 
   var buttons = [deny, approve].concat(similar ? [similar] : []);
   function answer(kind) {
@@ -147,6 +171,10 @@ function showApprovalCard(q) {
     if (kind === "approve") body.selected = [a.approve_label];
     else if (kind === "similar") body.selected = [a.similar_label];
     else body.cancelled = true;
+    // Mark the tool row before posting: the tool result can arrive over SSE
+    // before this request resolves, and it must already read as denied.
+    var markRow = typeof setToolApprovalState === "function" ? setToolApprovalState : function () {};
+    var row = markRow(a.tool, kind === "deny" ? "denied" : "");
     jpost("/api/question/answer", body).then(function () {
       delete questionOverlays[q.id];
       var remaining = Object.keys(questionOverlays);
@@ -160,13 +188,18 @@ function showApprovalCard(q) {
     }).catch(function (e) {
       error.textContent = e.message;
       buttons.forEach(function (b) { b.disabled = false; });
+      if (row && row.classList.contains("running")) markRow(a.tool, "pending");
     });
   }
   deny.addEventListener("click", function () { answer("deny"); });
   approve.addEventListener("click", function () { answer("approve"); });
   if (similar) similar.addEventListener("click", function () { answer("similar"); });
   panel.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && !deny.disabled) { e.preventDefault(); answer("deny"); }
+    if (deny.disabled || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+    var key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (key === "Escape" || key === "n") { e.preventDefault(); answer("deny"); }
+    else if (key === "y") { e.preventDefault(); answer("approve"); }
+    else if (key === "a" && similar) { e.preventDefault(); answer("similar"); }
   });
   // Focus the safe choice first; Tab reaches approve, Enter/Space activates.
   setTimeout(function () { deny.focus(); }, 0);

@@ -103,23 +103,32 @@ func renderFencedBlock(lines []string, start int, p Palette) (string, int) {
 	for _, line := range lines[start+1 : end] {
 		code = append(code, strings.TrimRight(strings.ReplaceAll(line, "\t", codeTabSpaces), " \t\r"))
 	}
+	// The fence markers become a frame: "╭─ go", a "│ " gutter and "╰─".
+	// The language is a label instead of a literal ```go line.
 	var b strings.Builder
-	b.WriteString(renderMarkdownLine(lines[start], p))
-	highlighted := highlightCodeLines(fenceLanguage(lines[start]), code, p)
-	for i, line := range lines[start+1 : end] {
+	lang := fenceLanguage(lines[start])
+	open := "╭─"
+	if lang != "" {
+		open += " " + lang
+	}
+	b.WriteString(p.MdFrame.Render(open))
+	gutter := p.MdFrame.Render("│ ")
+	highlighted := highlightCodeLines(lang, code, p)
+	for i, line := range code {
 		b.WriteByte('\n')
+		b.WriteString(gutter)
 		if highlighted != nil {
 			b.WriteString(highlighted[i])
 		} else {
-			// Unchanged pre-highlighting rendering for plain blocks.
-			b.WriteString(renderMarkdownLine(line, p))
+			// Code is literal: no inline markdown, no bullets.
+			b.WriteString(p.Assistant.Render(line))
 		}
 	}
 	if end >= len(lines) {
 		return b.String(), end
 	}
 	b.WriteByte('\n')
-	b.WriteString(renderMarkdownLine(lines[end], p))
+	b.WriteString(p.MdFrame.Render("╰─"))
 	return b.String(), end + 1
 }
 

@@ -32,7 +32,8 @@ func TestFencedCodeKnownLanguageIsHighlighted(t *testing.T) {
 			t.Fatalf("dark=%v: too few colour runs: %q", dark, out)
 		}
 		stripped := ansi.Strip(out)
-		for _, want := range []string{"```go", "func main() {", "    return \"x\" // done", "```", "after"} {
+		// Fence markers become a labelled frame; the code itself is intact.
+		for _, want := range []string{"╭─ go", "│ func main() {", "│     return \"x\" // done", "╰─", "after"} {
 			if !strings.Contains(stripped, want) {
 				t.Fatalf("dark=%v: visible text lost %q: %q", dark, want, stripped)
 			}
@@ -59,8 +60,12 @@ func TestFencedCodeUnknownOrMissingLanguageIsPlain(t *testing.T) {
 		if next != 3 {
 			t.Fatalf("%q: next=%d", fence, next)
 		}
-		if want := renderMarkdownBodyPlainLines(lines, p); got != want {
-			t.Fatalf("%q: plain block changed\n got %q\nwant %q", fence, got, want)
+		frame := "╭─"
+		if lang := fenceLanguage(fence); lang != "" {
+			frame += " " + lang
+		}
+		if want := frame + "\n│ func main() { return 1 }\n╰─"; ansi.Strip(got) != want {
+			t.Fatalf("%q: plain block\n got %q\nwant %q", fence, ansi.Strip(got), want)
 		}
 	}
 }

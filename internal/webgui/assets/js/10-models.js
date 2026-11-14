@@ -218,7 +218,11 @@ function reasoningLevelLabel(level, toggleOnly) {
     if (level === "none") return t("model.reasoningOff");
     if (level) return t("model.reasoningOn");
   }
-  return level || t("model.auto");
+  if (!level) return t("model.auto");
+  // Same level names as the TUI reasoning menu, in the UI language.
+  var key = "model.level." + level;
+  var label = t(key);
+  return label === key ? level : label;
 }
 
 function renderReasoning(r) {

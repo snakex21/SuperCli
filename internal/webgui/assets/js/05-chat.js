@@ -1330,9 +1330,36 @@ function newChatTurnID() {
   if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
   return Date.now().toString(36) + "-" + (++chatTurnSequence).toString(36) + "-" + Math.random().toString(36).slice(2);
 }
+// Catalog messages the run status line can show. The line is dynamic, so it
+// has no data-i18n (applyI18n would reset it to "Ready" mid-run); instead the
+// key and any suffix ("Done · 1.2s") are remembered and re-rendered here.
+var RUN_STATE_KEYS = ["composer.ready", "run.done", "composer.stopped", "composer.working", "composer.waiting",
+  "composer.sendingQueued", "question.waiting", "common.error"];
+function waitingForUser() {
+  return typeof activeQuestionOverlay !== "undefined" && !!activeQuestionOverlay;
+}
 function setRunState(state, text) {
-  runStatus.textContent = text || "";
-  $("#status-dot").classList.toggle("busy", state === "running");
+  text = text || "";
+  // A blocking approval/question outranks "working": the user holds the run.
+  if (state === "running" && waitingForUser()) { state = "pending"; text = t("question.waiting"); }
+  runStatus.textContent = text;
+  var key = "", suffix = "";
+  RUN_STATE_KEYS.some(function (k) {
+    var label = t(k);
+    if (text !== label && text.indexOf(label + " ") !== 0) return false;
+    key = k; suffix = text.slice(label.length);
+    return true;
+  });
+  runStatus.dataset.runKey = key;
+  runStatus.dataset.runSuffix = suffix;
+  runStatus.dataset.state = state;
+  var dot = $("#status-dot");
+  dot.classList.toggle("busy", state === "running");
+  dot.classList.toggle("pending", state === "pending");
+}
+function refreshRunLabels() {
+  if (runStatus.dataset.runKey) runStatus.textContent = t(runStatus.dataset.runKey) + (runStatus.dataset.runSuffix || "");
+  sendBtn.textContent = t(sendBtn.classList.contains("queue") ? "composer.queue" : "composer.send");
 }
 
 async function sendPrompt(text, attachments, draft, queuedItem, dispatchScope) {
@@ -1491,6 +1518,11 @@ async function sendPrompt(text, attachments, draft, queuedItem, dispatchScope) {
         runStatus.textContent = t("composer.sendingQueued");
         return;
       }
+      if (waitingForUser()) {
+        if (runStatus.dataset.state !== "pending") setRunState("pending", t("question.waiting"));
+        return;
+      }
+      if (runStatus.dataset.state === "pending") setRunState("running", t("composer.working"));
       runStatus.textContent = (quiet >= 10000 ? t("composer.waiting") + " " + fmtDuration(quiet) :
         t("composer.working") + " " + fmtDuration(now - runStart));
     }, 100);
@@ -1756,7 +1788,7 @@ function reasoningFallbackText(tokens) {
 // language; ev.err stays the fallback for everything still unclassified.
 function chatErrorText(ev) {
   if (ev.err_code) return t(ev.err_code).replace("{n}", ev.err_name || "");
-  return ev.err || "error";
+  return ev.err || t("common.error");
 }
 
 function handleEvent(ev, current) {

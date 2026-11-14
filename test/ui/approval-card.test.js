@@ -8,7 +8,7 @@ const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve()
 
 function harness(catalog = english) {
   const {document} = parseHTML('<!doctype html><html><body><div id="chat-stream"></div></body></html>');
-  const posts = [], runStates = [];
+  const posts = [], runStates = [], toolStates = [];
   const c = createSandbox({document, Object, JSON, Promise, String, Node: document.defaultView.Node,
     questionOverlays: {}, activeQuestionOverlay: null,
     el(tag, cls, text) { const n = document.createElement(tag); n.className = cls || ''; if (text != null) n.textContent = text; return n; },
@@ -19,10 +19,11 @@ function harness(catalog = english) {
     appendStream(node) { document.getElementById('chat-stream').appendChild(node); },
     smartScroll() {},
     setRunState(state, text) { runStates.push(state); },
+    setToolApprovalState(tool, state) { toolStates.push([tool, state]); return null; },
     jpost(url, body) { posts.push({url, body: JSON.parse(JSON.stringify(body))}); return Promise.resolve({ok: true}); },
   });
   runScript(source, c);
-  return {c, document, posts, runStates,
+  return {c, document, posts, runStates, toolStates,
     card: () => document.querySelector('.approval-card'),
     button: cls => document.querySelector('.' + cls)};
 }
@@ -94,11 +95,50 @@ test('deny button and Escape cancel the request without approving', async () => 
   assert.equal(k.posts[0].body.cancelled, true);
 });
 
+test('y/n/a shortcuts answer like the TUI; modifiers and repeats are ignored', async () => {
+  const key = (h, k, extra = {}) => h.card().dispatchEvent(new h.document.defaultView.KeyboardEvent('keydown', {key: k, bubbles: true, ...extra}));
+  for (const [k, want] of [['y', {selected: ['Approve'], cancelled: false}], ['N', {selected: [], cancelled: true}],
+    ['a', {selected: ['Approve similar in this session'], cancelled: false}]]) {
+    const h = harness();
+    h.c.showApprovalCard(request());
+    key(h, 'y', {ctrlKey: true});
+    key(h, 'y', {repeat: true});
+    assert.equal(h.posts.length, 0, 'modified or repeated keys do not answer');
+    key(h, k);
+    await flush();
+    assert.equal(h.posts.length, 1, k);
+    assert.deepEqual(h.posts[0].body.selected, want.selected, k);
+    assert.equal(h.posts[0].body.cancelled, want.cancelled, k);
+  }
+  const g = harness();
+  g.c.showApprovalCard(request({similar_label: ''}));
+  key(g, 'a');
+  await flush();
+  assert.equal(g.posts.length, 0, 'no session grant offered, so "a" does nothing');
+});
+
+test('the card puts the run into the pending state and names the operation for humans', async () => {
+  const h = harness({...english, 'tool.thunderbird_mail': 'Thunderbird mail'});
+  h.c.showApprovalCard(request());
+  assert.equal(h.runStates.at(-1), 'pending');
+  assert.deepEqual(h.toolStates, [['thunderbird_mail', 'pending']], 'the blocked tool row is marked pending');
+  const op = h.card().querySelector('.approval-op-name');
+  assert.equal(op.textContent, 'Thunderbird mail (thunderbird_mail)');
+  assert.equal(op.title, 'thunderbird_mail · copy');
+  await new Promise(r => setTimeout(r, 5));
+  assert.equal(h.document.activeElement, h.button('approval-deny'), 'deny stays the default focus');
+  h.button('approval-deny').click();
+  assert.deepEqual(h.toolStates.at(-1), ['thunderbird_mail', 'denied'], 'denial is marked before the answer request resolves');
+  await flush();
+});
+
 test('irreversible operations offer no session grant and are marked', async () => {
   const h = harness();
   h.c.showApprovalCard(request({operation: 'delete_folder', risk: 'destructive', reversible: false, similar_label: '', count: 5}));
   assert.equal(h.button('approval-similar'), null);
   assert.ok(h.card().classList.contains('irreversible'));
+  assert.ok(!h.button('approval-approve').classList.contains('primary'), 'irreversible approve is not the inviting primary');
+  assert.ok(h.button('approval-approve').classList.contains('danger-outline'));
   assert.match(h.card().textContent, new RegExp(english['approval.reversible.no']));
 });
 
@@ -106,8 +146,10 @@ test('Polish catalog localizes the card', async () => {
   const h = harness(polish);
   h.c.showApprovalCard(request({operation: 'create_folder'}));
   assert.equal(h.card().querySelector('.approval-op').textContent, 'Utworzyć folder poczty?');
-  assert.equal(h.button('approval-approve').textContent, 'Zatwierdź');
-  assert.equal(h.button('approval-deny').textContent, 'Odrzuć');
+  assert.equal(h.button('approval-approve').firstChild.textContent, 'Zatwierdź');
+  assert.equal(h.button('approval-deny').firstChild.textContent, 'Odrzuć');
+  assert.equal(h.button('approval-approve').querySelector('kbd').textContent, 'Y');
+  assert.equal(h.button('approval-deny').querySelector('kbd').textContent, 'N');
   assert.match(h.button('approval-similar').textContent, /Zatwierdź podobne w tej sesji/);
 });
 

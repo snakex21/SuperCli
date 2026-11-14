@@ -106,7 +106,7 @@
               <button type="button" data-prompt="List the tests in this repository and how to run them." data-i18n="welcome.h3">How do I run the tests?</button>
             </div>
           </div>
-          <div class="stream" id="stream"></div>
+          <div class="stream" id="stream" role="log" aria-live="polite" aria-relevant="additions"></div>
         </div>
       </main>
 
@@ -131,11 +131,11 @@
             <textarea id="prompt" rows="1" placeholder="Message SuperCli…" data-i18n-ph="composer.ph"></textarea>
             <div class="row">
               <button type="button" class="attach-btn" id="attach-btn"
-                      data-i18n-title="composer.attach" data-i18n-aria="composer.attach">📎</button>
-              <span class="hint" id="run-status" data-i18n="composer.ready">Ready</span>
+                      data-i18n-title="composer.attach" data-i18n-aria="composer.attach"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M13.5 6.5 7.6 12.4a1.6 1.6 0 0 0 2.3 2.3l6-6a3.2 3.2 0 0 0-4.5-4.5l-6 6a4.8 4.8 0 0 0 6.8 6.8l5.3-5.3"/></svg></button>
+              <span class="hint" id="run-status" role="status" aria-live="polite" data-run-key="composer.ready">Ready</span>
               <button type="button" class="stop-run-btn" id="stop-run-btn" data-i18n="composer.stop" hidden>Stop</button>
               <button type="button" class="interrupt-btn" id="interrupt-btn" data-i18n="composer.interrupt" hidden>Interrupt &amp; send</button>
-              <button type="submit" class="send-btn" id="send-btn" data-i18n="composer.send">Send</button>
+              <button type="submit" class="send-btn" id="send-btn">Send</button>
             </div>
           </div>
         </form>
