@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"supercli/internal/system/config"
+	"supercli/internal/tools/core"
 	"supercli/internal/tools/interactive"
 )
 
@@ -29,13 +30,21 @@ func fixtureApproval(t *testing.T, ctx context.Context, tool *Tool, protocol, en
 		for {
 			select {
 			case req := <-ch:
-				req.Respond <- interactive.AskAnswer{Selected: []string{"Allow once"}}
+				req.Respond <- interactive.AskAnswer{Selected: []string{req.Approval.ApproveLabel}}
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
 	return interactive.WithAskChannel(ctx, ch)
+}
+
+// gatedExecute runs the tool the way the agent loop does: through a registry
+// whose approver is the host approval gate.
+func gatedExecute(tool *Tool, ctx context.Context, raw json.RawMessage) (core.Result, error) {
+	registry := core.NewRegistry()
+	registry.MustRegister(tool.Spec())
+	return registry.Execute(core.WithApprover(ctx, &interactive.ApprovalGate{}), "headless_control", raw)
 }
 
 func writeTarget(t *testing.T, data, protocol, endpoint, actions string) {
@@ -63,7 +72,7 @@ func TestHeadlessScopeDeniesBeforeNetworkOrProfile(t *testing.T) {
 			}
 			tool := New(t.TempDir(), data)
 			raw, _ := json.Marshal(map[string]any{"protocol": "webdriver", "endpoint": server.URL, "action": "open"})
-			result, _ := tool.Execute(context.Background(), raw)
+			result, _ := gatedExecute(tool, context.Background(), raw)
 			if result.Err == nil {
 				t.Fatal("unscoped execution accepted")
 			}
@@ -84,7 +93,7 @@ func TestHeadlessMutationNeedsUIAndExactConsent(t *testing.T) {
 	writeTarget(t, data, "webdriver", server.URL, `["navigate"]`)
 	tool := New(t.TempDir(), data)
 	raw, _ := json.Marshal(map[string]any{"protocol": "webdriver", "endpoint": server.URL, "action": "navigate", "session_id": "known-session", "url": "https://example.com/path"})
-	result, _ := tool.Execute(context.Background(), raw)
+	result, _ := gatedExecute(tool, context.Background(), raw)
 	if result.Err == nil || requests.Load() != 0 {
 		t.Fatal("missing UI did not fail closed")
 	}
@@ -92,18 +101,18 @@ func TestHeadlessMutationNeedsUIAndExactConsent(t *testing.T) {
 		ch := make(chan interactive.AskRequest, 1)
 		ctx := interactive.WithAskChannel(context.Background(), ch)
 		done := make(chan error, 1)
-		go func() { r, _ := tool.Execute(ctx, raw); done <- r.Err }()
+		go func() { r, _ := gatedExecute(tool, ctx, raw); done <- r.Err }()
 		req := <-ch
 		for _, want := range []string{server.URL, "known-session", "navigate", "https://example.com/path"} {
 			if !strings.Contains(req.Question, want) {
 				t.Fatalf("missing %q", want)
 			}
 		}
-		if !req.Confirmation || req.Options[0].Label != "Cancel" || requests.Load() != 0 {
+		if !req.Confirmation || req.Approval == nil || req.Options[0].Label != req.Approval.DenyLabel || req.Approval.SimilarLabel != "" || requests.Load() != 0 {
 			t.Fatal("unsafe consent UI or early dial")
 		}
 		if allow {
-			req.Respond <- interactive.AskAnswer{Selected: []string{"Allow once"}}
+			req.Respond <- interactive.AskAnswer{Selected: []string{req.Approval.ApproveLabel}}
 		} else {
 			req.Respond <- interactive.AskAnswer{Cancelled: true}
 		}
@@ -132,12 +141,12 @@ func TestHeadlessReadonlyScopeAndSnapshot(t *testing.T) {
 	// Later project/global edits cannot widen this tool's captured scope.
 	writeTarget(t, data, "webdriver", server.URL, `["open","status"]`)
 	raw, _ := json.Marshal(map[string]any{"protocol": "webdriver", "endpoint": server.URL, "action": "status"})
-	r, _ := tool.Execute(context.Background(), raw)
+	r, _ := gatedExecute(tool, context.Background(), raw)
 	if r.Err != nil {
 		t.Fatal(r.Err)
 	}
 	raw, _ = json.Marshal(map[string]any{"protocol": "webdriver", "endpoint": server.URL, "action": "open"})
-	r, _ = tool.Execute(context.Background(), raw)
+	r, _ = gatedExecute(tool, context.Background(), raw)
 	if r.Err == nil {
 		t.Fatal("scope widened after snapshot")
 	}
@@ -150,7 +159,7 @@ func TestHeadlessUnknownActionAndNoImplicitWildcard(t *testing.T) {
 	writeTarget(t, data, "qmp", "tcp://127.0.0.1:4444", `["*","unknown"]`)
 	tool := New(t.TempDir(), data)
 	for _, action := range []string{"status", "unknown"} {
-		r, _ := tool.Execute(context.Background(), []byte(fmt.Sprintf(`{"protocol":"qmp","endpoint":"tcp://127.0.0.1:4444","action":%q}`, action)))
+		r, _ := gatedExecute(tool, context.Background(), []byte(fmt.Sprintf(`{"protocol":"qmp","endpoint":"tcp://127.0.0.1:4444","action":%q}`, action)))
 		if r.Err == nil || strings.Contains(r.Err.Error(), "connect QMP") {
 			t.Fatalf("unexpected dial: %v", r.Err)
 		}

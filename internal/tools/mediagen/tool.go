@@ -5,6 +5,8 @@ package mediagen
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,15 +31,16 @@ const (
 	maxMetadataBytes int64 = 1 << 20
 )
 
-// Tool uses only its configured provider/model. Confirm must obtain an actual
-// interactive choice; a nil callback fails closed before a paid request.
-// The config is snapshotted on construction so later mutation cannot redirect
-// an in-flight request or silently change its approved parameters.
+// Tool uses only its configured provider/model. Every generation needs the
+// host approval gate (Tool.Approval: audit log, allowlist, non-interactive
+// deny-by-default); Execute refuses to send anything without an approval bound
+// to the exact request. The config is snapshotted on construction so later
+// mutation cannot redirect an in-flight request or silently change its
+// approved parameters.
 type Tool struct {
 	baseDir string
 	kind    string
 	cfg     *config.MediaGenerationProviderConf
-	confirm func(context.Context, string) error
 	// Test-only dependency seams. No public insecure transport/config switch.
 	client          *http.Client
 	allowTestHTTP   bool
@@ -69,14 +72,14 @@ func AdvertisedTools(cfg config.MediaGenerationConf) []string {
 	return names
 }
 
-func NewImage(baseDir string, cfg *config.MediaGenerationProviderConf, confirm func(context.Context, string) error) *Tool {
-	return newTool(baseDir, "image", cfg, confirm)
+func NewImage(baseDir string, cfg *config.MediaGenerationProviderConf) *Tool {
+	return newTool(baseDir, "image", cfg)
 }
-func NewVideo(baseDir string, cfg *config.MediaGenerationProviderConf, confirm func(context.Context, string) error) *Tool {
-	return newTool(baseDir, "video", cfg, confirm)
+func NewVideo(baseDir string, cfg *config.MediaGenerationProviderConf) *Tool {
+	return newTool(baseDir, "video", cfg)
 }
-func newTool(baseDir, kind string, cfg *config.MediaGenerationProviderConf, confirm func(context.Context, string) error) *Tool {
-	t := &Tool{baseDir: baseDir, kind: kind, confirm: confirm, lookupEnv: os.Getenv}
+func newTool(baseDir, kind string, cfg *config.MediaGenerationProviderConf) *Tool {
+	t := &Tool{baseDir: baseDir, kind: kind, lookupEnv: os.Getenv}
 	if cfg != nil {
 		clone := *cfg
 		clone.AllowedParameters = append([]string(nil), cfg.AllowedParameters...)
@@ -119,7 +122,7 @@ func (t *Tool) Spec() core.Tool {
 	if t.cfg != nil && t.cfg.Enabled {
 		description += availabilityNote(t.kind)
 	}
-	return core.Tool{Name: "generate_" + t.kind, Description: description, Schema: string(schema), Fn: t.Execute}
+	return core.Tool{Name: "generate_" + t.kind, Description: description, Schema: string(schema), Fn: t.Execute, Approval: t.approval}
 }
 
 // availabilityNote makes the tool definition the authority on availability.
@@ -161,60 +164,118 @@ func (t *Tool) Execute(ctx context.Context, raw json.RawMessage) (core.Result, e
 	}
 	return result, nil
 }
-func (t *Tool) execute(ctx context.Context, raw json.RawMessage) (core.Result, error) {
-	if err := ctx.Err(); err != nil {
-		return core.Result{}, err
-	}
+
+// request is one fully validated generation: everything the user approves.
+type request struct {
+	rc      runtimeConfig
+	prompt  string
+	params  map[string]any
+	ignored []string
+}
+
+// prepare validates the configuration and arguments without any network or
+// file I/O. Both the approval request and Execute use it, so the user approves
+// exactly the request that is sent.
+func (t *Tool) prepare(raw json.RawMessage) (request, error) {
 	rc, err := t.validateConfig()
 	if err != nil {
-		return core.Result{}, err
+		return request{}, err
 	}
 	if len(raw) > maxArgsBytes {
-		return core.Result{}, errors.New("arguments exceed 24 KB limit")
+		return request{}, errors.New("arguments exceed 24 KB limit")
 	}
 	var args arguments
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	dec.UseNumber()
 	if err = dec.Decode(&args); err != nil {
-		return core.Result{}, errors.New("invalid arguments; supply prompt and optional configured parameters")
+		return request{}, errors.New("invalid arguments; supply prompt and optional configured parameters")
 	}
 	if dec.Decode(new(any)) != io.EOF {
-		return core.Result{}, errors.New("arguments must be one JSON object")
+		return request{}, errors.New("arguments must be one JSON object")
 	}
 	if strings.TrimSpace(args.Prompt) == "" || len(args.Prompt) > maxPromptBytes {
-		return core.Result{}, errors.New("prompt must contain 1–16000 bytes")
+		return request{}, errors.New("prompt must contain 1–16000 bytes")
 	}
 	if m := strings.TrimSpace(args.Model); m != "" {
 		if t.kind != "image" {
-			return core.Result{}, errors.New("model override is supported only for images")
+			return request{}, errors.New("model override is supported only for images")
 		}
 		if err = validModel(m); err != nil {
-			return core.Result{}, err
+			return request{}, err
 		}
 		rc.model = m
 	}
 	params, ignored, err := t.parameters(args.Parameters)
 	if err != nil {
-		return core.Result{}, err
-	}
-	if t.confirm == nil {
-		return core.Result{}, errors.New("interactive generation confirmation is unavailable; no provider request was sent")
+		return request{}, err
 	}
 	if rc.token == "" && !rc.local {
 		if t.cfg.APIKeyProvider != "" {
-			return core.Result{}, fmt.Errorf("provider %q has no API key", t.cfg.APIKeyProvider)
+			return request{}, fmt.Errorf("provider %q has no API key", t.cfg.APIKeyProvider)
 		}
-		return core.Result{}, fmt.Errorf("configured API key environment variable %s is empty", t.cfg.APIKeyEnv)
+		return request{}, fmt.Errorf("configured API key environment variable %s is empty", t.cfg.APIKeyEnv)
 	}
-	encoded, _ := json.Marshal(params)
-	question := fmt.Sprintf("Generate one %s with %s model %s at %s? This sends the prompt and parameters below to that provider and may incur its generation charges. No automatic retry or paid fallback.\n\nPrompt: %s\nParameters: %s", t.kind, t.cfg.Provider, rc.model, rc.base.String(), args.Prompt, encoded)
-	if err = t.confirm(ctx, question); err != nil {
-		return core.Result{}, fmt.Errorf("not approved: %w", err)
+	return request{rc: rc, prompt: args.Prompt, params: params, ignored: ignored}, nil
+}
+
+// binding fingerprints what the user approved. The provider token is never
+// part of it, of the prompt text or of the audit log.
+func (r request) binding() string {
+	encoded, _ := json.Marshal(map[string]any{"base": r.rc.base.String(), "model": r.rc.model, "prompt": r.prompt, "params": r.params})
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:])
+}
+
+// approval builds the host approval request for one generation. Invalid
+// configuration or arguments fail here, before any prompt.
+func (t *Tool) approval(_ context.Context, raw json.RawMessage) (*core.ApprovalRequest, error) {
+	r, err := t.prepare(raw)
+	if err != nil {
+		return nil, fmt.Errorf("generate_%s: %w", t.kind, err)
+	}
+	encoded, _ := json.Marshal(r.params)
+	prompt := r.prompt
+	if runes := []rune(prompt); len(runes) > 600 {
+		prompt = string(runes[:600]) + "…"
+	}
+	name := "generate_" + t.kind
+	return &core.ApprovalRequest{
+		Tool:        name,
+		Operation:   "generate",
+		Risk:        core.RiskExternal,
+		Reversible:  false,
+		Account:     t.cfg.Provider,
+		Destination: r.rc.base.String(),
+		Target:      prompt,
+		Summary: fmt.Sprintf("Generate one %s with %s model %s at %s? This sends the prompt and parameters below to that provider and may incur its generation charges. No automatic retry or paid fallback.\n\nPrompt: %s\nParameters: %s",
+			t.kind, t.cfg.Provider, r.rc.model, r.rc.base.String(), prompt, encoded),
+		SummaryKey:    "approval.summary." + name,
+		SummaryArgs:   map[string]string{"provider": t.cfg.Provider, "model": r.rc.model, "endpoint": r.rc.base.String()},
+		SummaryDetail: "Parameters: " + string(encoded),
+		// A paid request is approved one at a time.
+		NoSessionGrant: true,
+		Scope:          []string{name, "generate", t.cfg.Provider, r.rc.model},
+		Binding:        r.binding(),
+	}, nil
+}
+
+func (t *Tool) execute(ctx context.Context, raw json.RawMessage) (core.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return core.Result{}, err
+	}
+	r, err := t.prepare(raw)
+	if err != nil {
+		return core.Result{}, err
+	}
+	approved, ok := core.ApprovedRequest(ctx)
+	if !ok || approved.Tool != "generate_"+t.kind || approved.Binding != r.binding() {
+		return core.Result{}, errors.New("not approved: generation needs the user's approval in the SuperCli GUI or TUI (or an [approvals] auto_approve entry); no provider request was sent")
 	}
 	if err = ctx.Err(); err != nil {
 		return core.Result{}, err
 	}
+	rc, params, ignored := r.rc, r.params, r.ignored
 	ctx, cancel := context.WithTimeout(ctx, rc.timeout)
 	defer cancel()
 	client := t.client
@@ -230,7 +291,7 @@ func (t *Tool) execute(ctx context.Context, raw json.RawMessage) (core.Result, e
 	copyClient.CheckRedirect = func(*http.Request, []*http.Request) error {
 		return errors.New("media generation redirects are not allowed")
 	}
-	params["prompt"] = args.Prompt
+	params["prompt"] = r.prompt
 	var result core.Result
 	if t.kind == "image" {
 		params["model"] = rc.model

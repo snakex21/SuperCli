@@ -118,7 +118,7 @@ func TestQMPTypeValidationBeforeConnecting(t *testing.T) {
 		`{"protocol":"qmp","endpoint":"tcp://127.0.0.1:4444","action":"type","text":"` + strings.Repeat("a", 2000) + `","delay_ms":1000}`,
 	} {
 		ctx := fixtureApproval(t, context.Background(), tool, "qmp", "tcp://127.0.0.1:4444")
-		r, _ := tool.Execute(ctx, []byte(raw))
+		r, _ := gatedExecute(tool, ctx, []byte(raw))
 		if r.Err == nil || strings.Contains(r.Err.Error(), "connect QMP") {
 			t.Fatalf("%.80s: unexpected %v", raw, r.Err)
 		}

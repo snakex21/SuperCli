@@ -1134,5 +1134,10 @@
   "approval.op.create_address_book": "Create an address book?",
   "approval.op.add_contacts": "Add contacts?",
   "approval.op.update_contact": "Update a contact?",
-  "approval.op.trash_outside_workspace": "Remove a file outside the workspace?"
+  "approval.op.trash_outside_workspace": "Remove a file outside the workspace?",
+  "approval.summary.generate_image": "Luodaanko yksi kuva palvelun {provider} mallilla {model}? Kehote ja parametrit lähetetään osoitteeseen {endpoint}, ja palveluntarjoaja voi veloittaa luonnista. Automaattista uudelleenyritystä tai maksullista varavaihtoehtoa ei ole.",
+  "approval.summary.generate_video": "Luodaanko yksi video palvelun {provider} mallilla {model}? Kehote ja parametrit lähetetään osoitteeseen {endpoint}, ja palveluntarjoaja voi veloittaa luonnista. Automaattista uudelleenyritystä tai maksullista varavaihtoehtoa ei ole.",
+  "approval.summary.headless_open": "Käynnistetäänkö näkymätön selainistunto luotetussa kohteessa ”{target}”? Sen profiili luodaan siirrettävään datahakemistoon, ja istunto voi avata pyydetyn osoitteen.",
+  "approval.summary.headless_close": "Suljetaanko selainistunto luotetussa kohteessa ”{target}”? Sen SuperCli-profiili poistetaan; ajuri jatkaa toimintaansa.",
+  "approval.summary.headless_action": "Suoritetaanko ”{action}” luotetussa kohteessa ”{target}”? Tämä muuttaa valittua virtuaalikonetta tai selainistuntoa."
 }

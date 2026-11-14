@@ -16,7 +16,7 @@ func TestToolSearcherFindsImageGenerationForOrdinaryWording(t *testing.T) {
 	for _, query := range []string{"generate image", "image generation", "draw an image", "wygeneruj obrazek"} {
 		t.Run(query, func(t *testing.T) {
 			reg := NewRegistry()
-			reg.MustRegister(mediagen.NewImage(t.TempDir(), &config.MediaGenerationProviderConf{Enabled: true}, nil).Spec())
+			reg.MustRegister(mediagen.NewImage(t.TempDir(), &config.MediaGenerationProviderConf{Enabled: true}).Spec())
 			idx, err := NewInMemoryIndex()
 			if err != nil {
 				t.Fatal(err)

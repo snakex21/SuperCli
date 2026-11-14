@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -40,7 +41,8 @@ func configuredTool(t *testing.T, kind string, handler http.HandlerFunc) *Tool {
 		provider, model = "fal", "fal-ai/test/video"
 	}
 	cfg := &config.MediaGenerationProviderConf{Enabled: true, Provider: provider, BaseURL: server.URL, Model: model, APIKeyEnv: "MEDIA_FIXTURE_KEY", AllowedDownloadHosts: []string{"127.0.0.1"}}
-	tool := newTool(t.TempDir(), kind, cfg, func(context.Context, string) error { return nil })
+	tool := newTool(t.TempDir(), kind, cfg)
+	setConfirm(tool, func(context.Context, string) error { return nil })
 	tool.client = server.Client()
 	tool.allowTestHTTP = true
 	tool.lookupEnv = func(name string) string {
@@ -51,9 +53,45 @@ func configuredTool(t *testing.T, kind string, handler http.HandlerFunc) *Tool {
 	}
 	return tool
 }
+
+// confirmApprover stands in for the host approval gate: fn sees the trusted
+// summary the user would read. A nil fn means no approval UI is available.
+type confirmApprover struct {
+	fn func(context.Context, string) error
+}
+
+func (a confirmApprover) Approve(ctx context.Context, req core.ApprovalRequest) core.ApprovalDecision {
+	if a.fn == nil {
+		return core.ApprovalDecision{Mode: core.ApprovalUnavailable, Reason: "test run without approval UI"}
+	}
+	if err := a.fn(ctx, req.Summary); err != nil {
+		return core.ApprovalDecision{Mode: core.ApprovalDenied, Reason: err.Error()}
+	}
+	return core.ApprovalDecision{Approved: true, Mode: core.ApprovalOnce}
+}
+
+var testConfirms sync.Map // *Tool -> func(context.Context, string) error
+
+func setConfirm(tool *Tool, fn func(context.Context, string) error) {
+	testConfirms.Store(tool, fn)
+}
+
+// executeGated runs the tool the way the agent loop does: registry argument
+// validation, then Tool.Approval through the approver, then Execute.
+func executeGated(ctx context.Context, tool *Tool, args json.RawMessage) (core.Result, error) {
+	var fn func(context.Context, string) error
+	if v, ok := testConfirms.Load(tool); ok {
+		fn, _ = v.(func(context.Context, string) error)
+	}
+	registry := core.NewRegistry()
+	spec := tool.Spec()
+	registry.MustRegister(spec)
+	return registry.Execute(core.WithApprover(ctx, confirmApprover{fn: fn}), spec.Name, args)
+}
+
 func run(t *testing.T, tool *Tool, args string) (core.Result, error) {
 	t.Helper()
-	res, err := tool.Execute(context.Background(), json.RawMessage(args))
+	res, err := executeGated(context.Background(), tool, json.RawMessage(args))
 	if err != nil {
 		t.Fatalf("Go-level error: %v", err)
 	}
@@ -100,13 +138,13 @@ func TestImageSuccessRequiresConfirmationAndPersistsMetadata(t *testing.T) {
 		}
 		imageResponse(w, tinyPNG)
 	})
-	tool.confirm = func(_ context.Context, q string) error {
+	setConfirm(tool, func(_ context.Context, q string) error {
 		if !strings.Contains(q, "A blue bird") || !strings.Contains(q, tool.cfg.BaseURL) || strings.Contains(q, "fixture-only-secret") {
 			t.Errorf("unsafe/missing confirmation: %s", q)
 		}
 		approved.Store(true)
 		return nil
-	}
+	})
 	res, err := run(t, tool, `{"prompt":"A blue bird"}`)
 	if err != nil {
 		t.Fatal(err)
@@ -192,7 +230,8 @@ func TestImageModelOverrideLocalServerAndErrorMessage(t *testing.T) {
 	defer server.Close()
 	// Real local transport: no test HTTP switch, no injected client.
 	cfg := &config.MediaGenerationProviderConf{Enabled: true, Provider: "openai", BaseURL: server.URL, Model: "local-default"}
-	tool := newTool(t.TempDir(), "image", cfg, func(context.Context, string) error { return nil })
+	tool := newTool(t.TempDir(), "image", cfg)
+	setConfirm(tool, func(context.Context, string) error { return nil })
 	if _, err := run(t, tool, `{"prompt":"x","model":"gpt-image-2.6-flare"}`); err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +243,8 @@ func TestImageModelOverrideLocalServerAndErrorMessage(t *testing.T) {
 	}
 	fail = true
 	cfg.APIKeyEnv = "LOCAL_KEY"
-	tool = newTool(t.TempDir(), "image", cfg, func(context.Context, string) error { return nil })
+	tool = newTool(t.TempDir(), "image", cfg)
+	setConfirm(tool, func(context.Context, string) error { return nil })
 	tool.lookupEnv = func(string) string { return "local-secret" }
 	_, err := run(t, tool, `{"prompt":"x"}`)
 	if err == nil || !strings.Contains(err.Error(), "Invalid size for key [redacted] line") || strings.Contains(err.Error(), "local-secret") {
@@ -223,9 +263,9 @@ func TestGenerationDisabledOrUnconfirmedNeverSends(t *testing.T) {
 			case "nil-config":
 				tool.cfg = nil
 			case "missing-confirm":
-				tool.confirm = nil
+				setConfirm(tool, nil)
 			case "denied":
-				tool.confirm = func(context.Context, string) error { return errors.New("declined") }
+				setConfirm(tool, func(context.Context, string) error { return errors.New("declined") })
 			case "missing-key":
 				tool.lookupEnv = func(string) string { return "" }
 			case "invalid-provider":
@@ -499,7 +539,7 @@ func TestFalTimeoutAndUserCancelBestEffortRemoteCancel(t *testing.T) {
 				f.onStatus = cancel
 				tool.timeoutOverride = time.Second
 			}
-			res, err := tool.Execute(ctx, json.RawMessage(`{"prompt":"test"}`))
+			res, err := executeGated(ctx, tool, json.RawMessage(`{"prompt":"test"}`))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -540,7 +580,7 @@ func TestNetworkPrivateAndSpecialIPRejection(t *testing.T) {
 }
 func TestAuthenticatedURLsRequireExactOrigin(t *testing.T) {
 	base, _ := url.Parse("https://queue.fal.run")
-	tool := NewVideo(".", nil, nil)
+	tool := NewVideo(".", nil)
 	rc := runtimeConfig{base: base}
 	for _, raw := range []string{"https://queue.fal.run.evil.test/jobs", "https://evil.test/jobs", "https://queue.fal.run:444/jobs", "http://queue.fal.run/jobs", "https://user:secret@queue.fal.run/jobs"} {
 		if _, err := tool.authenticatedURL(rc, raw); err == nil {
@@ -552,7 +592,7 @@ func TestAuthenticatedURLsRequireExactOrigin(t *testing.T) {
 	}
 }
 func TestOutputRejectsSymlinkEscapeAndCleansPartial(t *testing.T) {
-	tool := NewImage(t.TempDir(), nil, nil)
+	tool := NewImage(t.TempDir(), nil)
 	outside := t.TempDir()
 	if err := os.Symlink(outside, filepath.Join(tool.baseDir, "generated")); err != nil {
 		t.Skipf("symlink unavailable: %v", err)
@@ -567,14 +607,14 @@ func TestOutputRejectsSymlinkEscapeAndCleansPartial(t *testing.T) {
 }
 func TestToolSchemaDiscoverableAndConfigSnapshot(t *testing.T) {
 	cfg := &config.MediaGenerationProviderConf{Enabled: true, Provider: "openai", Model: "original", AllowedParameters: []string{"quality"}, DefaultParameters: map[string]any{"quality": "low"}}
-	tool := NewImage(".", cfg, nil)
+	tool := NewImage(".", cfg)
 	cfg.Model = "mutated"
 	cfg.AllowedParameters[0] = "webhook_url"
 	cfg.DefaultParameters["quality"] = "high"
 	if tool.cfg.Model != "original" || tool.cfg.AllowedParameters[0] != "quality" || tool.cfg.DefaultParameters["quality"] != "low" {
 		t.Fatal("shared mutable config")
 	}
-	for _, candidate := range []*Tool{tool, NewVideo(".", nil, nil)} {
+	for _, candidate := range []*Tool{tool, NewVideo(".", nil)} {
 		spec := candidate.Spec()
 		if err := spec.Validate(); err != nil {
 			t.Fatal(err)
@@ -590,7 +630,7 @@ func TestToolSchemaDiscoverableAndConfigSnapshot(t *testing.T) {
 }
 func BenchmarkDisabledMediaToolConstruction(b *testing.B) {
 	for b.Loop() {
-		tool := NewImage(".", nil, nil)
+		tool := NewImage(".", nil)
 		if tool.cfg != nil {
 			b.Fatal("unexpected config")
 		}
@@ -620,7 +660,7 @@ func TestImageDeadlineStopsWaitingWithoutRetry(t *testing.T) {
 }
 
 func TestImageExactLimitAndOutputFailureCleanup(t *testing.T) {
-	tool := NewImage(t.TempDir(), nil, nil)
+	tool := NewImage(t.TempDir(), nil)
 	res, err := tool.saveOutput(context.Background(), bytes.NewReader(tinyPNG), int64(len(tinyPNG)))
 	if err != nil {
 		t.Fatal(err)
@@ -632,13 +672,13 @@ func TestImageExactLimitAndOutputFailureCleanup(t *testing.T) {
 	}
 	// Valid magic with a deliberately interrupted oversized stream tests removal
 	// after the file has already been opened and partially written.
-	tool = NewImage(t.TempDir(), nil, nil)
+	tool = NewImage(t.TempDir(), nil)
 	payload := append(append([]byte(nil), tinyPNG...), bytes.Repeat([]byte("x"), 2048)...)
 	if _, err = tool.saveOutput(context.Background(), bytes.NewReader(payload), 600); err == nil {
 		t.Fatal("accepted oversized stream")
 	}
 	assertNoOutput(t, tool)
-	tool = NewImage(t.TempDir(), nil, nil)
+	tool = NewImage(t.TempDir(), nil)
 	interrupted := io.MultiReader(bytes.NewReader(payload[:512]), errorReader{})
 	if _, err = tool.saveOutput(context.Background(), interrupted, 4096); err == nil {
 		t.Fatal("accepted interrupted output")
@@ -654,7 +694,7 @@ func TestInvalidConfigurationFailsBeforeApproval(t *testing.T) {
 	for _, mode := range []string{"max-bytes", "timeout", "poll", "key-name", "key-controls", "model-traversal", "host-wildcard", "empty-download-hosts"} {
 		t.Run(mode, func(t *testing.T) {
 			tool := configuredTool(t, "video", func(w http.ResponseWriter, r *http.Request) { t.Error("invalid config made request") })
-			tool.confirm = func(context.Context, string) error { t.Error("asked approval for invalid config"); return nil }
+			setConfirm(tool, func(context.Context, string) error { t.Error("asked approval for invalid config"); return nil })
 			switch mode {
 			case "max-bytes":
 				tool.cfg.MaxBytes = MaxOutputBytes + 1

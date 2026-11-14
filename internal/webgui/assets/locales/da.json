@@ -1134,5 +1134,10 @@
   "approval.op.create_address_book": "Create an address book?",
   "approval.op.add_contacts": "Add contacts?",
   "approval.op.update_contact": "Update a contact?",
-  "approval.op.trash_outside_workspace": "Remove a file outside the workspace?"
+  "approval.op.trash_outside_workspace": "Remove a file outside the workspace?",
+  "approval.summary.generate_image": "Generér ét billede med {provider}-modellen {model}? Prompten og parametrene sendes til {endpoint}, og udbyderen kan opkræve betaling for genereringen. Der er ingen automatiske genforsøg og ingen betalt reserveløsning.",
+  "approval.summary.generate_video": "Generér én video med {provider}-modellen {model}? Prompten og parametrene sendes til {endpoint}, og udbyderen kan opkræve betaling for genereringen. Der er ingen automatiske genforsøg og ingen betalt reserveløsning.",
+  "approval.summary.headless_open": "Start en headless browsersession på det betroede mål “{target}”? Dens profil oprettes i den portable datamappe, og den kan åbne den ønskede adresse.",
+  "approval.summary.headless_close": "Luk en browsersession på det betroede mål “{target}”? Dens SuperCli-profil fjernes; driveren kører videre.",
+  "approval.summary.headless_action": "Kør “{action}” på det betroede mål “{target}”? Dette ændrer den valgte virtuelle maskine eller browsersession."
 }

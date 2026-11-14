@@ -100,6 +100,9 @@ func TestHeadlessControlRequiresNoDiscoveryRound(t *testing.T) {
 				calls++
 				return tools.Result{Text: `{"status":{"running":true}}`}, nil
 			}
+			// The fixture replaces the implementation, so it also drops the
+			// scope/approval check that belongs to the real one.
+			spec.Approval = nil
 			reg.MustRegister(spec)
 			reg.MustRegister(NewInvokeTool(reg).Spec())
 			reg.MarkAlwaysOn("invoke_tool")

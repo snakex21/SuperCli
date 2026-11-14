@@ -280,6 +280,9 @@ func (p *webHostPowerProvider) Complete(ctx context.Context, _ []llm.Message, _ 
 func setupWebHostPowerRun(t *testing.T) (*Server, *systemhostpower.Controller, *webHostPowerClock) {
 	t.Helper()
 	s := newTestServer(t, false)
+	// host_power arms only through the host approval gate, as in production.
+	InstallApprovalGate(t.TempDir())
+	t.Cleanup(func() { tools.SetDefaultApprover(nil) })
 	controller, clock := installWebHostPower(t, s.eng)
 	svc, err := s.eng.goalServiceAt(context.Background(), s.eng.Home())
 	if err != nil {
@@ -309,7 +312,12 @@ func answerWebHostPower(t *testing.T, e *Engine, ev wireEvent) {
 		t.Error("confirmation was not registered")
 		return
 	}
-	req.Respond <- tools.AskAnswer{Selected: []string{"Allow once"}}
+	if req.Approval == nil {
+		t.Error("host_power arm was not an approval card")
+		req.Respond <- tools.AskAnswer{Cancelled: true}
+		return
+	}
+	req.Respond <- tools.AskAnswer{Selected: []string{req.Approval.ApproveLabel}}
 }
 
 func TestHostPowerStreamFinalizesAfterCleanupAndSurvivesDisconnect(t *testing.T) {

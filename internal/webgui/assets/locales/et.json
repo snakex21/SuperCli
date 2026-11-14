@@ -1134,5 +1134,10 @@
   "approval.op.create_address_book": "Create an address book?",
   "approval.op.add_contacts": "Add contacts?",
   "approval.op.update_contact": "Update a contact?",
-  "approval.op.trash_outside_workspace": "Remove a file outside the workspace?"
+  "approval.op.trash_outside_workspace": "Remove a file outside the workspace?",
+  "approval.summary.generate_image": "Kas luua üks pilt teenuse {provider} mudeliga {model}? Viip ja parameetrid saadetakse aadressile {endpoint} ning teenusepakkuja võib genereerimise eest tasu võtta. Automaatset kordamist ega tasulist varuvarianti ei ole.",
+  "approval.summary.generate_video": "Kas luua üks video teenuse {provider} mudeliga {model}? Viip ja parameetrid saadetakse aadressile {endpoint} ning teenusepakkuja võib genereerimise eest tasu võtta. Automaatset kordamist ega tasulist varuvarianti ei ole.",
+  "approval.summary.headless_open": "Kas käivitada peata brauseriseanss usaldusväärses sihtmärgis „{target}“? Selle profiil luuakse kaasaskantavasse andmekausta ja seanss võib avada soovitud aadressi.",
+  "approval.summary.headless_close": "Kas sulgeda brauseriseanss usaldusväärses sihtmärgis „{target}“? Selle SuperCli profiil eemaldatakse; draiver jätkab tööd.",
+  "approval.summary.headless_action": "Kas käivitada „{action}“ usaldusväärses sihtmärgis „{target}“? See muudab valitud virtuaalmasinat või brauseriseanssi."
 }
