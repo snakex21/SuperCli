@@ -1141,5 +1141,15 @@
   "approval.summary.headless_close": "Eine Browsersitzung auf dem vertrauenswürdigen Ziel „{target}“ schließen? Ihr SuperCli-Profil wird entfernt; der Treiber läuft weiter.",
   "approval.summary.headless_action": "„{action}“ auf dem vertrauenswürdigen Ziel „{target}“ ausführen? Dadurch wird die ausgewählte virtuelle Maschine oder Browsersitzung verändert.",
   "approval.field.warnings": "Warnung",
-  "approval.summary.trash_outside_workspace": "{path} entfernen, das AUSSERHALB des Arbeitsbereichs liegt? Es wird in den Projektordner .supercli/trash verschoben und kann von dort wiederhergestellt werden."
+  "approval.summary.trash_outside_workspace": "{path} entfernen, das AUSSERHALB des Arbeitsbereichs liegt? Es wird in den Projektordner .supercli/trash verschoben und kann von dort wiederhergestellt werden.",
+  "tb.hint": "Thunderbird AI Bridge lässt SuperCli mit Ihrem Thunderbird-Postfach arbeiten. Einmal koppeln; nur der gekoppelte Thunderbird kann sich verbinden.",
+  "tb.paired": "Gekoppelt",
+  "tb.notPaired": "Nicht gekoppelt",
+  "tb.connected": "Verbunden",
+  "tb.disconnected": "Nicht verbunden",
+  "tb.pair": "Koppeln",
+  "tb.unpair": "Entkoppeln",
+  "tb.codeHelp": "Geben Sie diesen Code in Thunderbird ein: Add-ons → Thunderbird AI Bridge → Einstellungen → Koppeln. Gültig bis {time}.",
+  "tb.unpairConfirm": "Thunderbird entkoppeln? Er kann sich erst nach erneutem Koppeln verbinden.",
+  "panel.thunderbird": "Thunderbird"
 }

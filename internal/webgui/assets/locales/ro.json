@@ -1141,5 +1141,15 @@
   "approval.summary.headless_close": "Închideți o sesiune de browser pe ținta de încredere „{target}”? Profilul său SuperCli este eliminat; driverul continuă să ruleze.",
   "approval.summary.headless_action": "Rulați „{action}” pe ținta de încredere „{target}”? Aceasta modifică mașina virtuală sau sesiunea de browser selectată.",
   "approval.field.warnings": "Avertisment",
-  "approval.summary.trash_outside_workspace": "Eliminați {path}, care se află ÎN AFARA spațiului de lucru? Este mutat în dosarul .supercli/trash al proiectului, de unde poate fi restaurat."
+  "approval.summary.trash_outside_workspace": "Eliminați {path}, care se află ÎN AFARA spațiului de lucru? Este mutat în dosarul .supercli/trash al proiectului, de unde poate fi restaurat.",
+  "tb.hint": "Thunderbird AI Bridge permite SuperCli să lucreze cu căsuța ta din Thunderbird. Asociază-l o dată; doar Thunderbird asociat se poate conecta.",
+  "tb.paired": "Asociat",
+  "tb.notPaired": "Neasociat",
+  "tb.connected": "Conectat",
+  "tb.disconnected": "Neconectat",
+  "tb.pair": "Asociază",
+  "tb.unpair": "Disociază",
+  "tb.codeHelp": "Introdu acest cod în Thunderbird: Suplimente → Thunderbird AI Bridge → Opțiuni → Asociază. Valabil până la {time}.",
+  "tb.unpairConfirm": "Disociezi Thunderbird? Nu se va putea conecta până nu îl asociezi din nou.",
+  "panel.thunderbird": "Thunderbird"
 }

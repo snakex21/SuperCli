@@ -1018,5 +1018,11 @@
   "approval.summary.headless_close": "Een browsersessie sluiten op het vertrouwde doel ‘{target}’? Het SuperCli-profiel wordt verwijderd; de driver blijft actief.",
   "approval.summary.headless_action": "‘{action}’ uitvoeren op het vertrouwde doel ‘{target}’? Dit wijzigt de geselecteerde virtuele machine of browsersessie.",
   "approval.field.warnings": "Waarschuwing",
-  "approval.summary.trash_outside_workspace": "{path} verwijderen, dat BUITEN de werkruimte staat? Het wordt verplaatst naar de projectmap .supercli/trash en kan daar worden hersteld."
+  "approval.summary.trash_outside_workspace": "{path} verwijderen, dat BUITEN de werkruimte staat? Het wordt verplaatst naar de projectmap .supercli/trash en kan daar worden hersteld.",
+  "tui.command_desc.thunderbird": "Thunderbird koppelen en de brugstatus tonen",
+  "tui.thunderbird.code": "Koppelcode: %s (geldig tot %s). In Thunderbird: Add-ons → Thunderbird AI Bridge → Opties, voer de code in en klik op Koppelen.",
+  "tui.thunderbird.unpaired": "Thunderbird ontkoppeld. Hij kan pas weer verbinden na opnieuw koppelen.",
+  "tui.thunderbird.cancelled": "Koppelen geannuleerd.",
+  "tui.thunderbird.usage": "Gebruik: /thunderbird [status|pair|unpair|cancel]",
+  "tui.thunderbird.status": "Thunderbird-brug: %s"
 }

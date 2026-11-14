@@ -1018,5 +1018,11 @@
   "approval.summary.headless_close": "Zavrieť reláciu prehliadača na dôveryhodnom cieli „{target}“? Jej profil SuperCli sa odstráni; ovládač beží ďalej.",
   "approval.summary.headless_action": "Spustiť „{action}“ na dôveryhodnom cieli „{target}“? Tým sa zmení vybraný virtuálny počítač alebo relácia prehliadača.",
   "approval.field.warnings": "Upozornenie",
-  "approval.summary.trash_outside_workspace": "Odstrániť {path}, ktorý je MIMO pracovného priestoru? Presunie sa do priečinka .supercli/trash projektu, odkiaľ ho možno obnoviť."
+  "approval.summary.trash_outside_workspace": "Odstrániť {path}, ktorý je MIMO pracovného priestoru? Presunie sa do priečinka .supercli/trash projektu, odkiaľ ho možno obnoviť.",
+  "tui.command_desc.thunderbird": "spárovať Thunderbird a ukázať stav mosta",
+  "tui.thunderbird.code": "Párovací kód: %s (platí do %s). V Thunderbirde: Doplnky → Thunderbird AI Bridge → Možnosti, zadajte kód a kliknite na Spárovať.",
+  "tui.thunderbird.unpaired": "Spárovanie Thunderbirdu zrušené. Nepripojí sa, kým ho znova nespárujete.",
+  "tui.thunderbird.cancelled": "Párovanie zrušené.",
+  "tui.thunderbird.usage": "Použitie: /thunderbird [status|pair|unpair|cancel]",
+  "tui.thunderbird.status": "Most Thunderbird: %s"
 }

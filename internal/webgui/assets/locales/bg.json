@@ -1141,5 +1141,15 @@
   "approval.summary.headless_close": "Да се затвори ли сесия на браузър на доверената цел „{target}“? Профилът ѝ в SuperCli се премахва; драйверът продължава да работи.",
   "approval.summary.headless_action": "Да се изпълни ли „{action}“ на доверената цел „{target}“? Това променя избраната виртуална машина или сесия на браузър.",
   "approval.field.warnings": "Предупреждение",
-  "approval.summary.trash_outside_workspace": "Да се премахне ли {path}, който е ИЗВЪН работното пространство? Той се премества в папката .supercli/trash на проекта, откъдето може да бъде възстановен."
+  "approval.summary.trash_outside_workspace": "Да се премахне ли {path}, който е ИЗВЪН работното пространство? Той се премества в папката .supercli/trash на проекта, откъдето може да бъде възстановен.",
+  "tb.hint": "Thunderbird AI Bridge позволява на SuperCli да работи с пощата ви в Thunderbird. Сдвоете веднъж; само сдвоеният Thunderbird може да се свърже.",
+  "tb.paired": "Сдвоено",
+  "tb.notPaired": "Не е сдвоено",
+  "tb.connected": "Свързано",
+  "tb.disconnected": "Няма връзка",
+  "tb.pair": "Сдвояване",
+  "tb.unpair": "Премахване на сдвояването",
+  "tb.codeHelp": "Въведете този код в Thunderbird: Добавки → Thunderbird AI Bridge → Настройки → Сдвояване. Валиден до {time}.",
+  "tb.unpairConfirm": "Да се премахне ли сдвояването с Thunderbird? Той няма да се свърже, докато не го сдвоите отново.",
+  "panel.thunderbird": "Thunderbird"
 }

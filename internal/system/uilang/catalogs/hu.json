@@ -1018,5 +1018,11 @@
   "approval.summary.headless_close": "Bezár egy böngésző-munkamenetet a(z) „{target}” megbízható célon? A SuperCli-profilja törlődik; az illesztőprogram tovább fut.",
   "approval.summary.headless_action": "Futtatja a(z) „{action}” műveletet a(z) „{target}” megbízható célon? Ez módosítja a kiválasztott virtuális gépet vagy böngésző-munkamenetet.",
   "approval.field.warnings": "Figyelmeztetés",
-  "approval.summary.trash_outside_workspace": "Eltávolítja a(z) {path} elemet, amely a munkaterületen KÍVÜL van? A projekt .supercli/trash mappájába kerül, ahonnan visszaállítható."
+  "approval.summary.trash_outside_workspace": "Eltávolítja a(z) {path} elemet, amely a munkaterületen KÍVÜL van? A projekt .supercli/trash mappájába kerül, ahonnan visszaállítható.",
+  "tui.command_desc.thunderbird": "Thunderbird párosítása és a híd állapota",
+  "tui.thunderbird.code": "Párosítási kód: %s (érvényes eddig: %s). A Thunderbirdben: Kiegészítők → Thunderbird AI Bridge → Beállítások, írja be a kódot, és kattintson a Párosítás gombra.",
+  "tui.thunderbird.unpaired": "A Thunderbird párosítása megszűnt. Újbóli párosításig nem tud csatlakozni.",
+  "tui.thunderbird.cancelled": "Párosítás megszakítva.",
+  "tui.thunderbird.usage": "Használat: /thunderbird [status|pair|unpair|cancel]",
+  "tui.thunderbird.status": "Thunderbird-híd: %s"
 }

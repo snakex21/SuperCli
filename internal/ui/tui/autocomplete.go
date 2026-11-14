@@ -141,6 +141,7 @@ func HelpContentEntries() []SlashEntry {
 		{Name: "telefon", Desc: textFor("en", "tui.command_desc.telefon")},
 		{Name: "phone", Desc: textFor("en", "tui.command_desc.phone")},
 		{Name: "doctor", Desc: textFor("en", "tui.command_desc.doctor")},
+		{Name: "thunderbird", Desc: textFor("en", "tui.command_desc.thunderbird"), Args: "[status|pair|unpair|cancel]"},
 		{Name: "login", Desc: textFor("en", "tui.command_desc.login"), Args: "[label]"},
 		{Name: "account", Desc: textFor("en", "tui.command_desc.account")},
 		{Name: "accounts", Desc: textFor("en", "tui.command_desc.accounts")},

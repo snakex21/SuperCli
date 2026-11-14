@@ -1018,5 +1018,11 @@
   "approval.summary.headless_close": "Zamknąć sesję przeglądarki na zaufanym celu „{target}”? Jej profil SuperCli zostanie usunięty; sterownik nadal będzie działać.",
   "approval.summary.headless_action": "Wykonać „{action}” na zaufanym celu „{target}”? Zmieni to wybraną maszynę wirtualną lub sesję przeglądarki.",
   "approval.field.warnings": "Ostrzeżenie",
-  "approval.summary.trash_outside_workspace": "Usunąć {path}, który jest POZA obszarem roboczym? Zostanie przeniesiony do folderu .supercli/trash projektu, skąd można go przywrócić."
+  "approval.summary.trash_outside_workspace": "Usunąć {path}, który jest POZA obszarem roboczym? Zostanie przeniesiony do folderu .supercli/trash projektu, skąd można go przywrócić.",
+  "tui.command_desc.thunderbird": "sparuj Thunderbirda i pokaż stan mostu",
+  "tui.thunderbird.code": "Kod parowania: %s (ważny do %s). W Thunderbirdzie: Dodatki → Thunderbird AI Bridge → Opcje, wpisz kod i kliknij Paruj.",
+  "tui.thunderbird.unpaired": "Rozparowano Thunderbirda. Nie połączy się, dopóki nie sparujesz go ponownie.",
+  "tui.thunderbird.cancelled": "Anulowano parowanie.",
+  "tui.thunderbird.usage": "Użycie: /thunderbird [status|pair|unpair|cancel]",
+  "tui.thunderbird.status": "Most Thunderbird: %s"
 }

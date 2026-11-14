@@ -1141,5 +1141,15 @@
   "approval.summary.headless_close": "Een browsersessie sluiten op het vertrouwde doel ‘{target}’? Het SuperCli-profiel wordt verwijderd; de driver blijft actief.",
   "approval.summary.headless_action": "‘{action}’ uitvoeren op het vertrouwde doel ‘{target}’? Dit wijzigt de geselecteerde virtuele machine of browsersessie.",
   "approval.field.warnings": "Waarschuwing",
-  "approval.summary.trash_outside_workspace": "{path} verwijderen, dat BUITEN de werkruimte staat? Het wordt verplaatst naar de projectmap .supercli/trash en kan daar worden hersteld."
+  "approval.summary.trash_outside_workspace": "{path} verwijderen, dat BUITEN de werkruimte staat? Het wordt verplaatst naar de projectmap .supercli/trash en kan daar worden hersteld.",
+  "tb.hint": "Met Thunderbird AI Bridge werkt SuperCli met je Thunderbird-postvak. Koppel eenmalig; alleen de gekoppelde Thunderbird kan verbinden.",
+  "tb.paired": "Gekoppeld",
+  "tb.notPaired": "Niet gekoppeld",
+  "tb.connected": "Verbonden",
+  "tb.disconnected": "Niet verbonden",
+  "tb.pair": "Koppelen",
+  "tb.unpair": "Ontkoppelen",
+  "tb.codeHelp": "Voer deze code in Thunderbird in: Add-ons → Thunderbird AI Bridge → Opties → Koppelen. Geldig tot {time}.",
+  "tb.unpairConfirm": "Thunderbird ontkoppelen? Hij kan pas weer verbinden na opnieuw koppelen.",
+  "panel.thunderbird": "Thunderbird"
 }

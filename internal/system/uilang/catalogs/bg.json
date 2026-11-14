@@ -1018,5 +1018,11 @@
   "approval.summary.headless_close": "Да се затвори ли сесия на браузър на доверената цел „{target}“? Профилът ѝ в SuperCli се премахва; драйверът продължава да работи.",
   "approval.summary.headless_action": "Да се изпълни ли „{action}“ на доверената цел „{target}“? Това променя избраната виртуална машина или сесия на браузър.",
   "approval.field.warnings": "Предупреждение",
-  "approval.summary.trash_outside_workspace": "Да се премахне ли {path}, който е ИЗВЪН работното пространство? Той се премества в папката .supercli/trash на проекта, откъдето може да бъде възстановен."
+  "approval.summary.trash_outside_workspace": "Да се премахне ли {path}, който е ИЗВЪН работното пространство? Той се премества в папката .supercli/trash на проекта, откъдето може да бъде възстановен.",
+  "tui.command_desc.thunderbird": "сдвояване с Thunderbird и състояние на моста",
+  "tui.thunderbird.code": "Код за сдвояване: %s (валиден до %s). В Thunderbird: Добавки → Thunderbird AI Bridge → Настройки, въведете кода и натиснете Сдвояване.",
+  "tui.thunderbird.unpaired": "Сдвояването с Thunderbird е премахнато. Той няма да се свърже, докато не го сдвоите отново.",
+  "tui.thunderbird.cancelled": "Сдвояването е отменено.",
+  "tui.thunderbird.usage": "Употреба: /thunderbird [status|pair|unpair|cancel]",
+  "tui.thunderbird.status": "Мост Thunderbird: %s"
 }

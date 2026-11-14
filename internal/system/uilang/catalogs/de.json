@@ -1018,5 +1018,11 @@
   "approval.summary.headless_close": "Eine Browsersitzung auf dem vertrauenswürdigen Ziel „{target}“ schließen? Ihr SuperCli-Profil wird entfernt; der Treiber läuft weiter.",
   "approval.summary.headless_action": "„{action}“ auf dem vertrauenswürdigen Ziel „{target}“ ausführen? Dadurch wird die ausgewählte virtuelle Maschine oder Browsersitzung verändert.",
   "approval.field.warnings": "Warnung",
-  "approval.summary.trash_outside_workspace": "{path} entfernen, das AUSSERHALB des Arbeitsbereichs liegt? Es wird in den Projektordner .supercli/trash verschoben und kann von dort wiederhergestellt werden."
+  "approval.summary.trash_outside_workspace": "{path} entfernen, das AUSSERHALB des Arbeitsbereichs liegt? Es wird in den Projektordner .supercli/trash verschoben und kann von dort wiederhergestellt werden.",
+  "tui.command_desc.thunderbird": "Thunderbird koppeln und Brückenstatus zeigen",
+  "tui.thunderbird.code": "Kopplungscode: %s (gültig bis %s). In Thunderbird: Add-ons → Thunderbird AI Bridge → Einstellungen, Code eingeben und Koppeln klicken.",
+  "tui.thunderbird.unpaired": "Thunderbird entkoppelt. Er kann sich erst nach erneutem Koppeln verbinden.",
+  "tui.thunderbird.cancelled": "Kopplung abgebrochen.",
+  "tui.thunderbird.usage": "Verwendung: /thunderbird [status|pair|unpair|cancel]",
+  "tui.thunderbird.status": "Thunderbird-Brücke: %s"
 }

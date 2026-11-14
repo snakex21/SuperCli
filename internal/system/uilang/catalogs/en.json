@@ -1018,5 +1018,11 @@
   "approval.summary.headless_close": "Close a browser session on the trusted target “{target}”? Its SuperCli profile is removed; the driver keeps running.",
   "approval.summary.headless_action": "Run “{action}” on the trusted target “{target}”? This changes the selected virtual machine or browser session.",
   "approval.field.warnings": "Warning",
-  "approval.summary.trash_outside_workspace": "Remove {path}, which is OUTSIDE the workspace? It is moved to the project's .supercli/trash folder, where it can be restored."
+  "approval.summary.trash_outside_workspace": "Remove {path}, which is OUTSIDE the workspace? It is moved to the project's .supercli/trash folder, where it can be restored.",
+  "tui.command_desc.thunderbird": "pair Thunderbird and show the bridge status",
+  "tui.thunderbird.code": "Pairing code: %s (valid until %s). In Thunderbird: Add-ons → Thunderbird AI Bridge → Options, enter the code and click Pair.",
+  "tui.thunderbird.unpaired": "Thunderbird unpaired. It cannot connect until you pair it again.",
+  "tui.thunderbird.cancelled": "Pairing cancelled.",
+  "tui.thunderbird.usage": "Usage: /thunderbird [status|pair|unpair|cancel]",
+  "tui.thunderbird.status": "Thunderbird Bridge: %s"
 }

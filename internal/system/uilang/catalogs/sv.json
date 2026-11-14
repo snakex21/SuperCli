@@ -1018,5 +1018,11 @@
   "approval.summary.headless_close": "Stänga en webbläsarsession på det betrodda målet ”{target}”? Dess SuperCli-profil tas bort; drivrutinen fortsätter att köras.",
   "approval.summary.headless_action": "Köra ”{action}” på det betrodda målet ”{target}”? Detta ändrar den valda virtuella maskinen eller webbläsarsessionen.",
   "approval.field.warnings": "Varning",
-  "approval.summary.trash_outside_workspace": "Ta bort {path}, som ligger UTANFÖR arbetsytan? Den flyttas till projektets mapp .supercli/trash och kan återställas därifrån."
+  "approval.summary.trash_outside_workspace": "Ta bort {path}, som ligger UTANFÖR arbetsytan? Den flyttas till projektets mapp .supercli/trash och kan återställas därifrån.",
+  "tui.command_desc.thunderbird": "parkoppla Thunderbird och visa bryggans status",
+  "tui.thunderbird.code": "Parkopplingskod: %s (giltig till %s). I Thunderbird: Tillägg → Thunderbird AI Bridge → Inställningar, ange koden och klicka Parkoppla.",
+  "tui.thunderbird.unpaired": "Parkopplingen med Thunderbird är borttagen. Den kan inte ansluta förrän du parkopplar igen.",
+  "tui.thunderbird.cancelled": "Parkoppling avbruten.",
+  "tui.thunderbird.usage": "Användning: /thunderbird [status|pair|unpair|cancel]",
+  "tui.thunderbird.status": "Thunderbird-brygga: %s"
 }

@@ -1018,5 +1018,11 @@
   "approval.summary.headless_close": "¿Cerrar una sesión de navegador en el destino de confianza «{target}»? Se elimina su perfil de SuperCli; el controlador sigue en ejecución.",
   "approval.summary.headless_action": "¿Ejecutar «{action}» en el destino de confianza «{target}»? Esto modifica la máquina virtual o la sesión de navegador seleccionada.",
   "approval.field.warnings": "Advertencia",
-  "approval.summary.trash_outside_workspace": "¿Quitar {path}, que está FUERA del espacio de trabajo? Se mueve a la carpeta .supercli/trash del proyecto, desde donde se puede restaurar."
+  "approval.summary.trash_outside_workspace": "¿Quitar {path}, que está FUERA del espacio de trabajo? Se mueve a la carpeta .supercli/trash del proyecto, desde donde se puede restaurar.",
+  "tui.command_desc.thunderbird": "vincular Thunderbird y mostrar el estado del puente",
+  "tui.thunderbird.code": "Código de vinculación: %s (válido hasta %s). En Thunderbird: Complementos → Thunderbird AI Bridge → Opciones, introduce el código y pulsa Vincular.",
+  "tui.thunderbird.unpaired": "Thunderbird desvinculado. No podrá conectarse hasta que lo vincules de nuevo.",
+  "tui.thunderbird.cancelled": "Vinculación cancelada.",
+  "tui.thunderbird.usage": "Uso: /thunderbird [status|pair|unpair|cancel]",
+  "tui.thunderbird.status": "Puente de Thunderbird: %s"
 }

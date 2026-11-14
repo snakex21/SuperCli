@@ -1141,5 +1141,15 @@
   "approval.summary.headless_close": "Uždaryti naršyklės seansą patikimame taikinyje „{target}“? Jo SuperCli profilis pašalinamas; tvarkyklė toliau veikia.",
   "approval.summary.headless_action": "Vykdyti „{action}“ patikimame taikinyje „{target}“? Tai pakeis pasirinktą virtualiąją mašiną arba naršyklės seansą.",
   "approval.field.warnings": "Įspėjimas",
-  "approval.summary.trash_outside_workspace": "Pašalinti {path}, kuris yra UŽ darbo srities ribų? Jis perkeliamas į projekto aplanką .supercli/trash ir iš ten jį galima atkurti."
+  "approval.summary.trash_outside_workspace": "Pašalinti {path}, kuris yra UŽ darbo srities ribų? Jis perkeliamas į projekto aplanką .supercli/trash ir iš ten jį galima atkurti.",
+  "tb.hint": "Thunderbird AI Bridge leidžia SuperCli dirbti su jūsų Thunderbird pašto dėžute. Susiekite vieną kartą; prisijungti gali tik susietas Thunderbird.",
+  "tb.paired": "Susieta",
+  "tb.notPaired": "Nesusieta",
+  "tb.connected": "Prisijungta",
+  "tb.disconnected": "Neprisijungta",
+  "tb.pair": "Susieti",
+  "tb.unpair": "Atsieti",
+  "tb.codeHelp": "Įveskite šį kodą Thunderbird: Priedai → Thunderbird AI Bridge → Nuostatos → Susieti. Galioja iki {time}.",
+  "tb.unpairConfirm": "Atsieti Thunderbird? Jis negalės prisijungti, kol vėl jo nesusiesite.",
+  "panel.thunderbird": "Thunderbird"
 }

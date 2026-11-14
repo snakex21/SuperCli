@@ -1141,5 +1141,15 @@
   "approval.summary.headless_close": "Закрыть сеанс браузера на доверенной цели «{target}»? Его профиль SuperCli удаляется; драйвер продолжает работать.",
   "approval.summary.headless_action": "Выполнить «{action}» на доверенной цели «{target}»? Это изменит выбранную виртуальную машину или сеанс браузера.",
   "approval.field.warnings": "Предупреждение",
-  "approval.summary.trash_outside_workspace": "Удалить {path}, который находится ВНЕ рабочей области? Он будет перемещён в папку .supercli/trash проекта, откуда его можно восстановить."
+  "approval.summary.trash_outside_workspace": "Удалить {path}, который находится ВНЕ рабочей области? Он будет перемещён в папку .supercli/trash проекта, откуда его можно восстановить.",
+  "tb.hint": "Thunderbird AI Bridge позволяет SuperCli работать с вашим ящиком в Thunderbird. Выполните сопряжение один раз; подключиться может только сопряжённый Thunderbird.",
+  "tb.paired": "Сопряжено",
+  "tb.notPaired": "Не сопряжено",
+  "tb.connected": "Подключено",
+  "tb.disconnected": "Не подключено",
+  "tb.pair": "Сопрячь",
+  "tb.unpair": "Отменить сопряжение",
+  "tb.codeHelp": "Введите этот код в Thunderbird: Дополнения → Thunderbird AI Bridge → Настройки → Сопрячь. Действует до {time}.",
+  "tb.unpairConfirm": "Отменить сопряжение с Thunderbird? Он не подключится, пока вы не выполните сопряжение снова.",
+  "panel.thunderbird": "Thunderbird"
 }

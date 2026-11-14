@@ -1141,5 +1141,15 @@
   "approval.summary.headless_close": "Zamknąć sesję przeglądarki na zaufanym celu „{target}”? Jej profil SuperCli zostanie usunięty; sterownik nadal będzie działać.",
   "approval.summary.headless_action": "Wykonać „{action}” na zaufanym celu „{target}”? Zmieni to wybraną maszynę wirtualną lub sesję przeglądarki.",
   "approval.field.warnings": "Ostrzeżenie",
-  "approval.summary.trash_outside_workspace": "Usunąć {path}, który jest POZA obszarem roboczym? Zostanie przeniesiony do folderu .supercli/trash projektu, skąd można go przywrócić."
+  "approval.summary.trash_outside_workspace": "Usunąć {path}, który jest POZA obszarem roboczym? Zostanie przeniesiony do folderu .supercli/trash projektu, skąd można go przywrócić.",
+  "tb.hint": "Thunderbird AI Bridge pozwala SuperCli pracować z Twoją skrzynką w Thunderbirdzie. Sparuj go raz; połączyć może się tylko sparowany Thunderbird.",
+  "tb.paired": "Sparowano",
+  "tb.notPaired": "Niesparowane",
+  "tb.connected": "Połączono",
+  "tb.disconnected": "Brak połączenia",
+  "tb.pair": "Paruj",
+  "tb.unpair": "Rozparuj",
+  "tb.codeHelp": "Wpisz ten kod w Thunderbirdzie: Dodatki → Thunderbird AI Bridge → Opcje → Paruj. Ważny do {time}.",
+  "tb.unpairConfirm": "Rozparować Thunderbirda? Nie połączy się, dopóki nie sparujesz go ponownie.",
+  "panel.thunderbird": "Thunderbird"
 }

@@ -132,43 +132,78 @@ func (s *Server) handleThunderbirdIntegration(w http.ResponseWriter, r *http.Req
 		return
 	}
 	bundled := s.bundledThunderbirdXPI() != ""
-	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
-	defer cancel()
-
-	tool := tools.NewThunderbirdMail(s.eng.DataDir()).Spec()
-	result, callErr := tool.Fn(ctx, json.RawMessage(`{"op":"status"}`))
-	if callErr != nil {
-		writeJSON(w, map[string]any{
-			"ok":                true,
-			"connected":         false,
-			"repo_url":          thunderbirdBridgeRepoURL,
-			"bundled_available": bundled,
-			"error":             callErr.Error(),
-		})
-		return
-	}
-	if result.Err != nil {
-		writeJSON(w, map[string]any{
-			"ok":                true,
-			"connected":         false,
-			"repo_url":          thunderbirdBridgeRepoURL,
-			"bundled_available": bundled,
-			"error":             result.Err.Error(),
-		})
-		return
-	}
-	var status any
-	if text := strings.TrimSpace(result.Text); text != "" {
-		if err := json.Unmarshal([]byte(text), &status); err != nil {
-			status = text
-		}
-	}
-	writeJSON(w, map[string]any{
+	bridge := tools.ThunderbirdBridgeStatusFor(s.eng.DataDir())
+	payload := map[string]any{
 		"ok":                true,
-		"connected":         true,
+		"connected":         bridge.Connected,
+		"paired":            bridge.Paired,
+		"bridge":            bridge,
 		"repo_url":          thunderbirdBridgeRepoURL,
 		"bundled_available": bundled,
-		"status":            status,
-		"host":              "127.0.0.1:47831",
-	})
+		"host":              bridge.Addr,
+	}
+	if !bridge.Connected {
+		// Asking a disconnected bridge would only wait for its timeout.
+		payload["error"] = bridge.Message
+		writeJSON(w, payload)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
+	defer cancel()
+	tool := tools.NewThunderbirdMail(s.eng.DataDir()).Spec()
+	result, callErr := tool.Fn(ctx, json.RawMessage(`{"op":"status"}`))
+	switch {
+	case callErr != nil:
+		payload["connected"], payload["error"] = false, callErr.Error()
+	case result.Err != nil:
+		payload["connected"], payload["error"] = false, result.Err.Error()
+	default:
+		var status any
+		if text := strings.TrimSpace(result.Text); text != "" {
+			if err := json.Unmarshal([]byte(text), &status); err != nil {
+				status = text
+			}
+		}
+		payload["status"] = status
+	}
+	writeJSON(w, payload)
+}
+
+// handleThunderbirdPair opens a five-minute pairing window and returns the
+// one-time code. The code is shown in the UI only; it is never logged.
+func (s *Server) handleThunderbirdPair(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	code, err := tools.StartThunderbirdPairing(s.eng.DataDir())
+	if err != nil {
+		writeJSONStatus(w, http.StatusConflict, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "code": code.Code, "expires_at": code.ExpiresAt, "host_id": code.HostID})
+}
+
+func (s *Server) handleThunderbirdPairCancel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := tools.CancelThunderbirdPairing(s.eng.DataDir()); err != nil {
+		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+func (s *Server) handleThunderbirdUnpair(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := tools.UnpairThunderbird(s.eng.DataDir()); err != nil {
+		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true})
 }

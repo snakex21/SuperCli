@@ -1141,5 +1141,15 @@
   "approval.summary.headless_close": "Chiudere una sessione del browser sulla destinazione attendibile «{target}»? Il suo profilo SuperCli viene rimosso; il driver resta in esecuzione.",
   "approval.summary.headless_action": "Eseguire «{action}» sulla destinazione attendibile «{target}»? Questo modifica la macchina virtuale o la sessione del browser selezionata.",
   "approval.field.warnings": "Avviso",
-  "approval.summary.trash_outside_workspace": "Rimuovere {path}, che si trova FUORI dall’area di lavoro? Viene spostato nella cartella .supercli/trash del progetto, da cui può essere ripristinato."
+  "approval.summary.trash_outside_workspace": "Rimuovere {path}, che si trova FUORI dall’area di lavoro? Viene spostato nella cartella .supercli/trash del progetto, da cui può essere ripristinato.",
+  "tb.hint": "Thunderbird AI Bridge consente a SuperCli di usare la tua casella di Thunderbird. Associalo una volta; solo il Thunderbird associato può connettersi.",
+  "tb.paired": "Associato",
+  "tb.notPaired": "Non associato",
+  "tb.connected": "Connesso",
+  "tb.disconnected": "Non connesso",
+  "tb.pair": "Associa",
+  "tb.unpair": "Dissocia",
+  "tb.codeHelp": "Inserisci questo codice in Thunderbird: Componenti aggiuntivi → Thunderbird AI Bridge → Opzioni → Associa. Valido fino alle {time}.",
+  "tb.unpairConfirm": "Dissociare Thunderbird? Non potrà connettersi finché non lo associ di nuovo.",
+  "panel.thunderbird": "Thunderbird"
 }

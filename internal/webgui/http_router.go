@@ -112,6 +112,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/nestcafe/update", s.handleNestCafeUpdate)
 	mux.HandleFunc("/api/integrations/thunderbird", s.handleThunderbirdIntegration)
 	mux.HandleFunc("/api/integrations/thunderbird/xpi", s.handleThunderbirdXPI)
+	// Pairing hands out a one-time code: only the local desktop window may ask.
+	mux.Handle("/api/integrations/thunderbird/pair", s.withSecretLocalOnly(http.HandlerFunc(s.handleThunderbirdPair)))
+	mux.Handle("/api/integrations/thunderbird/pair/cancel", s.withSecretLocalOnly(http.HandlerFunc(s.handleThunderbirdPairCancel)))
+	mux.Handle("/api/integrations/thunderbird/unpair", s.withSecretLocalOnly(http.HandlerFunc(s.handleThunderbirdUnpair)))
 	mux.HandleFunc("/api/data/status", s.handleDataStatus)
 	mux.HandleFunc("/api/data/clear", s.handleDataClear)
 	mux.HandleFunc("/api/data/export", s.handleDataExport)

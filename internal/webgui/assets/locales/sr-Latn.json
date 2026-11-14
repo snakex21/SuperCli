@@ -1141,5 +1141,15 @@
   "approval.summary.headless_close": "Zatvoriti sesiju pregledača na pouzdanom cilju „{target}“? Njen SuperCli profil se uklanja; upravljački program nastavlja da radi.",
   "approval.summary.headless_action": "Izvršiti „{action}“ na pouzdanom cilju „{target}“? Time se menja izabrana virtuelna mašina ili sesija pregledača.",
   "approval.field.warnings": "Upozorenje",
-  "approval.summary.trash_outside_workspace": "Ukloniti {path}, koji je VAN radnog prostora? Premešta se u fasciklu .supercli/trash projekta, odakle se može vratiti."
+  "approval.summary.trash_outside_workspace": "Ukloniti {path}, koji je VAN radnog prostora? Premešta se u fasciklu .supercli/trash projekta, odakle se može vratiti.",
+  "tb.hint": "Thunderbird AI Bridge omogućava SuperCli-ju rad sa vašim sandučetom u Thunderbirdu. Uparite ga jednom; povezati se može samo upareni Thunderbird.",
+  "tb.paired": "Upareno",
+  "tb.notPaired": "Nije upareno",
+  "tb.connected": "Povezano",
+  "tb.disconnected": "Nije povezano",
+  "tb.pair": "Upari",
+  "tb.unpair": "Poništi uparivanje",
+  "tb.codeHelp": "Unesite ovaj kod u Thunderbird: Dodaci → Thunderbird AI Bridge → Opcije → Upari. Važi do {time}.",
+  "tb.unpairConfirm": "Poništiti uparivanje sa Thunderbirdom? Neće moći da se poveže dok ga ponovo ne uparite.",
+  "panel.thunderbird": "Thunderbird"
 }

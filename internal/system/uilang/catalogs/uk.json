@@ -1018,5 +1018,11 @@
   "approval.summary.headless_close": "Закрити сеанс браузера на довіреній цілі «{target}»? Його профіль SuperCli видаляється; драйвер продовжує працювати.",
   "approval.summary.headless_action": "Виконати «{action}» на довіреній цілі «{target}»? Це змінить вибрану віртуальну машину або сеанс браузера.",
   "approval.field.warnings": "Попередження",
-  "approval.summary.trash_outside_workspace": "Вилучити {path}, що розташований ПОЗА робочою областю? Його буде переміщено до теки .supercli/trash проєкту, звідки його можна відновити."
+  "approval.summary.trash_outside_workspace": "Вилучити {path}, що розташований ПОЗА робочою областю? Його буде переміщено до теки .supercli/trash проєкту, звідки його можна відновити.",
+  "tui.command_desc.thunderbird": "спарувати Thunderbird і показати стан моста",
+  "tui.thunderbird.code": "Код спарювання: %s (дійсний до %s). У Thunderbird: Додатки → Thunderbird AI Bridge → Параметри, введіть код і натисніть Спарувати.",
+  "tui.thunderbird.unpaired": "Пару з Thunderbird розірвано. Він не підключиться, доки ви не спаруєте його знову.",
+  "tui.thunderbird.cancelled": "Спарювання скасовано.",
+  "tui.thunderbird.usage": "Використання: /thunderbird [status|pair|unpair|cancel]",
+  "tui.thunderbird.status": "Міст Thunderbird: %s"
 }

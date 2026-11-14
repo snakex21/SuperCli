@@ -1018,5 +1018,11 @@
   "approval.summary.headless_close": "Chiudere una sessione del browser sulla destinazione attendibile «{target}»? Il suo profilo SuperCli viene rimosso; il driver resta in esecuzione.",
   "approval.summary.headless_action": "Eseguire «{action}» sulla destinazione attendibile «{target}»? Questo modifica la macchina virtuale o la sessione del browser selezionata.",
   "approval.field.warnings": "Avviso",
-  "approval.summary.trash_outside_workspace": "Rimuovere {path}, che si trova FUORI dall’area di lavoro? Viene spostato nella cartella .supercli/trash del progetto, da cui può essere ripristinato."
+  "approval.summary.trash_outside_workspace": "Rimuovere {path}, che si trova FUORI dall’area di lavoro? Viene spostato nella cartella .supercli/trash del progetto, da cui può essere ripristinato.",
+  "tui.command_desc.thunderbird": "associa Thunderbird e mostra lo stato del ponte",
+  "tui.thunderbird.code": "Codice di associazione: %s (valido fino alle %s). In Thunderbird: Componenti aggiuntivi → Thunderbird AI Bridge → Opzioni, inserisci il codice e fai clic su Associa.",
+  "tui.thunderbird.unpaired": "Thunderbird dissociato. Non potrà connettersi finché non lo associ di nuovo.",
+  "tui.thunderbird.cancelled": "Associazione annullata.",
+  "tui.thunderbird.usage": "Uso: /thunderbird [status|pair|unpair|cancel]",
+  "tui.thunderbird.status": "Ponte Thunderbird: %s"
 }

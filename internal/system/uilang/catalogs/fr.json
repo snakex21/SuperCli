@@ -1018,5 +1018,11 @@
   "approval.summary.headless_close": "Fermer une session de navigateur sur la cible de confiance « {target} » ? Son profil SuperCli est supprimé ; le pilote continue de fonctionner.",
   "approval.summary.headless_action": "Exécuter « {action} » sur la cible de confiance « {target} » ? Cela modifie la machine virtuelle ou la session de navigateur sélectionnée.",
   "approval.field.warnings": "Avertissement",
-  "approval.summary.trash_outside_workspace": "Retirer {path}, qui se trouve EN DEHORS de l’espace de travail ? Il est déplacé dans le dossier .supercli/trash du projet, d’où il peut être restauré."
+  "approval.summary.trash_outside_workspace": "Retirer {path}, qui se trouve EN DEHORS de l’espace de travail ? Il est déplacé dans le dossier .supercli/trash du projet, d’où il peut être restauré.",
+  "tui.command_desc.thunderbird": "associer Thunderbird et afficher l'état du pont",
+  "tui.thunderbird.code": "Code d'association : %s (valable jusqu'à %s). Dans Thunderbird : Modules → Thunderbird AI Bridge → Options, saisissez le code et cliquez sur Associer.",
+  "tui.thunderbird.unpaired": "Thunderbird dissocié. Il ne pourra plus se connecter avant une nouvelle association.",
+  "tui.thunderbird.cancelled": "Association annulée.",
+  "tui.thunderbird.usage": "Utilisation : /thunderbird [status|pair|unpair|cancel]",
+  "tui.thunderbird.status": "Pont Thunderbird : %s"
 }

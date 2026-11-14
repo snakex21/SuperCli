@@ -1141,5 +1141,15 @@
   "approval.summary.headless_close": "Να κλείσει μια περίοδος λειτουργίας προγράμματος περιήγησης στον αξιόπιστο στόχο «{target}»; Το προφίλ SuperCli της αφαιρείται· το πρόγραμμα οδήγησης συνεχίζει να εκτελείται.",
   "approval.summary.headless_action": "Να εκτελεστεί «{action}» στον αξιόπιστο στόχο «{target}»; Αυτό αλλάζει την επιλεγμένη εικονική μηχανή ή περίοδο λειτουργίας του προγράμματος περιήγησης.",
   "approval.field.warnings": "Προειδοποίηση",
-  "approval.summary.trash_outside_workspace": "Να αφαιρεθεί το {path}, που βρίσκεται ΕΚΤΟΣ του χώρου εργασίας; Μετακινείται στον φάκελο .supercli/trash του έργου, από όπου μπορεί να επαναφερθεί."
+  "approval.summary.trash_outside_workspace": "Να αφαιρεθεί το {path}, που βρίσκεται ΕΚΤΟΣ του χώρου εργασίας; Μετακινείται στον φάκελο .supercli/trash του έργου, από όπου μπορεί να επαναφερθεί.",
+  "tb.hint": "Το Thunderbird AI Bridge επιτρέπει στο SuperCli να δουλεύει με το γραμματοκιβώτιό σας στο Thunderbird. Κάντε σύζευξη μία φορά· μόνο το συζευγμένο Thunderbird μπορεί να συνδεθεί.",
+  "tb.paired": "Σε σύζευξη",
+  "tb.notPaired": "Χωρίς σύζευξη",
+  "tb.connected": "Συνδεδεμένο",
+  "tb.disconnected": "Αποσυνδεδεμένο",
+  "tb.pair": "Σύζευξη",
+  "tb.unpair": "Κατάργηση σύζευξης",
+  "tb.codeHelp": "Εισαγάγετε αυτόν τον κωδικό στο Thunderbird: Πρόσθετα → Thunderbird AI Bridge → Επιλογές → Σύζευξη. Ισχύει έως {time}.",
+  "tb.unpairConfirm": "Κατάργηση σύζευξης με το Thunderbird; Δεν θα μπορεί να συνδεθεί μέχρι να γίνει ξανά σύζευξη.",
+  "panel.thunderbird": "Thunderbird"
 }

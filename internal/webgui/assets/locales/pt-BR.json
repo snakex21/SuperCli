@@ -1141,5 +1141,15 @@
   "approval.summary.headless_close": "Fechar uma sessão de navegador no alvo confiável “{target}”? O perfil do SuperCli dela é removido; o driver continua em execução.",
   "approval.summary.headless_action": "Executar “{action}” no alvo confiável “{target}”? Isso altera a máquina virtual ou a sessão de navegador selecionada.",
   "approval.field.warnings": "Aviso",
-  "approval.summary.trash_outside_workspace": "Remover {path}, que está FORA do espaço de trabalho? Ele é movido para a pasta .supercli/trash do projeto, de onde pode ser restaurado."
+  "approval.summary.trash_outside_workspace": "Remover {path}, que está FORA do espaço de trabalho? Ele é movido para a pasta .supercli/trash do projeto, de onde pode ser restaurado.",
+  "tb.hint": "O Thunderbird AI Bridge permite que o SuperCli trabalhe com sua caixa do Thunderbird. Pareie uma vez; só o Thunderbird pareado pode se conectar.",
+  "tb.paired": "Pareado",
+  "tb.notPaired": "Não pareado",
+  "tb.connected": "Conectado",
+  "tb.disconnected": "Desconectado",
+  "tb.pair": "Parear",
+  "tb.unpair": "Desparear",
+  "tb.codeHelp": "Digite este código no Thunderbird: Complementos → Thunderbird AI Bridge → Opções → Parear. Válido até {time}.",
+  "tb.unpairConfirm": "Desparear o Thunderbird? Ele não poderá se conectar até ser pareado novamente.",
+  "panel.thunderbird": "Thunderbird"
 }

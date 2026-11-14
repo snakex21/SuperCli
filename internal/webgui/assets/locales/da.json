@@ -1141,5 +1141,15 @@
   "approval.summary.headless_close": "Luk en browsersession på det betroede mål “{target}”? Dens SuperCli-profil fjernes; driveren kører videre.",
   "approval.summary.headless_action": "Kør “{action}” på det betroede mål “{target}”? Dette ændrer den valgte virtuelle maskine eller browsersession.",
   "approval.field.warnings": "Advarsel",
-  "approval.summary.trash_outside_workspace": "Fjern {path}, som ligger UDEN FOR arbejdsområdet? Det flyttes til projektets mappe .supercli/trash og kan gendannes derfra."
+  "approval.summary.trash_outside_workspace": "Fjern {path}, som ligger UDEN FOR arbejdsområdet? Det flyttes til projektets mappe .supercli/trash og kan gendannes derfra.",
+  "tb.hint": "Thunderbird AI Bridge lader SuperCli arbejde med din Thunderbird-postkasse. Par den én gang; kun den parrede Thunderbird kan forbinde.",
+  "tb.paired": "Parret",
+  "tb.notPaired": "Ikke parret",
+  "tb.connected": "Forbundet",
+  "tb.disconnected": "Ikke forbundet",
+  "tb.pair": "Par",
+  "tb.unpair": "Fjern parring",
+  "tb.codeHelp": "Indtast koden i Thunderbird: Tilføjelser → Thunderbird AI Bridge → Indstillinger → Par. Gyldig til {time}.",
+  "tb.unpairConfirm": "Fjern parring med Thunderbird? Den kan ikke forbinde, før du parrer den igen.",
+  "panel.thunderbird": "Thunderbird"
 }

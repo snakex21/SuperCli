@@ -1141,5 +1141,15 @@
   "approval.summary.headless_close": "Güvenilir “{target}” hedefindeki bir tarayıcı oturumu kapatılsın mı? Oturumun SuperCli profili kaldırılır; sürücü çalışmaya devam eder.",
   "approval.summary.headless_action": "Güvenilir “{target}” hedefinde “{action}” çalıştırılsın mı? Bu, seçili sanal makineyi veya tarayıcı oturumunu değiştirir.",
   "approval.field.warnings": "Uyarı",
-  "approval.summary.trash_outside_workspace": "Çalışma alanının DIŞINDAKİ {path} kaldırılsın mı? Projenin .supercli/trash klasörüne taşınır ve oradan geri yüklenebilir."
+  "approval.summary.trash_outside_workspace": "Çalışma alanının DIŞINDAKİ {path} kaldırılsın mı? Projenin .supercli/trash klasörüne taşınır ve oradan geri yüklenebilir.",
+  "tb.hint": "Thunderbird AI Bridge, SuperCli'nin Thunderbird posta kutunuzla çalışmasını sağlar. Bir kez eşleştirin; yalnızca eşleştirilmiş Thunderbird bağlanabilir.",
+  "tb.paired": "Eşleştirildi",
+  "tb.notPaired": "Eşleştirilmedi",
+  "tb.connected": "Bağlı",
+  "tb.disconnected": "Bağlı değil",
+  "tb.pair": "Eşleştir",
+  "tb.unpair": "Eşleştirmeyi kaldır",
+  "tb.codeHelp": "Bu kodu Thunderbird'de girin: Eklentiler → Thunderbird AI Bridge → Seçenekler → Eşleştir. {time} saatine kadar geçerli.",
+  "tb.unpairConfirm": "Thunderbird eşleştirmesi kaldırılsın mı? Yeniden eşleştirene kadar bağlanamaz.",
+  "panel.thunderbird": "Thunderbird"
 }

@@ -1018,5 +1018,11 @@
   "approval.summary.headless_close": "Kas sulgeda brauseriseanss usaldusväärses sihtmärgis „{target}“? Selle SuperCli profiil eemaldatakse; draiver jätkab tööd.",
   "approval.summary.headless_action": "Kas käivitada „{action}“ usaldusväärses sihtmärgis „{target}“? See muudab valitud virtuaalmasinat või brauseriseanssi.",
   "approval.field.warnings": "Hoiatus",
-  "approval.summary.trash_outside_workspace": "Kas eemaldada {path}, mis asub VÄLJASPOOL tööruumi? See teisaldatakse projekti kausta .supercli/trash ja selle saab sealt taastada."
+  "approval.summary.trash_outside_workspace": "Kas eemaldada {path}, mis asub VÄLJASPOOL tööruumi? See teisaldatakse projekti kausta .supercli/trash ja selle saab sealt taastada.",
+  "tui.command_desc.thunderbird": "seo Thunderbird ja näita silla olekut",
+  "tui.thunderbird.code": "Sidumiskood: %s (kehtib kuni %s). Thunderbirdis: Lisad → Thunderbird AI Bridge → Valikud, sisesta kood ja klõpsa Seo.",
+  "tui.thunderbird.unpaired": "Thunderbirdi sidumine tühistatud. See ei saa ühenduda enne uuesti sidumist.",
+  "tui.thunderbird.cancelled": "Sidumine katkestatud.",
+  "tui.thunderbird.usage": "Kasutus: /thunderbird [status|pair|unpair|cancel]",
+  "tui.thunderbird.status": "Thunderbirdi sild: %s"
 }

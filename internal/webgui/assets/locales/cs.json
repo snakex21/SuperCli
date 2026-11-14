@@ -1141,5 +1141,15 @@
   "approval.summary.headless_close": "Zavřít relaci prohlížeče na důvěryhodném cíli „{target}“? Její profil SuperCli bude odstraněn; ovladač poběží dál.",
   "approval.summary.headless_action": "Spustit „{action}“ na důvěryhodném cíli „{target}“? Tím se změní vybraný virtuální počítač nebo relace prohlížeče.",
   "approval.field.warnings": "Upozornění",
-  "approval.summary.trash_outside_workspace": "Odstranit {path}, který je MIMO pracovní prostor? Přesune se do složky .supercli/trash projektu, odkud jej lze obnovit."
+  "approval.summary.trash_outside_workspace": "Odstranit {path}, který je MIMO pracovní prostor? Přesune se do složky .supercli/trash projektu, odkud jej lze obnovit.",
+  "tb.hint": "Thunderbird AI Bridge umožňuje SuperCli pracovat s vaší schránkou v Thunderbirdu. Spárujte jej jednou; připojit se může jen spárovaný Thunderbird.",
+  "tb.paired": "Spárováno",
+  "tb.notPaired": "Nespárováno",
+  "tb.connected": "Připojeno",
+  "tb.disconnected": "Nepřipojeno",
+  "tb.pair": "Spárovat",
+  "tb.unpair": "Zrušit spárování",
+  "tb.codeHelp": "Zadejte tento kód v Thunderbirdu: Doplňky → Thunderbird AI Bridge → Možnosti → Spárovat. Platí do {time}.",
+  "tb.unpairConfirm": "Zrušit spárování Thunderbirdu? Nepřipojí se, dokud jej znovu nespárujete.",
+  "panel.thunderbird": "Thunderbird"
 }

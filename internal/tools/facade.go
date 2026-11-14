@@ -305,9 +305,15 @@ var (
 type OutlookMail = mail.OutlookMail
 type ThunderbirdMail = mail.ThunderbirdMail
 type OutlookIndexMessage = mail.OutlookIndexMessage
+type ThunderbirdBridgeStatus = mail.ThunderbirdBridgeStatus
+type ThunderbirdPairingCode = mail.ThunderbirdPairingCode
 
 var (
-	NewOutlookMail       = mail.NewOutlookMail
-	NewThunderbirdMail   = mail.NewThunderbirdMail
-	IndexOutlookMessages = mail.IndexOutlookMessages
+	NewOutlookMail             = mail.NewOutlookMail
+	NewThunderbirdMail         = mail.NewThunderbirdMail
+	IndexOutlookMessages       = mail.IndexOutlookMessages
+	ThunderbirdBridgeStatusFor = mail.ThunderbirdBridgeStatusFor
+	StartThunderbirdPairing    = mail.StartThunderbirdPairing
+	CancelThunderbirdPairing   = mail.CancelThunderbirdPairing
+	UnpairThunderbird          = mail.UnpairThunderbird
 )

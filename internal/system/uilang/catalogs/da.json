@@ -1018,5 +1018,11 @@
   "approval.summary.headless_close": "Luk en browsersession på det betroede mål “{target}”? Dens SuperCli-profil fjernes; driveren kører videre.",
   "approval.summary.headless_action": "Kør “{action}” på det betroede mål “{target}”? Dette ændrer den valgte virtuelle maskine eller browsersession.",
   "approval.field.warnings": "Advarsel",
-  "approval.summary.trash_outside_workspace": "Fjern {path}, som ligger UDEN FOR arbejdsområdet? Det flyttes til projektets mappe .supercli/trash og kan gendannes derfra."
+  "approval.summary.trash_outside_workspace": "Fjern {path}, som ligger UDEN FOR arbejdsområdet? Det flyttes til projektets mappe .supercli/trash og kan gendannes derfra.",
+  "tui.command_desc.thunderbird": "par Thunderbird og vis broens status",
+  "tui.thunderbird.code": "Parringskode: %s (gyldig til %s). I Thunderbird: Tilføjelser → Thunderbird AI Bridge → Indstillinger, indtast koden og klik Par.",
+  "tui.thunderbird.unpaired": "Thunderbird er ikke længere parret. Den kan ikke forbinde, før du parrer den igen.",
+  "tui.thunderbird.cancelled": "Parring annulleret.",
+  "tui.thunderbird.usage": "Brug: /thunderbird [status|pair|unpair|cancel]",
+  "tui.thunderbird.status": "Thunderbird-bro: %s"
 }

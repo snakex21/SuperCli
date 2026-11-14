@@ -1141,5 +1141,15 @@
   "approval.summary.headless_close": "Suljetaanko selainistunto luotetussa kohteessa ”{target}”? Sen SuperCli-profiili poistetaan; ajuri jatkaa toimintaansa.",
   "approval.summary.headless_action": "Suoritetaanko ”{action}” luotetussa kohteessa ”{target}”? Tämä muuttaa valittua virtuaalikonetta tai selainistuntoa.",
   "approval.field.warnings": "Varoitus",
-  "approval.summary.trash_outside_workspace": "Poistetaanko {path}, joka on työtilan ULKOPUOLELLA? Se siirretään projektin kansioon .supercli/trash ja sen voi palauttaa sieltä."
+  "approval.summary.trash_outside_workspace": "Poistetaanko {path}, joka on työtilan ULKOPUOLELLA? Se siirretään projektin kansioon .supercli/trash ja sen voi palauttaa sieltä.",
+  "tb.hint": "Thunderbird AI Bridge antaa SuperClin käyttää Thunderbird-postilaatikkoasi. Muodosta pari kerran; vain pariksi liitetty Thunderbird voi yhdistää.",
+  "tb.paired": "Pariliitetty",
+  "tb.notPaired": "Ei pariliitetty",
+  "tb.connected": "Yhdistetty",
+  "tb.disconnected": "Ei yhteyttä",
+  "tb.pair": "Muodosta pari",
+  "tb.unpair": "Poista pariliitos",
+  "tb.codeHelp": "Syötä tämä koodi Thunderbirdiin: Lisäosat → Thunderbird AI Bridge → Asetukset → Muodosta pari. Voimassa {time} asti.",
+  "tb.unpairConfirm": "Poistetaanko Thunderbirdin pariliitos? Se ei voi yhdistää ennen uutta pariliitosta.",
+  "panel.thunderbird": "Thunderbird"
 }

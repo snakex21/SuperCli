@@ -1018,5 +1018,11 @@
   "approval.summary.headless_close": "Želite zapreti sejo brskalnika na zaupanja vrednem cilju »{target}«? Njen profil SuperCli bo odstranjen; gonilnik bo še naprej deloval.",
   "approval.summary.headless_action": "Želite izvesti »{action}« na zaupanja vrednem cilju »{target}«? To spremeni izbrani navidezni računalnik ali sejo brskalnika.",
   "approval.field.warnings": "Opozorilo",
-  "approval.summary.trash_outside_workspace": "Odstraniti {path}, ki je ZUNAJ delovnega prostora? Premaknjen bo v mapo .supercli/trash projekta, od koder ga je mogoče obnoviti."
+  "approval.summary.trash_outside_workspace": "Odstraniti {path}, ki je ZUNAJ delovnega prostora? Premaknjen bo v mapo .supercli/trash projekta, od koder ga je mogoče obnoviti.",
+  "tui.command_desc.thunderbird": "seznani Thunderbird in pokaži stanje mostu",
+  "tui.thunderbird.code": "Koda za seznanitev: %s (velja do %s). V Thunderbirdu: Dodatki → Thunderbird AI Bridge → Možnosti, vnesite kodo in kliknite Seznani.",
+  "tui.thunderbird.unpaired": "Seznanitev s Thunderbirdom preklicana. Ne bo se mogel povezati, dokler ga znova ne seznanite.",
+  "tui.thunderbird.cancelled": "Seznanjanje preklicano.",
+  "tui.thunderbird.usage": "Uporaba: /thunderbird [status|pair|unpair|cancel]",
+  "tui.thunderbird.status": "Most Thunderbird: %s"
 }

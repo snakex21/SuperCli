@@ -53,6 +53,8 @@ func (m Model) slashBuiltin(name string) (func(Model, SlashCommand) (tea.Model, 
 		return Model.handleSlashDoctor, true
 	case "cost":
 		return Model.handleSlashCost, true
+	case "thunderbird":
+		return Model.handleSlashThunderbird, true
 	default:
 		return nil, false
 	}

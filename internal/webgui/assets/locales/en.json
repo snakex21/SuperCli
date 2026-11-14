@@ -1141,5 +1141,15 @@
   "approval.summary.headless_close": "Close a browser session on the trusted target “{target}”? Its SuperCli profile is removed; the driver keeps running.",
   "approval.summary.headless_action": "Run “{action}” on the trusted target “{target}”? This changes the selected virtual machine or browser session.",
   "approval.field.warnings": "Warning",
-  "approval.summary.trash_outside_workspace": "Remove {path}, which is OUTSIDE the workspace? It is moved to the project's .supercli/trash folder, where it can be restored."
+  "approval.summary.trash_outside_workspace": "Remove {path}, which is OUTSIDE the workspace? It is moved to the project's .supercli/trash folder, where it can be restored.",
+  "tb.hint": "Thunderbird AI Bridge lets SuperCli work with your Thunderbird mailbox. Pair it once; only the paired Thunderbird can connect.",
+  "tb.paired": "Paired",
+  "tb.notPaired": "Not paired",
+  "tb.connected": "Connected",
+  "tb.disconnected": "Not connected",
+  "tb.pair": "Pair",
+  "tb.unpair": "Unpair",
+  "tb.codeHelp": "Enter this code in Thunderbird: Add-ons → Thunderbird AI Bridge → Options → Pair. Valid until {time}.",
+  "tb.unpairConfirm": "Unpair Thunderbird? It cannot connect until you pair it again.",
+  "panel.thunderbird": "Thunderbird"
 }
