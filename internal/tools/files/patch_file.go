@@ -47,7 +47,7 @@ func (t *PatchFile) Spec() Tool {
 	return Tool{
 		Name: "patch_file",
 		Description: "The edit tool: exact text replacements in an existing file, atomic. " +
-			"One change: old + new. Several: changes, in ONE call. " +
+			"One change: old + new. Several: changes, in ONE call. Several files: one call per file, all in the same turn. " +
 			"Indentation and line endings need not match the file exactly.",
 		Schema: `{
 			"type": "object",
