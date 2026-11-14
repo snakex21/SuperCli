@@ -61,7 +61,7 @@ func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Pr
 	at.PrefillProfiles = e.prefillProfiles
 	if tc.PreflightRepo == nil || *tc.PreflightRepo {
 		at.PreflightContext = func(ctx context.Context) string {
-			return preflight.BuildContext(ctx, home, preflight.Options{})
+			return preflight.BuildContext(ctx, home, preflight.Options{Layout: true})
 		}
 	}
 	for _, sp := range []tools.Tool{at.Spec(), agent.NewSendMessageTool(at.Workers).Spec(), agent.NewTaskStopTool(at.Workers).Spec()} {
@@ -116,7 +116,7 @@ func (e *Engine) preflightBlockAtContext(ctx context.Context, home string) (stri
 	if tc.PreflightRepo != nil && !*tc.PreflightRepo {
 		return "", 0
 	}
-	block := preflight.BuildContext(ctx, home, preflight.Options{})
+	block := preflight.BuildContext(ctx, home, preflight.Options{Layout: true})
 	if block == "" {
 		return "", 0
 	}
