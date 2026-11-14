@@ -331,3 +331,50 @@ func TestPruneMarkerPreservesCommandOutcomeWithoutReexecutionAdvice(t *testing.T
 		}
 	}
 }
+
+// TestPrune_CapacityPressureAcceptsOverageGain: when the request already sits
+// in the generation reserve (above the auto-compact threshold) and the running
+// turn cannot be summarized, a prune that reclaims less than the generic 25%
+// gate but at least the overage must happen: the alternative on a local server
+// is a silently truncated prompt. Below the threshold the 25% gate still holds.
+func TestPrune_CapacityPressureAcceptsOverageGain(t *testing.T) {
+	build := func(window int) *Loop {
+		l := pruneLoop(t, window, 1)
+		l.Messages = append(l.Messages, llm.Message{Role: llm.RoleUser, Content: "one long agentic turn"})
+		// Most of the context is assistant output (reasoning + edit args),
+		// which pruning never touches; tool results are a minority.
+		for i := 0; i < 6; i++ {
+			id := fmt.Sprintf("c%d", i)
+			l.Messages = append(l.Messages,
+				llm.Message{Role: llm.RoleAssistant, Content: strings.Repeat("r", 8000), ToolCalls: []llm.ToolCall{{ID: id, Name: "read_lines", Arguments: `{"path":"x.go"}`}}},
+				llm.Message{Role: llm.RoleTool, ToolCallID: id, Name: "read_lines", Content: strings.Repeat("x", 1600)},
+			)
+		}
+		return l
+	}
+	probe := build(100000)
+	est := probe.EstimateNextRequestTokens()
+
+	// Window whose hard threshold sits a little below the estimate.
+	window := est + est/50
+	for autoCompactThreshold(window) >= est {
+		window -= 16
+	}
+	l := build(window)
+	if got := l.maybePruneToolResults(context.Background(), nil); got == 0 {
+		t.Fatalf("no prune under capacity pressure (est=%d threshold=%d window=%d)", est, autoCompactThreshold(window), window)
+	}
+	if after := l.EstimateNextRequestTokens(); after > autoCompactThreshold(window) {
+		t.Fatalf("prune did not restore the reserve: %d > %d", after, autoCompactThreshold(window))
+	}
+
+	// Same history inside the reserve-free band: the 25% gate still refuses.
+	relaxed := est * 100 / 70 // est ~70% of the window: above the 60% trigger, below the threshold
+	l = build(relaxed)
+	if est > autoCompactThreshold(relaxed) || est <= int(pruneTriggerFrac*float64(relaxed)) {
+		t.Fatalf("fixture band wrong: est=%d trigger=%d threshold=%d", est, int(pruneTriggerFrac*float64(relaxed)), autoCompactThreshold(relaxed))
+	}
+	if got := l.maybePruneToolResults(context.Background(), nil); got != 0 {
+		t.Fatalf("pruned a sub-25%% gain without capacity pressure: %d", got)
+	}
+}

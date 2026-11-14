@@ -210,7 +210,10 @@ type Loop struct {
 	// while the estimated request grows; if history is compacted/pruned/hidden
 	// and the estimate shrinks, window.go deliberately falls back to the raw
 	// estimate until the provider supplies a fresh baseline.
-	contextBaseExact     int
+	contextBaseExact int
+	// serverTruncated is set when the provider reported a shortened prompt
+	// (silent n_ctx truncation); the next step repairs it like a rejection.
+	serverTruncated      bool
 	contextBaseEstimated int
 	contextBaseRoute     RouteMode
 

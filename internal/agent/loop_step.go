@@ -76,8 +76,15 @@ func (l *Loop) runStep(
 	prepStart := time.Now()
 	l.maybePruneToolResults(ctx, out)
 	auxBefore := l.stepAuxWall
+	compactReason := ""
+	if l.takeServerTruncated() {
+		// The server silently cut the previous prompt to fit its n_ctx. Repair
+		// it exactly like a provider context-limit rejection (the full-history
+		// emergency split) instead of sending more prompts it will cut again.
+		compactReason = "context-limit"
+	}
 	if !l.maybeModelHandoff(ctx, out) {
-		if err := l.maybeAutoCompact(ctx, out, ""); err != nil {
+		if err := l.maybeAutoCompact(ctx, out, compactReason); err != nil {
 			l.statsEndStep(stepStart)
 			out <- ErrorEvent{Err: err, Usage: *totalUsage, Steps: step + 1}
 			return stepAbort

@@ -58,6 +58,10 @@ func TestPruneArchiveOnlyWritesAfterGainGate(t *testing.T) {
 				l.pruneProtect = 100000
 			case "reference cost":
 				old, current = strings.Repeat("x", 600), strings.Repeat("y", 1400)
+				// Above the prune trigger but inside the generation reserve:
+				// under capacity pressure a gain covering the overage is
+				// accepted (TestPrune_CapacityPressureAcceptsOverageGain).
+				l.windowFor = func(string) int { return 1100 }
 			}
 			appendArchiveFixture(l, old, current)
 			if kind == "reference cost" {

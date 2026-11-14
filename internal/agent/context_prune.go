@@ -253,6 +253,26 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 			minGain = overage
 		}
 	}
+	if capacityPressure {
+		// Above the generation reserve, auto-compaction refuses to summarize
+		// the running user turn, so pruning is the only defence left before
+		// the window. Holding out for 25% there let a long single turn on a
+		// local server (qwen3.6-35b-a3b, 32k) run into n_ctx: the server
+		// silently truncated every later request and re-evaluated ~13.9k
+		// tokens each time. One cache rewrite that restores the reserve is
+		// far cheaper; all eligible old results are still pruned at once.
+		// At least half the generation reserve: the rewrite re-evaluates
+		// almost the whole history (the oldest results go first), so a
+		// crumb would buy one step at the price of a cold prefill (16k
+		// run: 700 tokens reclaimed for 10.5k re-evaluated).
+		pressureGain := est - hardThreshold
+		if half := (w - hardThreshold) / 2; pressureGain < half {
+			pressureGain = half
+		}
+		if pressureGain < minGain {
+			minGain = pressureGain
+		}
+	}
 	if len(victims) == 0 || reclaimable < minGain {
 		l.pruneRefusedEst = est // remember: don't re-scan until it grows
 		return 0                // not worth invalidating the KV cache

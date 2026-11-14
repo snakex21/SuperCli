@@ -100,15 +100,52 @@ func (l *Loop) EstimateNextRequestTokens() int {
 	return l.nextRequestTokenEstimate().Effective
 }
 
-func (l *Loop) recordContextBaseline(estimated, exact int) {
+func (l *Loop) recordContextBaseline(estimated, exact int) (truncated bool) {
 	if estimated <= 0 || exact <= 0 {
-		return
+		return false
 	}
 	l.sessUsageMu.Lock()
+	defer l.sessUsageMu.Unlock()
+	if serverTruncatedPrompt(l.contextBaseEstimated, l.contextBaseExact, estimated, exact) && l.contextBaseRoute == l.route {
+		// Keep the last trustworthy pair: the next estimate is then the old
+		// exact count plus local growth, i.e. what was really sent.
+		l.serverTruncated = true
+		return true
+	}
 	l.contextBaseEstimated = estimated
 	l.contextBaseExact = exact
 	l.contextBaseRoute = l.route
-	l.sessUsageMu.Unlock()
+	return false
+}
+
+func (l *Loop) takeServerTruncated() bool {
+	l.sessUsageMu.Lock()
+	defer l.sessUsageMu.Unlock()
+	truncated := l.serverTruncated
+	l.serverTruncated = false
+	return truncated
+}
+
+// serverTruncatedPrompt recognizes a server that silently dropped part of an
+// over-long prompt instead of rejecting it. LM Studio (context overflow
+// policy truncateMiddle/rollingWindow) and Ollama do this when prompt plus
+// generation exceed the loaded n_ctx, and report the SHORTENED prompt as
+// usage. The local projection only grew, yet the provider count fell.
+//
+// Measured on LM Studio qwen3.6-35b-a3b at 32k: after a request of 32248
+// prompt tokens the next one (larger) reported 16022. Trusting that number as
+// the exact baseline let the loop believe it had 16k of room; 15 further
+// requests were truncated by the server, each re-evaluating ~13.9k tokens
+// (71.7 s of prompt eval in one task) while the model lost the middle of
+// its own work.
+//
+// A shrink beyond 2% while the local estimate did not shrink is truncation.
+// Compaction, pruning and hiding all shrink the local estimate as well.
+func serverTruncatedPrompt(prevEstimated, prevExact, estimated, exact int) bool {
+	if prevEstimated <= 0 || prevExact <= 0 || estimated < prevEstimated {
+		return false
+	}
+	return exact < prevExact-prevExact/50
 }
 
 // Summarizer produces a compaction summary (already wrapped in

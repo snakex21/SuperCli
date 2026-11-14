@@ -70,8 +70,14 @@ func (l *Loop) completeOnce(ctx context.Context, toolRequest preparedToolRequest
 			l.generationDuration += l.lastCallGeneration
 		}
 	}
-	if err == nil && usage != nil {
-		l.recordContextBaseline(requestEstimate, usage.Input)
+	if err == nil && usage != nil && l.recordContextBaseline(requestEstimate, usage.Input) {
+		notice := NoticeEvent{Text: fmt.Sprintf("The server reported %d prompt tokens for a longer request than the previous one: it truncated the context (loaded window %d). SuperCli keeps counting the full request.", usage.Input, window.Tokens)}
+		if out != nil {
+			select {
+			case out <- notice:
+			case <-ctx.Done():
+			}
+		}
 	}
 	if err == nil {
 		// Light chat routes send only a small view. They must not mark the
