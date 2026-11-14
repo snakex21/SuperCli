@@ -58,7 +58,7 @@ func nestedFixtureTree(t *testing.T, dir string) map[string]string {
 }
 
 func TestNestedRepositoriesAreExcludedAndPreservedByRestore(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	for _, scoped := range []bool{false, true} {
 		for _, kind := range []string{"directory", "gitfile", "gitlink"} {
 			name := "workspace/" + kind
@@ -165,7 +165,7 @@ func TestNestedRepositoriesAreExcludedAndPreservedByRestore(t *testing.T) {
 }
 
 func TestExplicitRootsInsideNestedRepositoryAreExcluded(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	home := t.TempDir()
 	nested := filepath.Join(home, "Nested")
@@ -193,7 +193,7 @@ func TestExplicitRootsInsideNestedRepositoryAreExcluded(t *testing.T) {
 }
 
 func TestWorkspaceSnapshotExcludesLegacyTrackedNestedFiles(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	home := t.TempDir()
 	writeCheckpointFixture(t, filepath.Join(home, "a.txt"), "ordinary")
@@ -217,7 +217,7 @@ func TestWorkspaceSnapshotExcludesLegacyTrackedNestedFiles(t *testing.T) {
 }
 
 func TestRestoreRefusesDirectoryThatBecameNestedRepository(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	for _, redo := range []bool{false, true} {
 		t.Run(map[bool]string{false: "undo", true: "redo"}[redo], func(t *testing.T) {
 			ctx := context.Background()
@@ -272,7 +272,7 @@ func TestRestoreRefusesDirectoryThatBecameNestedRepository(t *testing.T) {
 }
 
 func TestSnapshotStillRefusesSymlinks(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	for _, roots := range [][]string{nil, {"."}} {
 		name := "workspace"
 		if roots != nil {

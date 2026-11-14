@@ -11,7 +11,7 @@ import (
 )
 
 func TestStoreRetentionExpiryFrontierIsMonotoneAndPreservesUnknownJSON(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	original := []byte(`{"version":1,"future":9007199254740993123,"sessions":{"keep":{"through_seq":7,"future":{"integer":9007199254740993123}},"other":{"through_seq":2,"unknown_sequence":true}}}`)
 	data, err := retentionAdvanceExpiry(original, []Record{{SessionID: "keep", UserSeq: 3}, {SessionID: "keep", UserSeq: 9}, {SessionID: "legacy", UserSeq: 0}})
 	if err != nil {
@@ -63,7 +63,7 @@ func retentionExpireFixtureOld(t *testing.T, m *Manager, data string, old Record
 }
 
 func TestStoreRetentionExpiryFrontierRefusesOldRewindBeforeAnyRestore(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	m, data, old, newest := retentionFixture(t)
 	retentionTransaction(t, m, func() {
 		retentionExpireFixtureOld(t, m, data, old)
@@ -91,7 +91,7 @@ func TestStoreRetentionExpiryFrontierRefusesOldRewindBeforeAnyRestore(t *testing
 }
 
 func TestStoreRetentionLegacyExpiryUnknownSequenceIsConservative(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	m, data, old, _ := retentionFixture(t)
 	retentionTransaction(t, m, func() {
 		raw, err := os.ReadFile(m.meta)
@@ -123,7 +123,7 @@ func TestStoreRetentionLegacyExpiryUnknownSequenceIsConservative(t *testing.T) {
 }
 
 func TestStoreRetentionJournalPersistsFrontierBeforeMetadataAndResumes(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	m, data, old, _ := retentionFixture(t)
 	retentionTransaction(t, m, func() {
 		a, err := AuditStoreRetentionLocked(context.Background(), data)
@@ -165,7 +165,7 @@ func TestStoreRetentionJournalPersistsFrontierBeforeMetadataAndResumes(t *testin
 }
 
 func TestStoreRetentionForgetFrontierPermitsReusedSequences(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	m, data, _, _ := retentionFixture(t)
 	retentionTransaction(t, m, func() {
 		path := filepath.Join(filepath.Dir(m.meta), retentionExpiryName)

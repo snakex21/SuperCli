@@ -14,7 +14,7 @@ import (
 )
 
 func TestTurnUndoRedoAndConflictProtection(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	home, data := t.TempDir(), t.TempDir()
 	path := filepath.Join(home, "app.txt")
 	if err := os.WriteFile(path, []byte("before"), 0o644); err != nil {
@@ -92,7 +92,7 @@ func TestTurnUndoRedoAndConflictProtection(t *testing.T) {
 }
 
 func TestUndoRemovesFileCreatedByTurn(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	home, data := t.TempDir(), t.TempDir()
 	m, err := Open(home, data)
 	if errors.Is(err, ErrUnavailable) {
@@ -117,7 +117,7 @@ func TestUndoRemovesFileCreatedByTurn(t *testing.T) {
 }
 
 func TestForgetFromDetachesDiscardedConversationCheckpoints(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	home, data := t.TempDir(), t.TempDir()
 	m, err := Open(home, data)
 	if errors.Is(err, ErrUnavailable) {
@@ -158,7 +158,7 @@ func TestForgetFromDetachesDiscardedConversationCheckpoints(t *testing.T) {
 }
 
 func TestUndoRedoPreservesBinaryFiles(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	home, data := t.TempDir(), t.TempDir()
 	modifiedPath := filepath.Join(home, "image.png")
 	createdPath := filepath.Join(home, "archive.zip")
@@ -240,7 +240,7 @@ func assertFileBytes(t *testing.T, path string, want []byte) {
 }
 
 func TestReadOnlyTurnCreatesNoCheckpoint(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	home, data := t.TempDir(), t.TempDir()
 	m, err := Open(home, data)
 	if errors.Is(err, ErrUnavailable) {
@@ -259,7 +259,7 @@ func TestReadOnlyTurnCreatesNoCheckpoint(t *testing.T) {
 }
 
 func TestUndoFromRewindsMultipleTurnsAndCanRollback(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	home, data := t.TempDir(), t.TempDir()
 	path := filepath.Join(home, "app.txt")
 	if err := os.WriteFile(path, []byte("before"), 0o644); err != nil {
@@ -307,7 +307,7 @@ func TestUndoFromRewindsMultipleTurnsAndCanRollback(t *testing.T) {
 }
 
 func TestUndoFromConflictRollsBackAlreadyAppliedCheckpoints(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	home, data := t.TempDir(), t.TempDir()
 	firstPath, secondPath := filepath.Join(home, "first.txt"), filepath.Join(home, "second.txt")
 	if err := os.WriteFile(firstPath, []byte("first-before"), 0o644); err != nil {
@@ -354,7 +354,7 @@ func TestUndoFromConflictRollsBackAlreadyAppliedCheckpoints(t *testing.T) {
 }
 
 func TestRedoIDsIsExactAndRollsBackPartialRestore(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	home, data := t.TempDir(), t.TempDir()
 	firstPath := filepath.Join(home, "first.bin")
 	secondPath := filepath.Join(home, "second.bin")
@@ -419,7 +419,7 @@ func TestRedoIDsIsExactAndRollsBackPartialRestore(t *testing.T) {
 }
 
 func TestControllerCompletesOldestTurnWhenNextStartsQuickly(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	home, data := t.TempDir(), t.TempDir()
 	m, err := Open(home, data)
 	if errors.Is(err, ErrUnavailable) {

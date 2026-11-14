@@ -11,6 +11,7 @@ import (
 )
 
 func TestStoreRetentionRestoresReadOnlyOnNativeDeleteFailure(t *testing.T) {
+	skipSlowNativeInShort(t)
 	m, _, _, _ := retentionFixture(t)
 	retentionTransaction(t, m, func() {
 		path := retentionObjectPath(m, retentionOrphanGitObjects(t, m)[0])

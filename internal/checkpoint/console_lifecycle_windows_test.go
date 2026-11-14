@@ -35,7 +35,7 @@ func consoleAwaitNative(t *testing.T, done <-chan checkpointLifetimeResult) chec
 	select {
 	case result := <-done:
 		return result
-	case <-time.After(10 * time.Second):
+	case <-time.After(scaledTestTimeout(10 * time.Second)):
 		t.Fatal("native instant command/checkpoint completion did not release its owner")
 		return checkpointLifetimeResult{}
 	}
@@ -43,7 +43,7 @@ func consoleAwaitNative(t *testing.T, done <-chan checkpointLifetimeResult) chec
 
 func consoleRunNative(t *testing.T, spec tools.Tool, args json.RawMessage) checkpointLifetimeResult {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), scaledTestTimeout(8*time.Second))
 	defer cancel()
 	done := make(chan checkpointLifetimeResult, 1)
 	go func() { result, err := spec.Fn(ctx, args); done <- checkpointLifetimeResult{result, err} }()
@@ -62,6 +62,7 @@ func consoleRunNative(t *testing.T, spec tools.Tool, args json.RawMessage) check
 }
 
 func TestConsoleInstantNativeCheckpointLifecycleWindows(t *testing.T) {
+	skipSlowNativeInShort(t)
 	for _, wrapper := range []string{"turn", "controller"} {
 		t.Run(wrapper, func(t *testing.T) {
 			home := t.TempDir()
@@ -94,7 +95,7 @@ func TestConsoleInstantNativeCheckpointLifecycleWindows(t *testing.T) {
 			default:
 				t.Fatal("native command exit did not close completion signal")
 			}
-			finishCtx, stop := context.WithTimeout(context.Background(), 8*time.Second)
+			finishCtx, stop := context.WithTimeout(context.Background(), scaledTestTimeout(8*time.Second))
 			defer stop()
 			var record *Record
 			var err error
@@ -138,6 +139,7 @@ func (c *consoleAfterAcquireContext) Err() error {
 }
 
 func TestConsoleInstantNativeBlockedAfterReturnsCancellationWindows(t *testing.T) {
+	skipSlowNativeInShort(t)
 	home := t.TempDir()
 	manager := openSnapshotTestManager(t, home)
 	turn := manager.NewTurn("console-native-after", "instant command followed by contended AFTER")
@@ -172,7 +174,7 @@ func TestConsoleInstantNativeBlockedAfterReturnsCancellationWindows(t *testing.T
 	if err := gate.Close(); err != nil {
 		t.Fatal(err)
 	}
-	recoveryCtx, stop := context.WithTimeout(context.Background(), 8*time.Second)
+	recoveryCtx, stop := context.WithTimeout(context.Background(), scaledTestTimeout(8*time.Second))
 	defer stop()
 	if record, err := turn.Complete(recoveryCtx); err != nil || record != nil {
 		t.Fatalf("AFTER cleanup retry: record=%v err=%v", record, err)
@@ -183,6 +185,7 @@ func TestConsoleInstantNativeBlockedAfterReturnsCancellationWindows(t *testing.T
 }
 
 func TestConsoleInstantNativeAfterStoreFailureKeepsRecoverableOwnerWindows(t *testing.T) {
+	skipSlowNativeInShort(t)
 	home := t.TempDir()
 	manager := openSnapshotTestManager(t, home)
 	turn := manager.NewTurn("console-native-store-failure", "instant command followed by malformed local metadata")
@@ -193,7 +196,7 @@ func TestConsoleInstantNativeAfterStoreFailureKeepsRecoverableOwnerWindows(t *te
 	if err := os.WriteFile(manager.meta, []byte("[broken"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	finishCtx, stop := context.WithTimeout(context.Background(), 8*time.Second)
+	finishCtx, stop := context.WithTimeout(context.Background(), scaledTestTimeout(8*time.Second))
 	defer stop()
 	if _, err := turn.Complete(finishCtx); err == nil {
 		t.Fatal("AFTER silently accepted corrupt metadata")

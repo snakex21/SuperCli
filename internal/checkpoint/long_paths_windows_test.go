@@ -11,6 +11,7 @@ import (
 )
 
 func TestCheckpointLongPathsWindows(t *testing.T) {
+	skipSlowNativeInShort(t)
 	ctx := context.Background()
 	// Canonical root: Open expands 8.3 short names, so the length math must too.
 	root, err := filepath.EvalSymlinks(t.TempDir())

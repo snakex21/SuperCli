@@ -50,7 +50,7 @@ func retentionCandidate(t *testing.T, a *StoreRetentionAudit, path string) Reten
 }
 
 func TestStoreRetentionRemovesNativeGitReadOnlyObjects(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	m, data, _, newest := retentionFixture(t)
 	retentionTransaction(t, m, func() {
 		oids := retentionOrphanGitObjects(t, m)
@@ -90,7 +90,7 @@ func TestStoreRetentionRemovesNativeGitReadOnlyObjects(t *testing.T) {
 }
 
 func TestStoreRetentionHardLinkIsFixedAndNeverChanged(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	m, data, _, _ := retentionFixture(t)
 	retentionTransaction(t, m, func() {
 		oid := retentionOrphanGitObjects(t, m)[0]
@@ -132,7 +132,7 @@ func TestStoreRetentionHardLinkIsFixedAndNeverChanged(t *testing.T) {
 }
 
 func TestStoreRetentionRejectsReplacedCandidateBeforeDeletion(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	m, data, _, _ := retentionFixture(t)
 	retentionTransaction(t, m, func() {
 		path := retentionObjectPath(m, retentionOrphanGitObjects(t, m)[0])

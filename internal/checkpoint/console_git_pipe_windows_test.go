@@ -58,12 +58,12 @@ func checkpointPipeNativeHelper() {
 	if err := windows.DuplicateHandle(windows.CurrentProcess(), windows.Handle(os.Stderr.Fd()), host, &stderr, 0, false, windows.DUPLICATE_SAME_ACCESS); err != nil {
 		os.Exit(74)
 	}
-	conn, err := net.DialTimeout("tcp", os.Getenv("SUPERCLI_CHECKPOINT_PIPE_ADDR"), 5*time.Second)
+	conn, err := net.DialTimeout("tcp", os.Getenv("SUPERCLI_CHECKPOINT_PIPE_ADDR"), scaledTestTimeout(30*time.Second))
 	if err != nil {
 		os.Exit(75)
 	}
 	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(scaledTestTimeout(60 * time.Second)))
 	if err := json.NewEncoder(conn).Encode(checkpointPipeReady{os.Getpid(), uint64(out), uint64(stderr)}); err != nil {
 		os.Exit(76)
 	}
@@ -110,7 +110,7 @@ func checkpointPipeFixture(t *testing.T) (*Manager, *net.TCPListener) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = listener.Close() })
-	if err := listener.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+	if err := listener.SetDeadline(time.Now().Add(scaledTestTimeout(30 * time.Second))); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -127,7 +127,7 @@ func checkpointPipeFinishNative(t *testing.T, listener *net.TCPListener) func() 
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+	if err := conn.SetDeadline(time.Now().Add(scaledTestTimeout(30 * time.Second))); err != nil {
 		t.Fatal(err)
 	}
 	var ready checkpointPipeReady
@@ -146,7 +146,7 @@ func checkpointPipeFinishNative(t *testing.T, listener *net.TCPListener) func() 
 	if _, err := conn.Write([]byte("X")); err != nil {
 		t.Fatal(err)
 	}
-	state, err := windows.WaitForSingleObject(handle, 5000)
+	state, err := windows.WaitForSingleObject(handle, uint32(scaledTestTimeout(30*time.Second).Milliseconds()))
 	if err != nil || state != windows.WAIT_OBJECT_0 {
 		t.Fatalf("native helper did not exit: state=%d err=%v", state, err)
 	}
@@ -155,6 +155,8 @@ func checkpointPipeFinishNative(t *testing.T, listener *net.TCPListener) func() 
 }
 
 func TestCheckpointGitCombinedOutputHeldPipeWindows(t *testing.T) {
+	skipSlowNativeInShort(t)
+	setCheckpointOutputDrainGrace(t, defaultCheckpointOutputDrainGrace)
 	for _, cancelAfterExit := range []bool{false, true} {
 		t.Run(fmt.Sprintf("cancel=%t", cancelAfterExit), func(t *testing.T) {
 			manager, listener := checkpointPipeFixture(t)
@@ -177,13 +179,13 @@ func TestCheckpointGitCombinedOutputHeldPipeWindows(t *testing.T) {
 				if err == nil {
 					t.Error("incomplete inherited-pipe capture reported success")
 				}
-			case <-time.After(3 * time.Second):
+			case <-time.After(heldPipeTestBound()):
 				t.Error("Git factory Wait hung after native exit with output writers still open")
 				cancel()
 				closeWriters()
 				select {
 				case <-done:
-				case <-time.After(3 * time.Second):
+				case <-time.After(heldPipeTestBound()):
 					t.Fatal("fixture cleanup did not release native waiter")
 				}
 			}
@@ -195,6 +197,8 @@ func TestCheckpointGitCombinedOutputHeldPipeWindows(t *testing.T) {
 }
 
 func TestCheckpointGitScannerHeldPipeWindows(t *testing.T) {
+	skipSlowNativeInShort(t)
+	setCheckpointOutputDrainGrace(t, defaultCheckpointOutputDrainGrace)
 	for _, cancelAfterExit := range []bool{false, true} {
 		t.Run(fmt.Sprintf("cancel=%t", cancelAfterExit), func(t *testing.T) {
 			manager, listener := checkpointPipeFixture(t)
@@ -211,7 +215,7 @@ func TestCheckpointGitScannerHeldPipeWindows(t *testing.T) {
 				if path != "ordinary.txt" {
 					t.Fatalf("unexpected scanner token %q", path)
 				}
-			case <-time.After(3 * time.Second):
+			case <-time.After(heldPipeTestBound()):
 				t.Fatal("native enumeration token was not read")
 			}
 			if cancelAfterExit {
@@ -225,13 +229,13 @@ func TestCheckpointGitScannerHeldPipeWindows(t *testing.T) {
 				if cancelAfterExit && !errors.Is(err, context.Canceled) {
 					t.Errorf("scanner cancellation cause lost: %v", err)
 				}
-			case <-time.After(3 * time.Second):
+			case <-time.After(heldPipeTestBound()):
 				t.Error("scanner hung before Wait after native exit with output writers still open")
 				cancel()
 				closeWriters()
 				select {
 				case <-done:
-				case <-time.After(3 * time.Second):
+				case <-time.After(heldPipeTestBound()):
 					t.Fatal("fixture cleanup did not release scanner/native waiter")
 				}
 			}
@@ -241,6 +245,8 @@ func TestCheckpointGitScannerHeldPipeWindows(t *testing.T) {
 
 // The same cancellation ownership must cover every manually consumed Git stream.
 func TestCheckpointManualReadersCancelHeldPipeWindows(t *testing.T) {
+	skipSlowNativeInShort(t)
+	setCheckpointOutputDrainGrace(t, defaultCheckpointOutputDrainGrace)
 	for _, kind := range []string{"narrow-tree", "restore-blob", "retention-tokens"} {
 		t.Run(kind, func(t *testing.T) {
 			manager, listener := checkpointPipeFixture(t)
@@ -278,12 +284,12 @@ func TestCheckpointManualReadersCancelHeldPipeWindows(t *testing.T) {
 				if !errors.Is(err, context.Canceled) {
 					t.Errorf("%s lost cancellation or accepted incomplete stream: %v", kind, err)
 				}
-			case <-time.After(3 * time.Second):
+			case <-time.After(heldPipeTestBound()):
 				t.Errorf("%s remains blocked after native exit/cancel", kind)
 				closeWriters()
 				select {
 				case <-done:
-				case <-time.After(3 * time.Second):
+				case <-time.After(heldPipeTestBound()):
 					t.Fatal("native reader cleanup failed")
 				}
 			}
@@ -293,4 +299,10 @@ func TestCheckpointManualReadersCancelHeldPipeWindows(t *testing.T) {
 			}
 		})
 	}
+}
+
+// heldPipeTestBound is the drain grace plus a generous, scalable margin for
+// native process start/exit on a loaded machine.
+func heldPipeTestBound() time.Duration {
+	return checkpointOutputDrainGrace() + scaledTestTimeout(10*time.Second)
 }

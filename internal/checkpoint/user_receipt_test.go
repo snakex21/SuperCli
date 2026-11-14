@@ -11,7 +11,7 @@ import (
 )
 
 func TestUserReceiptLateIndependentManagerDoesNotBindReusedSequence(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	home, data := t.TempDir(), t.TempDir()
 	path := filepath.Join(home, "a.txt")
@@ -63,7 +63,7 @@ func TestUserReceiptLateIndependentManagerDoesNotBindReusedSequence(t *testing.T
 }
 
 func TestUserReceiptLegacyRecordsExcludedFromAutomaticRewind(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	home := t.TempDir()
 	m := openSnapshotTestManager(t, home)
@@ -86,7 +86,7 @@ func TestUserReceiptLegacyRecordsExcludedFromAutomaticRewind(t *testing.T) {
 }
 
 func TestUserReceiptFailedTruncateRedoesExactBatch(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	home := t.TempDir()
 	path := filepath.Join(home, "a.txt")
@@ -114,7 +114,7 @@ func TestUserReceiptFailedTruncateRedoesExactBatch(t *testing.T) {
 }
 
 func TestCompletionRetryKeepsAlreadyCapturedAfterSnapshot(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	home := t.TempDir()
 	path := filepath.Join(home, "a.txt")

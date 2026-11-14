@@ -35,7 +35,7 @@ func assertFileAbsent(t *testing.T, path string) {
 // (a) Whole workspace over the limit, workdir inside it: the baseline is
 // narrowed to workdir and undo never touches files outside that scope.
 func TestOverLimitCommandNarrowsCheckpointToWorkdir(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	home := t.TempDir()
 	writeOversizedSnapshotFixture(t, home)
@@ -88,7 +88,7 @@ func TestOverLimitCommandNarrowsCheckpointToWorkdir(t *testing.T) {
 // (b) Workdir itself over the limit: the command runs with a visible warning,
 // no record is created and nothing is restored.
 func TestOverLimitWorkdirRunsCommandWithWarning(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	home := t.TempDir()
 	big := filepath.Join(home, "big")
@@ -128,7 +128,7 @@ func TestOverLimitWorkdirRunsCommandWithWarning(t *testing.T) {
 
 // A workdir outside the workspace or equal to it is never used as a scope.
 func TestCommandWorkdirRootRejectsWorkspaceAndOutside(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	home := t.TempDir()
 	writeCheckpointFixture(t, filepath.Join(home, "sub", "a.txt"), "x")
 	m := openSnapshotTestManager(t, home)
@@ -152,7 +152,7 @@ func TestCommandWorkdirRootRejectsWorkspaceAndOutside(t *testing.T) {
 // An earlier scoped baseline in the same turn survives a later uncheckpointed
 // over-limit command: undo restores only that earlier scope.
 func TestOverLimitCommandKeepsEarlierScopedBaseline(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	home := t.TempDir()
 	writeOversizedSnapshotFixture(t, home)
