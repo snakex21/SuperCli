@@ -171,13 +171,16 @@ function showApprovalCard(q) {
     if (kind === "approve") body.selected = [a.approve_label];
     else if (kind === "similar") body.selected = [a.similar_label];
     else body.cancelled = true;
+    // Mark the tool row before posting: the tool result can arrive over SSE
+    // before this request resolves, and it must already read as denied.
+    var markRow = typeof setToolApprovalState === "function" ? setToolApprovalState : function () {};
+    var row = markRow(a.tool, kind === "deny" ? "denied" : "");
     jpost("/api/question/answer", body).then(function () {
       delete questionOverlays[q.id];
       var remaining = Object.keys(questionOverlays);
       activeQuestionOverlay = remaining.length ? questionOverlays[remaining[remaining.length - 1]] : null;
       actions.remove();
       panel.classList.add("answered", kind === "deny" ? "denied" : "approved");
-      if (typeof setToolApprovalState === "function") setToolApprovalState(a.tool, kind === "deny" ? "denied" : "");
       panel.removeAttribute("role");
       panel.appendChild(i18nEl("div", "approval-receipt",
         kind === "deny" ? "approval.receipt.denied" : kind === "similar" ? "approval.receipt.similar" : "approval.receipt.approved"));
@@ -185,6 +188,7 @@ function showApprovalCard(q) {
     }).catch(function (e) {
       error.textContent = e.message;
       buttons.forEach(function (b) { b.disabled = false; });
+      if (row && row.classList.contains("running")) markRow(a.tool, "pending");
     });
   }
   deny.addEventListener("click", function () { answer("deny"); });

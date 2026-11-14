@@ -1,6 +1,9 @@
 /* Host approval card (js/05e-approval-card.js). */
-.approval-card { border-left-color: var(--status-pending); }
-.approval-card.irreversible { border-left-color: var(--status-error); }
+/* The card waits for the user: pending colour, error colour when it cannot be undone. */
+.question-inline .question-panel.approval-card { border-left-color: var(--status-pending); }
+.question-inline .question-panel.approval-card.irreversible { border-left-color: var(--status-error); }
+.approval-card .question-kicker { color: var(--status-pending); }
+.approval-card.irreversible .question-kicker { color: var(--status-error); }
 .approval-card:focus { outline: none; }
 .approval-summary { margin-top: 8px; color: var(--muted); line-height: 1.45; overflow-wrap: anywhere; white-space: pre-line; }
 .approval-detail { margin: 8px 0 0; max-height: 12em; overflow: auto; padding: 8px 10px; border-radius: 6px; background: rgba(127, 127, 127, 0.12); font-size: var(--fs-sm); line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -23,7 +26,7 @@
 .approval-receipt { margin-top: 12px; font-size: var(--fs-sm); color: var(--muted); }
 .approval-card.denied .approval-receipt { color: var(--danger); }
 @media (max-width: 600px) { .approval-row { grid-template-columns: minmax(0, 1fr); gap: 2px; } }
-.approval-key { margin-left: 8px; padding: 0 4px; border: 1px solid currentColor; border-radius: 3px; font: var(--fs-xs) var(--mono); opacity: .7; }
+.approval-key { margin-left: 8px; padding: 0 4px; border: 1px solid currentColor; border-radius: 3px; background: none; color: inherit; box-shadow: none; font: var(--fs-xs) var(--mono); opacity: .75; }
 .approval-op-name { overflow-wrap: anywhere; }
 /* Irreversible: the approve action is outlined in the error colour, never the default. */
 .approval-actions .btn.danger-outline { color: var(--status-error); border-color: var(--status-error); }

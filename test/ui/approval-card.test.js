@@ -8,7 +8,7 @@ const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve()
 
 function harness(catalog = english) {
   const {document} = parseHTML('<!doctype html><html><body><div id="chat-stream"></div></body></html>');
-  const posts = [], runStates = [];
+  const posts = [], runStates = [], toolStates = [];
   const c = createSandbox({document, Object, JSON, Promise, String, Node: document.defaultView.Node,
     questionOverlays: {}, activeQuestionOverlay: null,
     el(tag, cls, text) { const n = document.createElement(tag); n.className = cls || ''; if (text != null) n.textContent = text; return n; },
@@ -19,10 +19,11 @@ function harness(catalog = english) {
     appendStream(node) { document.getElementById('chat-stream').appendChild(node); },
     smartScroll() {},
     setRunState(state, text) { runStates.push(state); },
+    setToolApprovalState(tool, state) { toolStates.push([tool, state]); return null; },
     jpost(url, body) { posts.push({url, body: JSON.parse(JSON.stringify(body))}); return Promise.resolve({ok: true}); },
   });
   runScript(source, c);
-  return {c, document, posts, runStates,
+  return {c, document, posts, runStates, toolStates,
     card: () => document.querySelector('.approval-card'),
     button: cls => document.querySelector('.' + cls)};
 }
@@ -120,11 +121,15 @@ test('the card puts the run into the pending state and names the operation for h
   const h = harness({...english, 'tool.thunderbird_mail': 'Thunderbird mail'});
   h.c.showApprovalCard(request());
   assert.equal(h.runStates.at(-1), 'pending');
+  assert.deepEqual(h.toolStates, [['thunderbird_mail', 'pending']], 'the blocked tool row is marked pending');
   const op = h.card().querySelector('.approval-op-name');
   assert.equal(op.textContent, 'Thunderbird mail (thunderbird_mail)');
   assert.equal(op.title, 'thunderbird_mail · copy');
   await new Promise(r => setTimeout(r, 5));
   assert.equal(h.document.activeElement, h.button('approval-deny'), 'deny stays the default focus');
+  h.button('approval-deny').click();
+  assert.deepEqual(h.toolStates.at(-1), ['thunderbird_mail', 'denied'], 'denial is marked before the answer request resolves');
+  await flush();
 });
 
 test('irreversible operations offer no session grant and are marked', async () => {
