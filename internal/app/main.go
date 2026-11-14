@@ -861,6 +861,7 @@ func Main() {
 		version:                version,
 		uiLanguage:             uiLanguage,
 		showGenerationSpeed:    tomlCfg.ShowGenerationSpeed,
+		noColorConfig:          tomlCfg.NoColor,
 		modelTier:              modelTier,
 		loop:                   loop,
 		provider:               provider,
