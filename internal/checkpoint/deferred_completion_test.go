@@ -14,7 +14,7 @@ import (
 )
 
 func TestDeferredCompletionWaitsForActualFnWithoutBlockingForeground(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	home := t.TempDir()
 	writeCheckpointFixture(t, filepath.Join(home, "a.txt"), "before")
 	m := openSnapshotTestManager(t, home)
@@ -95,7 +95,7 @@ func TestDeferredCompletionWaitsForActualFnWithoutBlockingForeground(t *testing.
 }
 
 func TestDeferredCompletionKeepsNormalTurnInline(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	home := t.TempDir()
 	m := openSnapshotTestManager(t, home)
 	turn := m.NewTurn("normal", "edit")

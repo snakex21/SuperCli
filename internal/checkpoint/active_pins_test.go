@@ -56,7 +56,7 @@ func TestActivePinNativeFailurePreservesContextCause(t *testing.T) {
 }
 
 func TestActivePinsRetainEarlierBaselineAcrossOtherCompletedTurn(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	home := t.TempDir()
 	writeCheckpointFixture(t, filepath.Join(home, "a.txt"), "a-original")
@@ -100,7 +100,7 @@ func TestActivePinsRetainEarlierBaselineAcrossOtherCompletedTurn(t *testing.T) {
 }
 
 func TestNoopCompletionReleasesActivePinsAndIsIdempotent(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	home := t.TempDir()
 	writeCheckpointFixture(t, filepath.Join(home, "same.txt"), "same")
@@ -122,7 +122,7 @@ func TestNoopCompletionReleasesActivePinsAndIsIdempotent(t *testing.T) {
 }
 
 func TestFailedCompletionRetainsPinsUntilSafeRetry(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	home := t.TempDir()
 	writeCheckpointFixture(t, filepath.Join(home, "a.txt"), "before")

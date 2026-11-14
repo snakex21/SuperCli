@@ -121,6 +121,7 @@ func TestCheckpointWindowsDirRejectsCustomCmdAndEnvironment(t *testing.T) {
 }
 
 func TestCheckpointWindowsDirRealWrappedTurn(t *testing.T) {
+	skipSlowNativeInShort(t)
 	if runtime.GOOS != "windows" {
 		t.Skip("native Windows cmd fixture")
 	}

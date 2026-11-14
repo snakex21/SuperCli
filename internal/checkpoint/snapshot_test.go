@@ -46,7 +46,7 @@ func writeOversizedSnapshotFixture(t *testing.T, home string) {
 }
 
 func TestScopedTurnAvoidsUnrelatedLargeFilesAndPreservesFirstBefore(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	home := t.TempDir()
 	writeCheckpointFixture(t, filepath.Join(home, "a.txt"), "original-a")
@@ -108,7 +108,7 @@ func TestScopedTurnAvoidsUnrelatedLargeFilesAndPreservesFirstBefore(t *testing.T
 }
 
 func TestMixedWholeAndScopedTurnPreservesExplicitIgnoredPaths(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	for _, wholeFirst := range []bool{false, true} {
 		t.Run(map[bool]string{false: "scope-before-command", true: "command-before-scope"}[wholeFirst], func(t *testing.T) {
 			ctx := context.Background()
@@ -156,7 +156,7 @@ func TestMixedWholeAndScopedTurnPreservesExplicitIgnoredPaths(t *testing.T) {
 }
 
 func TestLegacyCRLFCheckpointRefusesByteLossWithoutRunningFilters(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	home := t.TempDir()
 	writeCheckpointFixture(t, filepath.Join(home, ".gitattributes"), "*.txt text eol=lf\n")
@@ -206,7 +206,7 @@ func TestLegacyCRLFCheckpointRefusesByteLossWithoutRunningFilters(t *testing.T) 
 }
 
 func TestLegacyUnfilteredBinaryCheckpointRemainsUsable(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	home := t.TempDir()
 	file := filepath.Join(home, "a.bin")
@@ -241,7 +241,7 @@ func TestLegacyUnfilteredBinaryCheckpointRemainsUsable(t *testing.T) {
 }
 
 func TestScopedToWholeTurnKeepsEarliestModifiedAndAbsentPaths(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	home := t.TempDir()
 	writeCheckpointFixture(t, filepath.Join(home, "a.txt"), "original-a")
@@ -274,7 +274,7 @@ func TestScopedToWholeTurnKeepsEarliestModifiedAndAbsentPaths(t *testing.T) {
 }
 
 func TestScopedDirectoryExpansionAndMoveIntoExistingFolder(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	home := t.TempDir()
 	writeCheckpointFixture(t, filepath.Join(home, "src", "a.txt"), "original")
@@ -306,7 +306,7 @@ func TestScopedDirectoryExpansionAndMoveIntoExistingFolder(t *testing.T) {
 // An over-limit whole-workspace baseline no longer blocks a command: it runs
 // with a visible warning, and the failed preflight writes no objects.
 func TestFullCaptureOverLimitRunsCommandWithWarningAndNoBlobWrites(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	home := t.TempDir()
 	writeOversizedSnapshotFixture(t, home)
 	m := openSnapshotTestManager(t, home)
@@ -353,7 +353,7 @@ func TestFullCaptureOverLimitRunsCommandWithWarningAndNoBlobWrites(t *testing.T)
 }
 
 func TestRawSnapshotsPreserveCRLFAndDoNotRunCleanFilters(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	home := t.TempDir()
 	writeCheckpointFixture(t, filepath.Join(home, ".gitattributes"), "*.txt text eol=lf filter=fixture\n")
@@ -388,7 +388,7 @@ func TestRawSnapshotsPreserveCRLFAndDoNotRunCleanFilters(t *testing.T) {
 }
 
 func TestRecordRefsKeepHistoricalUndoAfterGitPrune(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	home := t.TempDir()
 	writeCheckpointFixture(t, filepath.Join(home, "a.txt"), "original")
@@ -427,7 +427,7 @@ func TestRecordRefsKeepHistoricalUndoAfterGitPrune(t *testing.T) {
 }
 
 func TestWebDownloadCheckpointIncludesDestinationOnly(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	home := t.TempDir()
 	writeOversizedSnapshotFixture(t, home)

@@ -116,7 +116,7 @@ func assertNoNarrowRecordTemporaries(t *testing.T, m *Manager) {
 }
 
 func TestNarrowChangedSnapshotsPreservesOnlyRecordFiles(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	m := newNarrowRecordTestManager(t)
 	if err := m.ensureRepoLocked(ctx); err != nil {
@@ -219,7 +219,7 @@ func TestNarrowChangedSnapshotsPreservesOnlyRecordFiles(t *testing.T) {
 }
 
 func TestNarrowChangedSnapshotsMatchesCanonicalGitTreeAndModes(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	m := newNarrowRecordTestManager(t)
 	if err := m.ensureRepoLocked(ctx); err != nil {
@@ -252,7 +252,7 @@ func TestNarrowChangedSnapshotsMatchesCanonicalGitTreeAndModes(t *testing.T) {
 }
 
 func TestNarrowChangedSnapshotsRejectsNonRegularSelectedMode(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	m := newNarrowRecordTestManager(t)
 	if err := m.ensureRepoLocked(ctx); err != nil {

@@ -15,7 +15,7 @@ import (
 )
 
 func TestForgetFromDetachesAcceptedAsyncWorkerBeforeLateCheckpoint(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	home, data := t.TempDir(), t.TempDir()
@@ -167,7 +167,7 @@ func TestForgetFromDetachesAcceptedAsyncWorkerBeforeLateCheckpoint(t *testing.T)
 }
 
 func TestPendingUserSequenceDetachmentMatchesTailEvenWhenStoreFails(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	for _, broken := range []bool{false, true} {
 		name := "healthy metadata"
 		if broken {

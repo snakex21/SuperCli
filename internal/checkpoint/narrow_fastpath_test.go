@@ -14,7 +14,7 @@ import (
 )
 
 func TestScopedSnapshotMinimalProof(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	for _, test := range []struct {
 		name  string
 		roots []string
@@ -124,7 +124,7 @@ func assertFastpathSnapshot(t *testing.T, m *Manager, commit string, bodies map[
 }
 
 func TestScopedFastpathCreateDeleteUnicodeAndBinaryBytes(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	ctx := context.Background()
 	m := newNarrowRecordTestManager(t)
 	writeOversizedSnapshotFixture(t, m.home)
@@ -174,7 +174,7 @@ func TestScopedFastpathCreateDeleteUnicodeAndBinaryBytes(t *testing.T) {
 }
 
 func TestScopedFastpathFileDirectoryChanges(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	for _, directoryBefore := range []bool{false, true} {
 		name := "file-to-directory"
 		if directoryBefore {
@@ -230,7 +230,7 @@ func TestScopedFastpathFileDirectoryChanges(t *testing.T) {
 }
 
 func TestScopedSnapshotFastpathFallsBackForUntouchedDirectoryAndBackup(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	for _, office := range []bool{false, true} {
 		name, tool := "directory-scope", "read_zip"
 		changed, untouched := "branch/edit.bin", "branch/ignored.bak"
@@ -267,7 +267,7 @@ func TestScopedSnapshotFastpathFallsBackForUntouchedDirectoryAndBackup(t *testin
 }
 
 func TestScopedSnapshotFastpathFallsBackForWholeCaptureWithIgnoredExtra(t *testing.T) {
-	t.Parallel()
+	parallelNativeTest(t)
 	m := newNarrowRecordTestManager(t)
 	writeNarrowRecordFixture(t, m, ".gitignore", []byte("*.bak\n"))
 	writeNarrowRecordFixture(t, m, "unrelated.bin", []byte("whole capture only"))
