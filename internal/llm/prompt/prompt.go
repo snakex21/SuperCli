@@ -64,8 +64,12 @@ const ThinToolProtocol = `Use native tool calls when available. Text fallback:
 key: value
 »
 One block per call; separate blocks for independent calls. For no arguments: «tool_name».
-Text arguments have no JSON braces. Arrays/objects require native JSON tool calling; patch_file's old/new shorthand accepts text.
-Simple read-only catalog tools can skip tool_search: call invoke_tool with "tool: name" and one "arg.field: value" line per target argument.`
+Text arguments have no JSON braces. Arrays/objects require native JSON tool calling; patch_file's old/new shorthand accepts text.` + "\n" + ThinDirectToolHint
+
+// ThinDirectToolHint is the last ThinToolProtocol line. A thin catalog that
+// lists simple read-only tools replaces it with its own header carrying the
+// same instruction, so the rule is not sent twice in the cached prefix.
+const ThinDirectToolHint = `Simple read-only catalog tools can skip tool_search: call invoke_tool with "tool: name" and one "arg.field: value" line per target argument.`
 
 // MemoryGuidance keeps foreground memory tools proportional to missing context
 // and durable new facts. Session/task logging is handled by the memory runtime.
