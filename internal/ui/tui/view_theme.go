@@ -35,7 +35,7 @@ var (
 	colorAccentSoft = lipgloss.AdaptiveColor{Light: "#b5520a", Dark: "#f5a97f"}
 	// colorInfo is the secondary accent used for user labels
 	// and interactive highlights (GUI --hl-fn blue).
-	colorInfo = lipgloss.AdaptiveColor{Light: "#1e66f5", Dark: "#82aaff"}
+	colorInfo = adaptive(theme.Default.Status.Running)
 	// colorText is the main body text (GUI --text).
 	colorText = adaptive(theme.Default.Text)
 	// colorMuted is for secondary text (GUI --muted).
@@ -60,11 +60,6 @@ var (
 	colorWarn    = lipgloss.AdaptiveColor{Light: "#9a6700", Dark: "#e5c07b"}
 	// colorPending marks a run blocked on the user (approval card).
 	colorPending = adaptive(theme.Default.Status.Pending)
-	colorDenied  = adaptive(theme.Default.Status.Denied)
-	colorRunning = adaptive(theme.Default.Status.Running)
-	colorDiffAdd = adaptive(theme.Default.Diff.Add)
-	colorDiffDel = adaptive(theme.Default.Diff.Del)
-	colorHunk    = adaptive(theme.Default.Diff.Hunk)
 )
 
 // Palette is the set of styles used across the TUI. Exported
@@ -132,22 +127,12 @@ type Palette struct {
 	MdThinking       lipgloss.Style // <thinking> text: muted
 	MdThinkingHeader lipgloss.Style // 💭 Thinking: prefix
 
-	// Markdown blocks: H1 heading, quote bar, fenced-code frame, table rules.
-	MdH1    lipgloss.Style
-	MdQuote lipgloss.Style
-	MdFrame lipgloss.Style
-
-	// Status (shared tokens): colour encodes state.
+	// StatusPending marks a run blocked on the user (approval card).
+	// Palette is copied and compared on every frame, so new styles reuse
+	// identical existing ones where possible: markdown H1 = Header, quote =
+	// MdThinking, frames and table rules = Rule; diff lines use Success,
+	// Error and UserGutter (the shared status/diff tokens have equal values).
 	StatusPending lipgloss.Style
-	StatusDenied  lipgloss.Style
-	StatusRunning lipgloss.Style
-	// BorderUI is a component border (>= 3:1).
-	BorderUI lipgloss.Style
-
-	// Diff lines
-	DiffAdd  lipgloss.Style
-	DiffDel  lipgloss.Style
-	DiffHunk lipgloss.Style
 }
 
 // NewPalette builds a palette from a lipgloss Renderer.
@@ -214,18 +199,7 @@ func NewPalette(r *lipgloss.Renderer) Palette {
 		MdThinking:       r.NewStyle().Foreground(colorMuted).Italic(true),
 		MdThinkingHeader: r.NewStyle().Foreground(colorMuted).Bold(true),
 
-		MdH1:    r.NewStyle().Foreground(colorAccent).Bold(true),
-		MdQuote: r.NewStyle().Foreground(colorMuted).Italic(true),
-		MdFrame: r.NewStyle().Foreground(colorBorderUI),
-
 		StatusPending: r.NewStyle().Foreground(colorPending).Bold(true),
-		StatusDenied:  r.NewStyle().Foreground(colorDenied),
-		StatusRunning: r.NewStyle().Foreground(colorRunning),
-		BorderUI:      r.NewStyle().Foreground(colorBorderUI),
-
-		DiffAdd:  r.NewStyle().Foreground(colorDiffAdd),
-		DiffDel:  r.NewStyle().Foreground(colorDiffDel),
-		DiffHunk: r.NewStyle().Foreground(colorHunk),
 	}
 }
 

@@ -49,7 +49,7 @@ func NewMarker(p Palette, language ...string) Marker {
 		p: markerPalette{
 			Dim: p.Dim, Error: p.Error, Marker: p.Marker, MarkerDim: p.MarkerDim,
 			Success: p.Success, ToolErr: p.ToolErr, ToolName: p.ToolName, ToolOutput: p.ToolOutput,
-			Bold: p.Bold, DiffAdd: p.DiffAdd, DiffDel: p.DiffDel, DiffHunk: p.DiffHunk,
+			Bold: p.Bold, DiffAdd: p.Success, DiffDel: p.Error, DiffHunk: p.UserGutter,
 		},
 		language: lang,
 		colors:   p.renderColors(),

@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Plural messages keep every CLDR form in one catalog value, for example
@@ -12,19 +13,34 @@ import (
 // interfaces pick the same form. A missing form falls back to "other".
 var pluralForm = regexp.MustCompile(`(zero|one|two|few|many|other)\s*\{([^{}]*)\}`)
 
-// Plural returns the catalog message key for n in language.
-func Plural(language, key string, n int) string {
-	text := Text(language, key)
+// Parsed forms per language and key; catalogs are immutable, and the TUI
+// formats plurals on its render path.
+var pluralForms sync.Map // pluralKey -> map[string]string
+
+type pluralKey struct{ language, key string }
+
+func pluralFormsFor(language, key string) map[string]string {
+	cacheKey := pluralKey{language, key}
+	if forms, ok := pluralForms.Load(cacheKey); ok {
+		return forms.(map[string]string)
+	}
 	forms := map[string]string{}
-	for _, m := range pluralForm.FindAllStringSubmatch(text, -1) {
+	for _, m := range pluralForm.FindAllStringSubmatch(Text(language, key), -1) {
 		forms[m[1]] = m[2]
 	}
+	pluralForms.Store(cacheKey, forms)
+	return forms
+}
+
+// Plural returns the catalog message key for n in language.
+func Plural(language, key string, n int) string {
+	forms := pluralFormsFor(language, key)
 	form, ok := forms[PluralCategory(language, n)]
 	if !ok {
 		form, ok = forms["other"]
 	}
 	if !ok {
-		return strconv.Itoa(n) + " " + text
+		return strconv.Itoa(n) + " " + Text(language, key)
 	}
 	return strings.ReplaceAll(form, "#", strconv.Itoa(n))
 }

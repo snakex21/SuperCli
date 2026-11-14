@@ -111,8 +111,8 @@ func renderFencedBlock(lines []string, start int, p Palette) (string, int) {
 	if lang != "" {
 		open += " " + lang
 	}
-	b.WriteString(p.MdFrame.Render(open))
-	gutter := p.MdFrame.Render("│ ")
+	b.WriteString(p.Rule.Render(open))
+	gutter := p.Rule.Render("│ ")
 	highlighted := highlightCodeLines(lang, code, p)
 	for i, line := range code {
 		b.WriteByte('\n')
@@ -128,7 +128,7 @@ func renderFencedBlock(lines []string, start int, p Palette) (string, int) {
 		return b.String(), end
 	}
 	b.WriteByte('\n')
-	b.WriteString(p.MdFrame.Render("╰─"))
+	b.WriteString(p.Rule.Render("╰─"))
 	return b.String(), end + 1
 }
 
