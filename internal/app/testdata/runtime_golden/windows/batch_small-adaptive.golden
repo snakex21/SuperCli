@@ -186,9 +186,8 @@ key: value
 »
 One block per call; separate blocks for independent calls. For no arguments: «tool_name».
 Text arguments have no JSON braces. Arrays/objects require native JSON tool calling; patch_file's old/new shorthand accepts text.
-Simple read-only catalog tools can skip tool_search: call invoke_tool with "tool: name" and one "arg.field: value" line per target argument.
 
-Simple read-only tools, callable now through invoke_tool (tool: name, arg.<field>: value):
+Simple read-only tools, no tool_search needed; call invoke_tool with "tool: name" and one "arg.<field>: value" line per argument:
 read_context — Read N lines around a target (default ±10) when exact text for patch_file is mi…
 
 More tools, loadable on demand — call tool_search once with a natural-language query. It activates the match and returns its full schema; then call the target through invoke_tool with those args:
@@ -245,9 +244,8 @@ key: value
 »
 One block per call; separate blocks for independent calls. For no arguments: «tool_name».
 Text arguments have no JSON braces. Arrays/objects require native JSON tool calling; patch_file's old/new shorthand accepts text.
-Simple read-only catalog tools can skip tool_search: call invoke_tool with "tool: name" and one "arg.field: value" line per target argument.
 
-Simple read-only tools, callable now through invoke_tool (tool: name, arg.<field>: value):
+Simple read-only tools, no tool_search needed; call invoke_tool with "tool: name" and one "arg.<field>: value" line per argument:
 read_context — Read N lines around a target (default ±10) when exact text for patch_file is mi…
 
 More tools, loadable on demand — call tool_search once with a natural-language query. It activates the match and returns its full schema; then call the target through invoke_tool with those args:
