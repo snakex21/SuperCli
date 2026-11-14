@@ -95,11 +95,37 @@ func TestApprovalGateDeniedIsToolError(t *testing.T) {
 	r.MustRegister(gatedTool(&seen, nil))
 	ctx := WithApprover(context.Background(), &fakeApprover{})
 	res, _ := r.Execute(ctx, "mailbox", json.RawMessage(`{"op":"write","confirm":true}`))
-	if res.Err == nil || !strings.Contains(res.Err.Error(), "the user denied it") || !strings.Contains(res.Err.Error(), "Do not retry") {
+	// The wording "NOT executed" made models report that the tool itself
+	// refused; a denial names SuperCli's prompt and the user as the source.
+	if res.Err == nil || !errors.Is(res.Err, ErrApprovalRequired) {
 		t.Fatalf("deny: %v", res.Err)
+	}
+	for _, want := range []string{"the user declined this action (mailbox write) in the SuperCli approval prompt", "nothing was done", "Don't retry", "did not refuse"} {
+		if !strings.Contains(res.Err.Error(), want) {
+			t.Errorf("deny text lacks %q: %v", want, res.Err)
+		}
+	}
+	if strings.Contains(res.Err.Error(), "NOT executed") {
+		t.Errorf("deny text still uses the tool-refusal wording: %v", res.Err)
+	}
+	err := ApprovalDeniedError(ApprovalRequest{Tool: "mailbox", Operation: "write"}, ApprovalDecision{Mode: ApprovalDenied, Reason: "the user did not answer within 10m0s"})
+	if !strings.Contains(err.Error(), "because the user did not answer within 10m0s; nothing was done") || strings.Contains(err.Error(), "declined") {
+		t.Errorf("timeout text: %v", err)
 	}
 	if len(seen) != 0 {
 		t.Fatal("denied call executed")
+	}
+}
+
+func TestApplyPreviewReplacesSummaryOnlyWhenSet(t *testing.T) {
+	r := ApprovalRequest{Summary: "Trash in account2."}
+	r.ApplyPreview(ApprovalPreview{Count: 2, AccountName: "Gmail"})
+	if r.Summary != "Trash in account2." || r.Count != 2 || r.AccountName != "Gmail" {
+		t.Fatalf("%+v", r)
+	}
+	r.ApplyPreview(ApprovalPreview{Count: -1, Summary: "Trash in Gmail.", Warnings: []string{"w"}})
+	if r.Summary != "Trash in Gmail." || len(r.Warnings) != 1 || r.Count != -1 {
+		t.Fatalf("%+v", r)
 	}
 }
 

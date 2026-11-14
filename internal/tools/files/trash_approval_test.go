@@ -43,3 +43,23 @@ func TestTrashOutsideWorkspaceNeedsApprovalInsideDoesNot(t *testing.T) {
 		t.Fatalf("outside file was touched: %v", err)
 	}
 }
+
+func TestTrashOutsideWorkspaceApprovalIsLocalizable(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "work")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	prev := sandbox.IsUnsandboxed()
+	sandbox.SetUnsandboxed(true)
+	defer sandbox.SetUnsandboxed(prev)
+	outside := filepath.Join(root, "elsewhere.txt")
+	raw, _ := json.Marshal(map[string]string{"path": outside})
+	req, err := NewTrash(home).approval(context.Background(), raw)
+	if err != nil || req == nil {
+		t.Fatalf("approval: %+v %v", req, err)
+	}
+	if req.SummaryKey != "approval.summary.trash_outside_workspace" || req.SummaryArgs["path"] != req.Target || req.Target == "" {
+		t.Fatalf("request %+v", req)
+	}
+}

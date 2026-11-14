@@ -1139,5 +1139,7 @@
   "approval.summary.generate_video": "Vygenerovat jedno video modelem {model} od {provider}? Prompt a parametry se odešlou na {endpoint} a poskytovatel může generování zpoplatnit. Neprobíhá žádné automatické opakování a není k dispozici žádné placené náhradní řešení.",
   "approval.summary.headless_open": "Spustit relaci prohlížeče bez grafického rozhraní na důvěryhodném cíli „{target}“? Její profil se vytvoří v přenosném datovém adresáři a relace může otevřít požadovanou adresu.",
   "approval.summary.headless_close": "Zavřít relaci prohlížeče na důvěryhodném cíli „{target}“? Její profil SuperCli bude odstraněn; ovladač poběží dál.",
-  "approval.summary.headless_action": "Spustit „{action}“ na důvěryhodném cíli „{target}“? Tím se změní vybraný virtuální počítač nebo relace prohlížeče."
+  "approval.summary.headless_action": "Spustit „{action}“ na důvěryhodném cíli „{target}“? Tím se změní vybraný virtuální počítač nebo relace prohlížeče.",
+  "approval.field.warnings": "Upozornění",
+  "approval.summary.trash_outside_workspace": "Odstranit {path}, který je MIMO pracovní prostor? Přesune se do složky .supercli/trash projektu, odkud jej lze obnovit."
 }

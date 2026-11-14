@@ -1139,5 +1139,7 @@
   "approval.summary.generate_video": "Generere én video med {provider}-modellen {model}? Ledeteksten og parameterne sendes til {endpoint}, og leverandøren kan ta betalt for genereringen. Det finnes ingen automatiske nye forsøk og ingen betalt reserveløsning.",
   "approval.summary.headless_open": "Starte en hodeløs nettleserøkt på det klarerte målet «{target}»? Profilen opprettes i den portable datamappen, og økten kan åpne den forespurte adressen.",
   "approval.summary.headless_close": "Lukke en nettleserøkt på det klarerte målet «{target}»? SuperCli-profilen fjernes; driveren fortsetter å kjøre.",
-  "approval.summary.headless_action": "Kjøre «{action}» på det klarerte målet «{target}»? Dette endrer den valgte virtuelle maskinen eller nettleserøkten."
+  "approval.summary.headless_action": "Kjøre «{action}» på det klarerte målet «{target}»? Dette endrer den valgte virtuelle maskinen eller nettleserøkten.",
+  "approval.field.warnings": "Advarsel",
+  "approval.summary.trash_outside_workspace": "Fjerne {path}, som ligger UTENFOR arbeidsområdet? Den flyttes til prosjektets mappe .supercli/trash og kan gjenopprettes derfra."
 }

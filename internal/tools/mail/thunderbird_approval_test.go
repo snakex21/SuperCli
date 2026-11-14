@@ -94,7 +94,7 @@ func TestThunderbirdModelConfirmIsIgnoredWithoutUserApproval(t *testing.T) {
 	}
 	denier := &recordingApprover{}
 	res, _ = r.Execute(core.WithApprover(context.Background(), denier), "thunderbird_mail", json.RawMessage(`{"op":"delete_folder","folder":"account2://_SuperCliTest","confirm":true}`))
-	if res.Err == nil || !strings.Contains(res.Err.Error(), "the user denied it") || len(denier.reqs) != 1 {
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "the user declined this action (thunderbird_mail delete_folder) in the SuperCli approval prompt") || len(denier.reqs) != 1 {
 		t.Fatalf("deny: %v (%d prompts)", res.Err, len(denier.reqs))
 	}
 }

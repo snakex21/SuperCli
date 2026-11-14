@@ -1139,5 +1139,7 @@
   "approval.summary.generate_video": "Generați un videoclip cu modelul {model} de la {provider}? Promptul și parametrii sunt trimiși la {endpoint}, iar furnizorul poate taxa generarea. Nu există reîncercare automată sau alternativă plătită.",
   "approval.summary.headless_open": "Porniți o sesiune de browser fără interfață pe ținta de încredere „{target}”? Profilul său este creat în directorul de date portabil și sesiunea poate deschide adresa solicitată.",
   "approval.summary.headless_close": "Închideți o sesiune de browser pe ținta de încredere „{target}”? Profilul său SuperCli este eliminat; driverul continuă să ruleze.",
-  "approval.summary.headless_action": "Rulați „{action}” pe ținta de încredere „{target}”? Aceasta modifică mașina virtuală sau sesiunea de browser selectată."
+  "approval.summary.headless_action": "Rulați „{action}” pe ținta de încredere „{target}”? Aceasta modifică mașina virtuală sau sesiunea de browser selectată.",
+  "approval.field.warnings": "Avertisment",
+  "approval.summary.trash_outside_workspace": "Eliminați {path}, care se află ÎN AFARA spațiului de lucru? Este mutat în dosarul .supercli/trash al proiectului, de unde poate fi restaurat."
 }

@@ -1139,5 +1139,7 @@
   "approval.summary.generate_video": "Générer une vidéo avec le modèle {model} de {provider} ? Le prompt et les paramètres sont envoyés à {endpoint}, et le fournisseur peut facturer la génération. Il n’y a ni nouvelle tentative automatique ni solution de repli payante.",
   "approval.summary.headless_open": "Démarrer une session de navigateur headless sur la cible de confiance « {target} » ? Son profil est créé dans le répertoire de données portable, et elle peut ouvrir l’adresse demandée.",
   "approval.summary.headless_close": "Fermer une session de navigateur sur la cible de confiance « {target} » ? Son profil SuperCli est supprimé ; le pilote continue de fonctionner.",
-  "approval.summary.headless_action": "Exécuter « {action} » sur la cible de confiance « {target} » ? Cela modifie la machine virtuelle ou la session de navigateur sélectionnée."
+  "approval.summary.headless_action": "Exécuter « {action} » sur la cible de confiance « {target} » ? Cela modifie la machine virtuelle ou la session de navigateur sélectionnée.",
+  "approval.field.warnings": "Avertissement",
+  "approval.summary.trash_outside_workspace": "Retirer {path}, qui se trouve EN DEHORS de l’espace de travail ? Il est déplacé dans le dossier .supercli/trash du projet, d’où il peut être restauré."
 }
