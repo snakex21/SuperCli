@@ -37,13 +37,13 @@ func TestBatchContextProbeFindsPrefixBreaks(t *testing.T) {
 	if first.System == 0 || first.Tail == 0 || first.ToolDefs == 0 || first.PrefixBreak || first.Input != 100 || first.TTFTMs != 2 {
 		t.Fatalf("first=%+v", first)
 	}
-	if second.SharedPrefix != 2 || second.PrefixBreak || second.ToolsChanged || second.Input != 150 || second.Cached != 90 || second.History <= first.History {
+	if second.SharedPrefix != 2 || second.PrefixBreak || !second.TailMove || second.ToolsChanged || second.Input != 150 || second.Cached != 90 || second.History <= first.History {
 		t.Fatalf("second=%+v", second)
 	}
 	if third.SharedPrefix != 0 || !third.PrefixBreak || !third.ToolsChanged {
 		t.Fatalf("third=%+v", third)
 	}
-	if got.PrefixBreaks != 1 || got.ToolsChanged != 1 {
+	if third.TailMove || got.PrefixBreaks != 1 || got.TailMoves != 1 || got.ToolsChanged != 1 {
 		t.Fatalf("totals=%+v", got)
 	}
 	if len(got.Tools) != 2 || got.Tools[0].Name != "big" || got.Tools[0].Tokens < got.Tools[1].Tokens {

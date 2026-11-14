@@ -144,7 +144,8 @@ func buildMainLoopConfig(a loopAssembly) agent.LoopConfig {
 		// HP Z6/Qwen3.5-122B measured 86.4% fewer evaluated warm-turn
 		// tokens with both quality arms passing. stable_toolset=false
 		// or small_full_tools=true disables the automatic profile.
-		CatalogHoist: a.execProfile.CatalogHoist,
+		CatalogHoist:       a.execProfile.CatalogHoist,
+		ReplaceContextTail: a.execProfile.ReplaceContextTail,
 		// Orchestrator: task carries a full schema from turn 1 (delegation
 		// is the main loop's primary action). The registry restriction
 		// itself is applied below via SetRegistry, once the task tools are

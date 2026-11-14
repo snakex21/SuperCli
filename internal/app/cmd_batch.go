@@ -255,6 +255,7 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 		ThinTools:             execProfile.ThinTools,
 		StableToolset:         execProfile.StableToolset,
 		CatalogHoist:          execProfile.CatalogHoist,
+		ReplaceContextTail:    execProfile.ReplaceContextTail,
 		Orchestrator:          orchHard,
 		// Batch uses the same source-aware cascade as TUI/WebGUI. This is
 		// memory-only: explicit budget bounded by the loaded runtime capacity,
