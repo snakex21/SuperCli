@@ -183,7 +183,8 @@ func (m Model) renderApprovalView() string {
 		return strings.Join(message[:min(len(message), max(1, m.height))], "\n")
 	}
 	p := m.palette
-	frame := p.StatusPending
+	// Thin frame lines: the title inside the top edge carries the weight.
+	frame := p.StatusPending.Bold(false)
 	if !a.Approval.Reversible || a.Approval.Risk == "destructive" {
 		frame = p.Error
 	}

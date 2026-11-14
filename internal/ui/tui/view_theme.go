@@ -130,9 +130,12 @@ type Palette struct {
 	// StatusPending marks a run blocked on the user (approval card).
 	// Palette is copied and compared on every frame, so new styles reuse
 	// identical existing ones where possible: markdown H1 = Header, quote =
-	// MdThinking, frames and table rules = Rule; diff lines use Success,
-	// Error and UserGutter (the shared status/diff tokens have equal values).
+	// MdThinking; diff lines use Success, Error and UserGutter (the shared
+	// status/diff tokens have equal values).
 	StatusPending lipgloss.Style
+	// MdFrame draws fenced-code frames, table rules and quote bars in the
+	// component-border colour (>= 3:1), unlike the faint decorative Rule.
+	MdFrame lipgloss.Style
 }
 
 // NewPalette builds a palette from a lipgloss Renderer.
@@ -200,6 +203,7 @@ func NewPalette(r *lipgloss.Renderer) Palette {
 		MdThinkingHeader: r.NewStyle().Foreground(colorMuted).Bold(true),
 
 		StatusPending: r.NewStyle().Foreground(colorPending).Bold(true),
+		MdFrame:       r.NewStyle().Foreground(colorBorderUI),
 	}
 }
 

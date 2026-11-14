@@ -98,7 +98,7 @@ func renderMarkdownTable(header, separator string, body []string, p Palette) str
 			widths[c] = max(widths[c], ansi.StringWidth(text))
 		}
 	}
-	bar := p.Rule.Render(" │ ")
+	bar := p.MdFrame.Render(" │ ")
 	var b strings.Builder
 	for r, cells := range rendered {
 		if r > 0 {
@@ -130,7 +130,7 @@ func renderMarkdownTable(header, separator string, body []string, p Palette) str
 			for c := range parts {
 				parts[c] = strings.Repeat("─", max(1, widths[c]))
 			}
-			b.WriteString("\n" + p.Rule.Render(strings.Join(parts, "─┼─")))
+			b.WriteString("\n" + p.MdFrame.Render(strings.Join(parts, "─┼─")))
 		}
 	}
 	return b.String()

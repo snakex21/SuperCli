@@ -257,9 +257,9 @@ func renderMarkdownLine(line string, p Palette) string {
 		text := applyInlineMarkdown(body, p)
 		switch level {
 		case 1:
-			return p.Header.Render(text) + "\n" + p.Rule.Render(strings.Repeat("═", max(1, ansi.StringWidth(text))))
+			return p.Header.Render(text) + "\n" + p.MdFrame.Render(strings.Repeat("═", max(1, ansi.StringWidth(text))))
 		case 2:
-			return p.MdH2.Render(text) + "\n" + p.Rule.Render(strings.Repeat("─", max(1, ansi.StringWidth(text))))
+			return p.MdH2.Render(text) + "\n" + p.MdFrame.Render(strings.Repeat("─", max(1, ansi.StringWidth(text))))
 		default:
 			return p.MdH3.Render(text)
 		}
@@ -267,7 +267,7 @@ func renderMarkdownLine(line string, p Palette) string {
 	// > quote → grey bar
 	if strings.HasPrefix(trimmed, ">") {
 		body := strings.TrimPrefix(strings.TrimPrefix(trimmed, ">"), " ")
-		return p.Rule.Render("│ ") + p.MdThinking.Render(applyInlineMarkdown(body, p))
+		return p.MdFrame.Render("│ ") + p.MdThinking.Render(applyInlineMarkdown(body, p))
 	}
 
 	// - list item → bullet
