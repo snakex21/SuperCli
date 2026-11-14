@@ -42,6 +42,7 @@ C:\tools\SuperCli\
     projects.json
     projects\<name>-<hash>\memory.db
     auth.json / auth-*.json     Codex / ChatGPT tokens
+    thunderbird-bridge\pairing.json  Thunderbird pairing (secret DPAPI-protected, owner-only)
     logs\
     …
 ```

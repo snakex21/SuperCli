@@ -258,6 +258,32 @@ Ordinary edits inside the workspace are not gated.
 Each decision is appended to `<data-dir>/approvals.jsonl` (time, session,
 tool, operation, scope, risk, decision; no message content).
 
+### Thunderbird Bridge pairing
+
+`thunderbird_mail` works through the Thunderbird AI Bridge extension (0.10.0 or
+newer). SuperCli talks to it only after a one-time pairing:
+
+1. GUI: Control panel -> Thunderbird -> Pair (TUI: `/thunderbird pair`). A
+   16-character code appears, valid for 5 minutes.
+2. Thunderbird: Add-ons and Themes -> Thunderbird AI Bridge -> Options, enter
+   the code, click Pair. Both sides then hold the same 256-bit secret.
+
+`/thunderbird` (or the GUI section) shows paired/connected, which instance
+holds port 127.0.0.1:47831 and why an extension was refused;
+`/thunderbird unpair` forgets the secret. The secret is stored in
+`<data-dir>/thunderbird-bridge/pairing.json`, protected with DPAPI for the
+current Windows user; a data folder copied to another account or machine must
+be paired again.
+
+Every connection is mutually authenticated (HMAC-SHA256 challenge-response) and
+every request and response is signed with a timestamp and a single-use nonce.
+The bridge listens on loopback only, requires the exact `Host` header, refuses
+web origins and sends CORS headers only for the paired extension. An unpaired
+SuperCli does not open the port; a second instance never takes it over and says
+which instance holds it. Extensions older than 0.10.0 are refused with an
+"update the extension" message. The protocol is described in
+`docs/PROTOCOL.md` of the Thunderbird-AI-Bridge repository.
+
 ## For agents changing defaults
 
 1. Edit the resolver (`internal/app/*.go`) *and*
