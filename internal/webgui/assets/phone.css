@@ -1,6 +1,6 @@
 /* Compact attachment actions float above the composer, never widen its row. */
 .composer-wrap { position:relative; }
-.phone-attachment-menu { position:absolute; z-index:90; bottom:calc(100% - 4px); left:12px; width:min(260px,calc(100% - 24px)); box-sizing:border-box; display:grid; gap:4px; padding:8px; border:1px solid var(--line); border-radius:6px; color:var(--text); background:var(--surface); box-shadow:0 8px 24px #0006; }
+.phone-attachment-menu { position:absolute; z-index:90; bottom:calc(100% - 4px); left:12px; width:min(260px,calc(100% - 24px)); box-sizing:border-box; display:grid; gap:4px; padding:8px; border:1px solid var(--line); border-radius:6px; color:var(--text); background:var(--surface); box-shadow:0 8px 24px var(--shadow-strong); }
 .phone-attachment-menu[hidden] { display:none; }
 .phone-attachment-menu button { min-height:44px; padding:8px 12px; text-align:left; white-space:normal; overflow-wrap:anywhere; color:var(--text); background:var(--raise); border:1px solid var(--line); cursor:pointer; }
 .phone-attachment-menu button:hover, .phone-attachment-menu button:focus-visible { border-color:var(--accent); }
@@ -26,15 +26,15 @@
 .running-elsewhere-item > span { display:block; min-width:0; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .running-elsewhere-state { font-variant-numeric:tabular-nums; }
 
-.phone-panel { position:absolute; z-index:85; top:54px; right:12px; width:min(420px,calc(100% - 24px)); max-height:calc(var(--app-viewport-height,100dvh) - 70px); overflow:auto; padding:18px; color:var(--text); background:var(--surface); border:1px solid var(--line); box-shadow:0 8px 32px #0008; border-radius:6px; }
+.phone-panel { position:absolute; z-index:85; top:54px; right:12px; width:min(420px,calc(100% - 24px)); max-height:calc(var(--app-viewport-height,100dvh) - 70px); overflow:auto; padding:18px; color:var(--text); background:var(--surface); border:1px solid var(--line); box-shadow:0 8px 32px var(--shadow-strong); border-radius:6px; }
 .phone-panel[hidden], #open-phone[hidden] { display:none; }
 .phone-panel header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-.phone-panel h2, .phone-consent h2 { margin:0; font-size:18px; }
+.phone-panel h2, .phone-consent h2 { margin:0; font-size:var(--fs-lg); }
 .phone-switch { display:flex; align-items:center; gap:12px; min-height:44px; cursor:pointer; }
 .phone-switch input { width:24px; height:24px; }
-.phone-panel p, .phone-consent p { font-size:13px; line-height:1.5; overflow-wrap:anywhere; }
+.phone-panel p, .phone-consent p { font-size:var(--fs-sm); line-height:1.5; overflow-wrap:anywhere; }
 .phone-panel progress, #phone-link { width:100%; }
-#phone-link { box-sizing:border-box; min-height:44px; margin:6px 0; padding:8px; color:var(--text); background:var(--bg); border:1px solid var(--line); }
+#phone-link { box-sizing:border-box; min-height:44px; margin:6px 0; padding:8px; color:var(--text); background:var(--bg); border:1px solid var(--line-strong); }
 #phone-qr { display:flex; justify-content:center; margin:12px auto; }
 #phone-qr svg { width:min(100%,300px); height:auto; background:white; }
 .phone-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
@@ -43,10 +43,10 @@
 .phone-pairing { align-items:center; }
 .phone-pairing #phone-qr { flex:1 1 220px; min-width:0; }
 .phone-consent { width:min(440px,calc(100% - 32px)); padding:20px; color:var(--text); background:var(--surface); border:1px solid var(--line); border-radius:6px; }
-.phone-consent::backdrop { background:#0009; }
+.phone-consent::backdrop { background:var(--backdrop); }
 .phone-consent a { color:var(--accent); overflow-wrap:anywhere; }
 #open-phone { position:relative; }
-#open-phone.phone-on::after { content:""; position:absolute; right:2px; top:2px; width:7px; height:7px; border-radius:50%; background:#61d68d; }
+#open-phone.phone-on::after { content:""; position:absolute; right:2px; top:2px; width:7px; height:7px; border-radius:50%; background:var(--status-ok); }
 @media (max-width:560px) {
   html, body { overscroll-behavior:none; max-width:100%; overflow-x:hidden; }
   .shell { height:var(--app-viewport-height,100dvh); padding-top:env(safe-area-inset-top); padding-left:env(safe-area-inset-left); padding-right:env(safe-area-inset-right); box-sizing:border-box; }
@@ -67,7 +67,7 @@
   .composer button[hidden] { display:none; }
   .composer button, .sidebar button, .sidebar-close, .side-tab, .panel button { min-height:44px; }
   #attach-btn, .sidebar-close { min-width:44px; }
-  .composer textarea { font-size:16px; max-height:min(160px,30dvh); }
+  .composer textarea { font-size:var(--fs-lg); max-height:min(160px,30dvh); }
   .stage, .stream, .main, .composer, .composer .box { min-width:0; max-width:100%; }
   .stream pre { max-width:100%; overflow:auto; }
   .sidebar { padding-bottom:env(safe-area-inset-bottom); }
