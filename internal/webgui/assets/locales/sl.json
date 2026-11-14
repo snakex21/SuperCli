@@ -1139,5 +1139,7 @@
   "approval.summary.generate_video": "Želite ustvariti en videoposnetek z modelom {model} ponudnika {provider}? Poziv in parametri bodo poslani na {endpoint}, ponudnik pa lahko ustvarjanje zaračuna. Samodejnih ponovnih poskusov ali plačljive nadomestne možnosti ni.",
   "approval.summary.headless_open": "Želite zagnati brezglavo sejo brskalnika na zaupanja vrednem cilju »{target}«? Njen profil bo ustvarjen v prenosni podatkovni mapi in seja lahko odpre zahtevani naslov.",
   "approval.summary.headless_close": "Želite zapreti sejo brskalnika na zaupanja vrednem cilju »{target}«? Njen profil SuperCli bo odstranjen; gonilnik bo še naprej deloval.",
-  "approval.summary.headless_action": "Želite izvesti »{action}« na zaupanja vrednem cilju »{target}«? To spremeni izbrani navidezni računalnik ali sejo brskalnika."
+  "approval.summary.headless_action": "Želite izvesti »{action}« na zaupanja vrednem cilju »{target}«? To spremeni izbrani navidezni računalnik ali sejo brskalnika.",
+  "approval.field.warnings": "Opozorilo",
+  "approval.summary.trash_outside_workspace": "Odstraniti {path}, ki je ZUNAJ delovnega prostora? Premaknjen bo v mapo .supercli/trash projekta, od koder ga je mogoče obnoviti."
 }

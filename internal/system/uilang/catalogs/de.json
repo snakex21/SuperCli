@@ -1016,5 +1016,7 @@
   "approval.summary.generate_video": "Ein Video mit dem {provider}-Modell {model} erzeugen? Prompt und Parameter werden an {endpoint} gesendet, und der Anbieter kann die Generierung in Rechnung stellen. Es gibt keine automatische Wiederholung und keine kostenpflichtige Ausweichlösung.",
   "approval.summary.headless_open": "Eine Headless-Browsersitzung auf dem vertrauenswürdigen Ziel „{target}“ starten? Ihr Profil wird im portablen Datenverzeichnis angelegt, und sie kann die angeforderte Adresse öffnen.",
   "approval.summary.headless_close": "Eine Browsersitzung auf dem vertrauenswürdigen Ziel „{target}“ schließen? Ihr SuperCli-Profil wird entfernt; der Treiber läuft weiter.",
-  "approval.summary.headless_action": "„{action}“ auf dem vertrauenswürdigen Ziel „{target}“ ausführen? Dadurch wird die ausgewählte virtuelle Maschine oder Browsersitzung verändert."
+  "approval.summary.headless_action": "„{action}“ auf dem vertrauenswürdigen Ziel „{target}“ ausführen? Dadurch wird die ausgewählte virtuelle Maschine oder Browsersitzung verändert.",
+  "approval.field.warnings": "Warnung",
+  "approval.summary.trash_outside_workspace": "{path} entfernen, das AUSSERHALB des Arbeitsbereichs liegt? Es wird in den Projektordner .supercli/trash verschoben und kann von dort wiederhergestellt werden."
 }

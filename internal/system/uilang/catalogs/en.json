@@ -1016,5 +1016,7 @@
   "approval.summary.generate_video": "Generate one video with the {provider} model {model}? The prompt and parameters are sent to {endpoint}, and the provider may charge for the generation. There is no automatic retry or paid fallback.",
   "approval.summary.headless_open": "Start a headless browser session on the trusted target “{target}”? Its profile is created in the portable data directory, and it may open the requested address.",
   "approval.summary.headless_close": "Close a browser session on the trusted target “{target}”? Its SuperCli profile is removed; the driver keeps running.",
-  "approval.summary.headless_action": "Run “{action}” on the trusted target “{target}”? This changes the selected virtual machine or browser session."
+  "approval.summary.headless_action": "Run “{action}” on the trusted target “{target}”? This changes the selected virtual machine or browser session.",
+  "approval.field.warnings": "Warning",
+  "approval.summary.trash_outside_workspace": "Remove {path}, which is OUTSIDE the workspace? It is moved to the project's .supercli/trash folder, where it can be restored."
 }

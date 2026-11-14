@@ -1139,5 +1139,7 @@
   "approval.summary.generate_video": "Gerar um vídeo com o modelo {model} de {provider}? O prompt e os parâmetros são enviados para {endpoint}, e o provedor pode cobrar pela geração. Não há nova tentativa automática nem alternativa paga.",
   "approval.summary.headless_open": "Iniciar uma sessão de navegador headless no alvo confiável “{target}”? O perfil dela é criado no diretório de dados portátil, e ela pode abrir o endereço solicitado.",
   "approval.summary.headless_close": "Fechar uma sessão de navegador no alvo confiável “{target}”? O perfil do SuperCli dela é removido; o driver continua em execução.",
-  "approval.summary.headless_action": "Executar “{action}” no alvo confiável “{target}”? Isso altera a máquina virtual ou a sessão de navegador selecionada."
+  "approval.summary.headless_action": "Executar “{action}” no alvo confiável “{target}”? Isso altera a máquina virtual ou a sessão de navegador selecionada.",
+  "approval.field.warnings": "Aviso",
+  "approval.summary.trash_outside_workspace": "Remover {path}, que está FORA do espaço de trabalho? Ele é movido para a pasta .supercli/trash do projeto, de onde pode ser restaurado."
 }

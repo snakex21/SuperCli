@@ -1139,5 +1139,7 @@
   "approval.summary.generate_video": "Luodaanko yksi video palvelun {provider} mallilla {model}? Kehote ja parametrit lähetetään osoitteeseen {endpoint}, ja palveluntarjoaja voi veloittaa luonnista. Automaattista uudelleenyritystä tai maksullista varavaihtoehtoa ei ole.",
   "approval.summary.headless_open": "Käynnistetäänkö näkymätön selainistunto luotetussa kohteessa ”{target}”? Sen profiili luodaan siirrettävään datahakemistoon, ja istunto voi avata pyydetyn osoitteen.",
   "approval.summary.headless_close": "Suljetaanko selainistunto luotetussa kohteessa ”{target}”? Sen SuperCli-profiili poistetaan; ajuri jatkaa toimintaansa.",
-  "approval.summary.headless_action": "Suoritetaanko ”{action}” luotetussa kohteessa ”{target}”? Tämä muuttaa valittua virtuaalikonetta tai selainistuntoa."
+  "approval.summary.headless_action": "Suoritetaanko ”{action}” luotetussa kohteessa ”{target}”? Tämä muuttaa valittua virtuaalikonetta tai selainistuntoa.",
+  "approval.field.warnings": "Varoitus",
+  "approval.summary.trash_outside_workspace": "Poistetaanko {path}, joka on työtilan ULKOPUOLELLA? Se siirretään projektin kansioon .supercli/trash ja sen voi palauttaa sieltä."
 }

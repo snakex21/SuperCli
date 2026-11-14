@@ -1139,5 +1139,7 @@
   "approval.summary.generate_video": "Kas luua üks video teenuse {provider} mudeliga {model}? Viip ja parameetrid saadetakse aadressile {endpoint} ning teenusepakkuja võib genereerimise eest tasu võtta. Automaatset kordamist ega tasulist varuvarianti ei ole.",
   "approval.summary.headless_open": "Kas käivitada peata brauseriseanss usaldusväärses sihtmärgis „{target}“? Selle profiil luuakse kaasaskantavasse andmekausta ja seanss võib avada soovitud aadressi.",
   "approval.summary.headless_close": "Kas sulgeda brauseriseanss usaldusväärses sihtmärgis „{target}“? Selle SuperCli profiil eemaldatakse; draiver jätkab tööd.",
-  "approval.summary.headless_action": "Kas käivitada „{action}“ usaldusväärses sihtmärgis „{target}“? See muudab valitud virtuaalmasinat või brauseriseanssi."
+  "approval.summary.headless_action": "Kas käivitada „{action}“ usaldusväärses sihtmärgis „{target}“? See muudab valitud virtuaalmasinat või brauseriseanssi.",
+  "approval.field.warnings": "Hoiatus",
+  "approval.summary.trash_outside_workspace": "Kas eemaldada {path}, mis asub VÄLJASPOOL tööruumi? See teisaldatakse projekti kausta .supercli/trash ja selle saab sealt taastada."
 }

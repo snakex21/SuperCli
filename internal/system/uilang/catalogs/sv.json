@@ -1016,5 +1016,7 @@
   "approval.summary.generate_video": "Generera en video med {provider}-modellen {model}? Prompten och parametrarna skickas till {endpoint}, och leverantören kan ta betalt för genereringen. Det finns inga automatiska nya försök och ingen betald reservlösning.",
   "approval.summary.headless_open": "Starta en huvudlös webbläsarsession på det betrodda målet ”{target}”? Dess profil skapas i den portabla datakatalogen, och den kan öppna den begärda adressen.",
   "approval.summary.headless_close": "Stänga en webbläsarsession på det betrodda målet ”{target}”? Dess SuperCli-profil tas bort; drivrutinen fortsätter att köras.",
-  "approval.summary.headless_action": "Köra ”{action}” på det betrodda målet ”{target}”? Detta ändrar den valda virtuella maskinen eller webbläsarsessionen."
+  "approval.summary.headless_action": "Köra ”{action}” på det betrodda målet ”{target}”? Detta ändrar den valda virtuella maskinen eller webbläsarsessionen.",
+  "approval.field.warnings": "Varning",
+  "approval.summary.trash_outside_workspace": "Ta bort {path}, som ligger UTANFÖR arbetsytan? Den flyttas till projektets mapp .supercli/trash och kan återställas därifrån."
 }

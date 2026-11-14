@@ -1016,5 +1016,7 @@
   "approval.summary.generate_video": "Vai ģenerēt vienu video ar {provider} modeli {model}? Uzvedne un parametri tiek nosūtīti uz {endpoint}, un pakalpojuma sniedzējs var iekasēt maksu par ģenerēšanu. Nav automātiskas atkārtošanas vai maksas rezerves varianta.",
   "approval.summary.headless_open": "Vai sākt pārlūka sesiju bez saskarnes uzticamajā mērķī “{target}”? Tās profils tiek izveidots pārnēsājamajā datu direktorijā, un sesija var atvērt pieprasīto adresi.",
   "approval.summary.headless_close": "Vai aizvērt pārlūka sesiju uzticamajā mērķī “{target}”? Tās SuperCli profils tiek noņemts; draiveris turpina darboties.",
-  "approval.summary.headless_action": "Vai izpildīt “{action}” uzticamajā mērķī “{target}”? Tas maina atlasīto virtuālo mašīnu vai pārlūka sesiju."
+  "approval.summary.headless_action": "Vai izpildīt “{action}” uzticamajā mērķī “{target}”? Tas maina atlasīto virtuālo mašīnu vai pārlūka sesiju.",
+  "approval.field.warnings": "Brīdinājums",
+  "approval.summary.trash_outside_workspace": "Noņemt {path}, kas atrodas ĀRPUS darbvietas? Tas tiek pārvietots uz projekta mapi .supercli/trash, no kurienes to var atjaunot."
 }

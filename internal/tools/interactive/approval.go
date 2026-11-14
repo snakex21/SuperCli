@@ -36,6 +36,7 @@ type ApprovalCard struct {
 	SummaryDetail string                `json:"summary_detail,omitempty"`
 	Count         int                   `json:"count"`
 	Samples       []core.ApprovalSample `json:"samples,omitempty"`
+	Warnings      []string              `json:"warnings,omitempty"`
 	Scope         string                `json:"scope"`
 	ApproveLabel  string                `json:"approve_label"`
 	DenyLabel     string                `json:"deny_label"`
@@ -143,7 +144,7 @@ func (g *ApprovalGate) decide(ctx context.Context, req *core.ApprovalRequest) co
 		previewCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		p := req.Preview(previewCtx)
 		cancel()
-		req.AccountName, req.Count, req.Samples = p.AccountName, p.Count, p.Samples
+		req.ApplyPreview(p)
 	} else {
 		req.Count = -1
 	}
@@ -181,7 +182,7 @@ func (g *ApprovalGate) ask(ctx context.Context, in chan<- AskRequest, req core.A
 		Tool: req.Tool, Operation: req.Operation, Risk: req.Risk, Reversible: req.Reversible,
 		Account: req.Account, AccountName: req.AccountName, Folder: req.Folder, Destination: req.Destination,
 		Target: req.Target, Summary: localizedApprovalSummary(tx.lang, req),
-		SummaryKey: req.SummaryKey, SummaryArgs: req.SummaryArgs, SummaryDetail: req.SummaryDetail, Count: req.Count, Samples: req.Samples, Scope: req.ScopeKey(),
+		SummaryKey: req.SummaryKey, SummaryArgs: req.SummaryArgs, SummaryDetail: req.SummaryDetail, Count: req.Count, Samples: req.Samples, Warnings: req.Warnings, Scope: req.ScopeKey(),
 		ApproveLabel: tx.approve, DenyLabel: tx.deny,
 	}
 	options := []AskOption{{Label: tx.deny}, {Label: tx.approve}}
@@ -210,7 +211,7 @@ func (g *ApprovalGate) ask(ctx context.Context, in chan<- AskRequest, req core.A
 	select {
 	case answer := <-response:
 		if answer.Cancelled || answer.Custom != "" || len(answer.Selected) != 1 {
-			return core.ApprovalDecision{Mode: core.ApprovalDenied, Reason: "the user denied it"}
+			return core.ApprovalDecision{Mode: core.ApprovalDenied, Reason: core.ApprovalReasonUserDenied}
 		}
 		switch answer.Selected[0] {
 		case tx.approve:
@@ -227,7 +228,7 @@ func (g *ApprovalGate) ask(ctx context.Context, in chan<- AskRequest, req core.A
 			g.mu.Unlock()
 			return core.ApprovalDecision{Approved: true, Mode: core.ApprovalSimilar, Reason: "approved by the user for similar operations in this session"}
 		}
-		return core.ApprovalDecision{Mode: core.ApprovalDenied, Reason: "the user denied it"}
+		return core.ApprovalDecision{Mode: core.ApprovalDenied, Reason: core.ApprovalReasonUserDenied}
 	case <-ctx.Done():
 		return core.ApprovalDecision{Mode: core.ApprovalDenied, Reason: "the run was cancelled before the user answered"}
 	case <-timer.C:
@@ -335,6 +336,9 @@ func approvalQuestion(lang string, r core.ApprovalRequest) string {
 	label := func(key string) string { return uilang.Text(lang, key) + ": " }
 	var b strings.Builder
 	b.WriteString(localizedApprovalSummary(lang, r))
+	for _, w := range r.Warnings {
+		b.WriteString("\n\n! " + label("approval.field.warnings") + w)
+	}
 	b.WriteString("\n\n" + label("approval.field.tool") + r.Tool + " / " + r.Operation)
 	if account := approvalAccountLabel(r); account != "" {
 		b.WriteString("\n" + label("approval.field.account") + account)

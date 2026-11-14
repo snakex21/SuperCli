@@ -1139,5 +1139,7 @@
   "approval.summary.generate_video": "Generirati jedan videozapis modelom {model} pružatelja {provider}? Upit i parametri šalju se na {endpoint}, a pružatelj može naplatiti generiranje. Nema automatskog ponovnog pokušaja ni plaćene zamjenske opcije.",
   "approval.summary.headless_open": "Pokrenuti sesiju preglednika bez sučelja na pouzdanom cilju „{target}”? Njezin profil stvara se u prijenosnoj mapi podataka i sesija može otvoriti traženu adresu.",
   "approval.summary.headless_close": "Zatvoriti sesiju preglednika na pouzdanom cilju „{target}”? Njezin SuperCli profil uklanja se; upravljački program nastavlja raditi.",
-  "approval.summary.headless_action": "Izvršiti „{action}” na pouzdanom cilju „{target}”? Time se mijenja odabrani virtualni stroj ili sesija preglednika."
+  "approval.summary.headless_action": "Izvršiti „{action}” na pouzdanom cilju „{target}”? Time se mijenja odabrani virtualni stroj ili sesija preglednika.",
+  "approval.field.warnings": "Upozorenje",
+  "approval.summary.trash_outside_workspace": "Ukloniti {path}, koji je IZVAN radnog prostora? Premješta se u mapu .supercli/trash projekta, odakle se može vratiti."
 }

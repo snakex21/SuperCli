@@ -73,10 +73,12 @@ func (t *Trash) approval(_ context.Context, args json.RawMessage) (*core.Approva
 	}
 	return &core.ApprovalRequest{
 		Tool: "trash", Operation: "trash_outside_workspace", Risk: core.RiskWriteReversible, Reversible: true,
-		Target:  full,
-		Summary: fmt.Sprintf("Remove %s, which is OUTSIDE the workspace (it is moved to the project's .supercli/trash folder).", full),
-		Scope:   []string{"trash", "trash_outside_workspace", "filesystem", filepath.Dir(full)},
-		Count:   -1,
+		Target:      full,
+		Summary:     fmt.Sprintf("Remove %s, which is OUTSIDE the workspace? It is moved to the project's .supercli/trash folder, where it can be restored.", full),
+		SummaryKey:  "approval.summary.trash_outside_workspace",
+		SummaryArgs: map[string]string{"path": full},
+		Scope:       []string{"trash", "trash_outside_workspace", "filesystem", filepath.Dir(full)},
+		Count:       -1,
 	}, nil
 }
 

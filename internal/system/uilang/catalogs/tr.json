@@ -1016,5 +1016,7 @@
   "approval.summary.generate_video": "{provider} sağlayıcısının {model} modeliyle bir video oluşturulsun mu? İstem ve parametreler {endpoint} adresine gönderilir ve sağlayıcı oluşturma için ücret alabilir. Otomatik yeniden deneme veya ücretli yedek seçenek yoktur.",
   "approval.summary.headless_open": "Güvenilir “{target}” hedefinde başsız bir tarayıcı oturumu başlatılsın mı? Oturumun profili taşınabilir veri dizininde oluşturulur ve oturum istenen adresi açabilir.",
   "approval.summary.headless_close": "Güvenilir “{target}” hedefindeki bir tarayıcı oturumu kapatılsın mı? Oturumun SuperCli profili kaldırılır; sürücü çalışmaya devam eder.",
-  "approval.summary.headless_action": "Güvenilir “{target}” hedefinde “{action}” çalıştırılsın mı? Bu, seçili sanal makineyi veya tarayıcı oturumunu değiştirir."
+  "approval.summary.headless_action": "Güvenilir “{target}” hedefinde “{action}” çalıştırılsın mı? Bu, seçili sanal makineyi veya tarayıcı oturumunu değiştirir.",
+  "approval.field.warnings": "Uyarı",
+  "approval.summary.trash_outside_workspace": "Çalışma alanının DIŞINDAKİ {path} kaldırılsın mı? Projenin .supercli/trash klasörüne taşınır ve oradan geri yüklenebilir."
 }

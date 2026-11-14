@@ -134,3 +134,31 @@ test('summary_key re-localizes host_power and headless cards; argument text stay
   u.c.showApprovalCard(request({operation: 'unknown_op', summary: 'Server summary', summary_key: 'approval.summary.missing'}));
   assert.equal(u.card().querySelector('.approval-op').textContent, 'Server summary');
 });
+
+test('approval card shows preview warnings as text before the details', async () => {
+  const h = harness(polish);
+  h.c.showApprovalCard(request({warnings: ['Not in "INBOX": message 7 "<b>Invoice</b>" is in "/Archive" (Gmail).']}));
+  const box = h.card().querySelector('.approval-warnings');
+  assert.ok(box, 'warnings rendered');
+  assert.equal(box.querySelector('.approval-warnings-label').textContent, polish['approval.field.warnings']);
+  assert.equal(box.querySelectorAll('li').length, 1);
+  assert.match(box.textContent, /<b>Invoice<\/b>/);
+  assert.equal(box.querySelectorAll('b').length, 0, 'warnings are text, never markup');
+  const order = [...h.card().children].map(n => n.className);
+  assert.ok(order.indexOf('approval-warnings') < order.indexOf('approval-details'));
+});
+
+test('approval card without warnings renders no warning box', async () => {
+  const h = harness();
+  h.c.showApprovalCard(request());
+  assert.equal(h.card().querySelector('.approval-warnings'), null);
+});
+
+test('trash outside the workspace summary is localized from its key', async () => {
+  const h = harness(polish);
+  h.c.showApprovalCard(request({tool: 'trash', operation: 'trash_outside_workspace', summary: 'English fallback',
+    summary_key: 'approval.summary.trash_outside_workspace', summary_args: {path: 'C:\tmp\{x}.txt'}}));
+  const summary = h.card().querySelector('.approval-summary').textContent;
+  assert.equal(summary, polish['approval.summary.trash_outside_workspace'].replace('{path}', 'C:\tmp\{x}.txt'));
+  assert.notEqual(summary, 'English fallback');
+});

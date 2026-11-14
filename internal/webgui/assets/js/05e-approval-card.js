@@ -76,6 +76,18 @@ function showApprovalCard(q) {
   panel.appendChild(summary);
   panel.appendChild(detail);
 
+  // Warnings come from trusted read-only checks (for example message ids that
+  // are not in the stated folder); they are shown before the details.
+  if (a.warnings && a.warnings.length) {
+    var warnings = el("div", "approval-warnings");
+    warnings.setAttribute("role", "note");
+    warnings.appendChild(i18nEl("strong", "approval-warnings-label", "approval.field.warnings"));
+    var warnList = el("ul", "");
+    a.warnings.forEach(function (w) { warnList.appendChild(el("li", "", String(w))); });
+    warnings.appendChild(warnList);
+    panel.appendChild(warnings);
+  }
+
   var badges = el("div", "approval-badges");
   badges.appendChild(i18nEl("span", "approval-badge risk-" + (a.risk || "unknown"), "approval.risk." + (a.risk || "write_reversible")));
   badges.appendChild(i18nEl("span", "approval-badge " + (a.reversible ? "reversible" : "irreversible"),

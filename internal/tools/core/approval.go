@@ -42,6 +42,15 @@ type ApprovalPreview struct {
 	AccountName string           `json:"account_name,omitempty"`
 	Count       int              `json:"count"` // -1 = unknown
 	Samples     []ApprovalSample `json:"samples,omitempty"`
+	// Summary, when set, replaces ApprovalRequest.Summary: the preview can
+	// name things the cheap classifier could not (an account display name
+	// instead of "account2").
+	Summary string `json:"summary,omitempty"`
+	// Warnings are short sentences the user should read before deciding,
+	// for example "message 42 is not in folder INBOX". Trusted tool code
+	// writes them from read-only lookups; they never contain model text
+	// beyond identifiers the request already shows.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // ApprovalRequest describes one risky operation in human terms. It is built by
@@ -89,6 +98,15 @@ type ApprovalRequest struct {
 	AccountName string           `json:"account_name,omitempty"`
 	Count       int              `json:"count"`
 	Samples     []ApprovalSample `json:"samples,omitempty"`
+	Warnings    []string         `json:"warnings,omitempty"`
+}
+
+// ApplyPreview copies a preview into the request the user will see.
+func (r *ApprovalRequest) ApplyPreview(p ApprovalPreview) {
+	r.AccountName, r.Count, r.Samples, r.Warnings = p.AccountName, p.Count, p.Samples, p.Warnings
+	if strings.TrimSpace(p.Summary) != "" {
+		r.Summary = p.Summary
+	}
 }
 
 // ScopeKey is the canonical "tool:op:account:folder[:destination]" string.
@@ -120,6 +138,10 @@ const (
 )
 
 // ApprovalDecision is the host's verdict for one request.
+// ApprovalReasonUserDenied is the decision reason when the user explicitly
+// declined the prompt (Deny button, n/Esc in the TUI, closing the card).
+const ApprovalReasonUserDenied = "the user denied it"
+
 type ApprovalDecision struct {
 	Approved bool
 	Mode     string
@@ -213,6 +235,9 @@ func (denyApprover) Approve(context.Context, ApprovalRequest) ApprovalDecision {
 }
 
 // ApprovalDeniedError is the tool error the model sees for a refused request.
+// It names SuperCli's approval prompt as the source: the wording "NOT
+// executed" made models report that the tool itself (for example Thunderbird)
+// had refused, although the user had declined the card.
 func ApprovalDeniedError(req ApprovalRequest, d ApprovalDecision) error {
 	what := req.Tool
 	if req.Operation != "" {
@@ -221,11 +246,11 @@ func ApprovalDeniedError(req ApprovalRequest, d ApprovalDecision) error {
 	if d.Mode == ApprovalUnavailable {
 		return fmt.Errorf("%w: %s was NOT executed. It changes user data and needs the user's explicit approval, but no interactive approval UI is available in this run (%s). Nothing was changed. Do not retry and do not set confirm yourself; tell the user what you wanted to do. They can run it in the SuperCli GUI/TUI, or allow it for non-interactive runs with [approvals] auto_approve = [%q] in config.toml", ErrApprovalRequired, what, d.Reason, req.ScopeKey())
 	}
-	reason := "the user denied it"
-	if d.Reason != "" {
-		reason = d.Reason
+	reason := strings.TrimSpace(d.Reason)
+	if reason == "" || reason == ApprovalReasonUserDenied {
+		return fmt.Errorf("%w: the user declined this action (%s) in the SuperCli approval prompt; nothing was done. The %s tool did not refuse or fail: it was never called. Don't retry it and don't try another way to do the same thing; tell the user it was not done because they declined it, and ask how to proceed", ErrApprovalRequired, what, req.Tool)
 	}
-	return fmt.Errorf("%w: %s was NOT executed because %s. Nothing was changed. Do not retry the same operation; tell the user it was not done and ask how to proceed", ErrApprovalRequired, what, reason)
+	return fmt.Errorf("%w: this action (%s) was not approved in the SuperCli approval prompt because %s; nothing was done. The %s tool did not refuse or fail: it was never called. Don't retry it on your own; tell the user it was not done and ask how to proceed", ErrApprovalRequired, what, reason, req.Tool)
 }
 
 // gateInvocation applies Tool.Approval. It returns the arguments to execute and

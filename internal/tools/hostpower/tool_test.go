@@ -192,7 +192,7 @@ func TestConsentRejection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			e := env(t)
 			r := consent(t, e.ctx, armArgs(e), func(q interactive.AskRequest) { q.Respond <- tc.answer })
-			requireError(t, r, "NOT executed")
+			requireError(t, r, "nothing was done")
 			if e.controller.Snapshot().Status != "idle" {
 				t.Fatal(e.controller.Snapshot())
 			}
