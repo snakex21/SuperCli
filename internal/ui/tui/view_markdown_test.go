@@ -307,8 +307,8 @@ func TestHeuristicThinking_HeadingBreaksThinking(t *testing.T) {
 	if !strings.Contains(out, "Thinking:") {
 		t.Fatal("should detect thinking before heading")
 	}
-	if !strings.Contains(out, "## Solution") {
-		t.Fatal("heading should break thinking")
+	if !strings.Contains(out, "Solution") || strings.Contains(out, "## Solution") {
+		t.Fatal("heading should break thinking and render without # markers")
 	}
 }
 

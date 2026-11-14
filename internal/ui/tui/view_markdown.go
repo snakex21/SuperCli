@@ -3,6 +3,8 @@ package tui
 import (
 	"regexp"
 	"strings"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 var (
@@ -116,13 +118,9 @@ func renderWithHeuristicThinking(text string, p Palette, collapsed bool, languag
 				b.WriteString(renderAnswerHeading(p, language))
 				afterThinking = false
 			}
-			if isFenceLine(line) {
-				block, next := renderFencedBlock(lines, i, p)
-				b.WriteString(block)
-				i = next - 1
-				continue
-			}
-			b.WriteString(renderMarkdownLine(line, p))
+			block, next := renderMarkdownBlock(lines, i, p)
+			b.WriteString(block)
+			i = next - 1
 		}
 	}
 	flushThinking()
@@ -148,7 +146,7 @@ func isHeuristicThinkingLine(line string) bool {
 // clearly user-facing content (headings, lists, code blocks).
 func isDefinitelyResponseLine(line string) bool {
 	t := strings.TrimSpace(line)
-	if strings.HasPrefix(t, "##") || strings.HasPrefix(t, "```") {
+	if strings.HasPrefix(t, "#") || strings.HasPrefix(t, "```") || strings.HasPrefix(t, "|") || strings.HasPrefix(t, ">") {
 		return true
 	}
 	if strings.HasPrefix(t, "- ") || strings.HasPrefix(t, "* ") {
@@ -242,13 +240,9 @@ func renderMarkdownBody(text string, p Palette) string {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		if isFenceLine(lines[i]) {
-			block, next := renderFencedBlock(lines, i, p)
-			b.WriteString(block)
-			i = next - 1
-			continue
-		}
-		b.WriteString(renderMarkdownLine(lines[i], p))
+		block, next := renderMarkdownBlock(lines, i, p)
+		b.WriteString(block)
+		i = next - 1
 	}
 	return b.String()
 }
@@ -257,17 +251,23 @@ func renderMarkdownBody(text string, p Palette) string {
 func renderMarkdownLine(line string, p Palette) string {
 	trimmed := strings.TrimRight(line, " \t")
 
-	// ## heading → cyan bold (strip prefix, apply inline formatting)
-	if strings.HasPrefix(trimmed, "## ") {
-		body := trimmed[3:]
-		body = applyInlineMarkdown(body, p)
-		return p.MdH2.Render("## " + body)
+	// Headings drop their # markers. H1/H2 get a rule underneath so the
+	// level stays visible without colour; H3+ are bold in the H3 style.
+	if level, body, ok := markdownHeading(trimmed); ok {
+		text := applyInlineMarkdown(body, p)
+		switch level {
+		case 1:
+			return p.MdH1.Render(text) + "\n" + p.MdFrame.Render(strings.Repeat("═", max(1, ansi.StringWidth(text))))
+		case 2:
+			return p.MdH2.Render(text) + "\n" + p.MdFrame.Render(strings.Repeat("─", max(1, ansi.StringWidth(text))))
+		default:
+			return p.MdH3.Render(text)
+		}
 	}
-	// ### subheading → yellow bold
-	if strings.HasPrefix(trimmed, "### ") {
-		body := trimmed[4:]
-		body = applyInlineMarkdown(body, p)
-		return p.MdH3.Render("### " + body)
+	// > quote → grey bar
+	if strings.HasPrefix(trimmed, ">") {
+		body := strings.TrimPrefix(strings.TrimPrefix(trimmed, ">"), " ")
+		return p.MdFrame.Render("│ ") + p.MdQuote.Render(applyInlineMarkdown(body, p))
 	}
 
 	// - list item → bullet

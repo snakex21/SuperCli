@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"supercli/internal/system/uilang"
 )
 
 // Marker renders inline event markers in the chat transcript.
@@ -31,6 +33,10 @@ type markerPalette struct {
 	ToolErr    lipgloss.Style
 	ToolName   lipgloss.Style
 	ToolOutput lipgloss.Style
+	Bold       lipgloss.Style
+	DiffAdd    lipgloss.Style
+	DiffDel    lipgloss.Style
+	DiffHunk   lipgloss.Style
 }
 
 // NewMarker creates a Marker bound to the given palette.
@@ -43,6 +49,7 @@ func NewMarker(p Palette, language ...string) Marker {
 		p: markerPalette{
 			Dim: p.Dim, Error: p.Error, Marker: p.Marker, MarkerDim: p.MarkerDim,
 			Success: p.Success, ToolErr: p.ToolErr, ToolName: p.ToolName, ToolOutput: p.ToolOutput,
+			Bold: p.Bold, DiffAdd: p.DiffAdd, DiffDel: p.DiffDel, DiffHunk: p.DiffHunk,
 		},
 		language: lang,
 		colors:   p.renderColors(),
@@ -206,10 +213,8 @@ func (m Marker) toolResultFull(toolName, output string, expanded bool, lang stri
 		lines = lines[:maxLines]
 	}
 	var b strings.Builder
-	meta := fmt.Sprintf(m.tr("tui.view_markers.0c4b4072e2"), totalLines)
-	if totalLines != 1 {
-		meta = fmt.Sprintf(m.tr("tui.view_markers.f501b4caf5"), totalLines)
-	}
+	// CLDR plural forms: "4 linie", not "4 linii" (Polish few/many).
+	meta := uilang.Plural(m.language, "tui.view_markers.doneLines", totalLines)
 	meta += " · " + humanSize(int64(len(output)))
 	b.WriteString(m.p.Success.Render("  + ") + m.p.ToolName.Render(toolName) + m.p.Dim.Render(" · "+meta))
 	shortened := false
@@ -417,9 +422,28 @@ func (m Marker) PlanMode(on bool) string {
 	return m.p.Dim.Render(m.tr("tui.view_markers.4ca5c57cce"))
 }
 
-// Diff renders the /diff output with markers.
+// Diff renders the /diff output: file headers bold, hunks, added and
+// removed lines in the shared diff colours, context dim.
 func (m Marker) Diff(text string) string {
-	return m.p.MarkerDim.Render(text)
+	var b strings.Builder
+	for i, line := range strings.Split(text, "\n") {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		switch {
+		case strings.HasPrefix(line, "+++"), strings.HasPrefix(line, "---"), strings.HasPrefix(line, "diff "):
+			b.WriteString(m.p.Bold.Render(line))
+		case strings.HasPrefix(line, "@@"):
+			b.WriteString(m.p.DiffHunk.Render(line))
+		case strings.HasPrefix(line, "+"):
+			b.WriteString(m.p.DiffAdd.Render(line))
+		case strings.HasPrefix(line, "-"):
+			b.WriteString(m.p.DiffDel.Render(line))
+		default:
+			b.WriteString(m.p.MarkerDim.Render(line))
+		}
+	}
+	return b.String()
 }
 
 // ModelInfo renders: [model: ...]
