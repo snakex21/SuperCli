@@ -38,12 +38,12 @@ read_lines [ro] desc=5fc6b5b1b048 schema=e72f18575d62 fn=supercli/internal/tools
 read_context [ro] desc=1ea9091c87f7 schema=ab746c91670d fn=supercli/internal/tools/files.(*ReadContext).execute-fm
 read_many [ro] desc=a89be90c17af schema=e5b1ec6fc768 fn=supercli/internal/tools/files.(*ReadMany).execute-fm
 scratchpad [] desc=2c791388f9fd schema=8d24949d1787 fn=supercli/internal/tools/scratchpad.(*Scratchpad).run-fm
-patch_file [] desc=381c66726849 schema=1e472a2eb49c fn=supercli/internal/tools/files.(*PatchFile).execute-fm
-create_file [] desc=3e10cfbf6969 schema=cff57708c1c8 fn=supercli/internal/tools/files.(*CreateFile).execute-fm
-write_file [] desc=4b2e40110fd4 schema=b8dab809301a fn=supercli/internal/tools/files.(*WriteFile).execute-fm
+patch_file [] desc=381c66726849 schema=1e472a2eb49c fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
+create_file [] desc=3e10cfbf6969 schema=cff57708c1c8 fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
+write_file [] desc=4b2e40110fd4 schema=b8dab809301a fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
 make_dir [] desc=a8edc26ac5a3 schema=5c101a2235dd fn=supercli/internal/tools/files.(*MakeDir).execute-fm
-move [] desc=658efd3bf187 schema=6170c6a15ed2 fn=supercli/internal/tools/files.(*Move).execute-fm
-copy [] desc=53ee38a718d3 schema=119af3dec318 fn=supercli/internal/tools/files.(*Copy).execute-fm
+move [] desc=658efd3bf187 schema=6170c6a15ed2 fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
+copy [] desc=53ee38a718d3 schema=119af3dec318 fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
 trash [approval] desc=4e4f53808106 schema=e8dd5819a9d0 fn=supercli/internal/tools/files.(*Trash).execute-fm
 web_fetch [ro] desc=074e797be2aa schema=dae3f262f5e0 fn=supercli/internal/tools/web.(*WebFetch).execute-fm
 browser [] desc=7e016870a3b9 schema=224185d89b23 fn=supercli/internal/tools/browser.(*Tool).Execute-fm

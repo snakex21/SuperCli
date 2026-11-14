@@ -63,8 +63,11 @@ type Deps struct {
 	// tool_search close over it.
 	Registry *tools.Registry
 
-	Checkpoint     func(tools.Tool) tools.Tool
-	CodeIntel      *tools.CodeIntel
+	Checkpoint func(tools.Tool) tools.Tool
+	CodeIntel  *tools.CodeIntel
+	// CodeIntelWrap overrides CodeIntel.WrapMutation as the code-intel
+	// invalidation wrapper (tests install a spy here).
+	CodeIntelWrap  func(tools.Tool) tools.Tool
 	ProcessSession *tools.ProcessSession
 	// ToolSearcher is the surface-owned tool_search (the TUI keeps an FTS
 	// index it rebuilds later). Nil builds a lexical searcher over Registry.
@@ -284,8 +287,13 @@ func (d *Deps) wrap(spec tools.Tool, w Wrap) tools.Tool {
 	if w&WrapCheckpoint != 0 && d.Checkpoint != nil {
 		spec = d.Checkpoint(spec)
 	}
-	if w&WrapCodeIntel != 0 && d.CodeIntel != nil {
-		spec = d.CodeIntel.WrapMutation(spec)
+	if w&WrapCodeIntel != 0 {
+		switch {
+		case d.CodeIntelWrap != nil:
+			spec = d.CodeIntelWrap(spec)
+		case d.CodeIntel != nil:
+			spec = d.CodeIntel.WrapMutation(spec)
+		}
 	}
 	return spec
 }

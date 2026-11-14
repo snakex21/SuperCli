@@ -58,30 +58,26 @@ var TUICore = []Entry{
 var MCPBridge = []Entry{{Tool: "mcp_bridge", AlwaysOn: true}}
 
 // TUILate holds the file, web and line tools registered last, after the loop
-// and slash wiring; tool_search is re-indexed afterwards.
-//
-// NOTE (pre-existing behaviour, preserved on purpose and reported): the old
-// wiring passed toolWrappers by value, so the code-intel invalidation set
-// inside registerMediaAndOfficeTools never reached these tools. In the TUI
-// patch_file, create_file, write_file, make_dir, move, copy, trash and
-// web_download are checkpoint-wrapped only, while batch and web also
-// invalidate code-intel. Switching them to WrapMutation is the fix.
+// and slash wiring; tool_search is re-indexed afterwards. Mutating rows get
+// the full mutation wrapper (undo snapshot + code-intel invalidation), the
+// same as web and batch. (Before 1.0.26 the TUI passed its wrappers by value
+// and these tools never invalidated code-intel after an edit.)
 var TUILate = []Entry{
 	{Tool: "check_library_alternatives"},
 	{Tool: "read_lines"},
 	{Tool: "read_context"},
 	{Tool: "read_many"},
 	{Tool: "scratchpad"},
-	{Tool: "patch_file", Wrap: WrapCheckpoint},
-	{Tool: "create_file", Wrap: WrapCheckpoint},
-	{Tool: "write_file", Wrap: WrapCheckpoint},
-	{Tool: "make_dir", Wrap: WrapCheckpoint},
-	{Tool: "move", Wrap: WrapCheckpoint},
-	{Tool: "copy", Wrap: WrapCheckpoint},
-	{Tool: "trash", Wrap: WrapCheckpoint},
+	{Tool: "patch_file", Wrap: WrapMutation},
+	{Tool: "create_file", Wrap: WrapMutation},
+	{Tool: "write_file", Wrap: WrapMutation},
+	{Tool: "make_dir", Wrap: WrapMutation},
+	{Tool: "move", Wrap: WrapMutation},
+	{Tool: "copy", Wrap: WrapMutation},
+	{Tool: "trash", Wrap: WrapMutation},
 	{Tool: "web_fetch"},
 	{Tool: "browser"},
-	{Tool: "web_download", Wrap: WrapCheckpoint},
+	{Tool: "web_download", Wrap: WrapMutation},
 	{Tool: "web_search"},
 	{Tool: "web_lookup", AlwaysOn: true},
 	{Tool: "invoke_tool"},
@@ -89,23 +85,25 @@ var TUILate = []Entry{
 	{Tool: "thunderbird_mail"},
 }
 
-// Batch is the CI/scripting toolset: the thin file family always-on and
-// code-intel invalidated (no checkpoints: a one-shot run has no undo UI).
+// Batch is the CI/scripting toolset: the thin file family always-on with the
+// same mutation wrapper rows as the other surfaces. Batch passes no
+// checkpoint (a one-shot run has no undo UI), so only code-intel
+// invalidation applies.
 var Batch = []Entry{
-	{Tool: "read_lines", Wrap: WrapCodeIntel, AlwaysOn: true},
-	{Tool: "read_context", Wrap: WrapCodeIntel, AlwaysOn: true},
-	{Tool: "read_many", Wrap: WrapCodeIntel, AlwaysOn: true},
-	{Tool: "scratchpad", Wrap: WrapCodeIntel, AlwaysOn: true},
-	{Tool: "list_dir", Wrap: WrapCodeIntel, AlwaysOn: true},
-	{Tool: "patch_file", Wrap: WrapCodeIntel, AlwaysOn: true},
-	{Tool: "create_file", Wrap: WrapCodeIntel, AlwaysOn: true},
-	{Tool: "write_file", Wrap: WrapCodeIntel, AlwaysOn: true},
-	{Tool: "make_dir", Wrap: WrapCodeIntel, AlwaysOn: true},
-	{Tool: "move", Wrap: WrapCodeIntel, AlwaysOn: true},
-	{Tool: "copy", Wrap: WrapCodeIntel, AlwaysOn: true},
-	{Tool: "trash", Wrap: WrapCodeIntel, AlwaysOn: true},
-	{Tool: "search_code", Wrap: WrapCodeIntel, AlwaysOn: true},
-	{Tool: "ctx_execute", Wrap: WrapCodeIntel, AlwaysOn: true},
+	{Tool: "read_lines", Wrap: WrapMutation, AlwaysOn: true},
+	{Tool: "read_context", Wrap: WrapMutation, AlwaysOn: true},
+	{Tool: "read_many", Wrap: WrapMutation, AlwaysOn: true},
+	{Tool: "scratchpad", Wrap: WrapMutation, AlwaysOn: true},
+	{Tool: "list_dir", Wrap: WrapMutation, AlwaysOn: true},
+	{Tool: "patch_file", Wrap: WrapMutation, AlwaysOn: true},
+	{Tool: "create_file", Wrap: WrapMutation, AlwaysOn: true},
+	{Tool: "write_file", Wrap: WrapMutation, AlwaysOn: true},
+	{Tool: "make_dir", Wrap: WrapMutation, AlwaysOn: true},
+	{Tool: "move", Wrap: WrapMutation, AlwaysOn: true},
+	{Tool: "copy", Wrap: WrapMutation, AlwaysOn: true},
+	{Tool: "trash", Wrap: WrapMutation, AlwaysOn: true},
+	{Tool: "search_code", Wrap: WrapMutation, AlwaysOn: true},
+	{Tool: "ctx_execute", Wrap: WrapMutation, AlwaysOn: true},
 	{Tool: "code_intel"},
 	{Tool: "process_session"},
 	{Tool: "headless_control"},
@@ -114,7 +112,7 @@ var Batch = []Entry{
 	// web_search/web_fetch contracts stay discoverable on demand.
 	{Tool: "web_fetch"},
 	{Tool: "browser"},
-	{Tool: "web_download", Wrap: WrapCodeIntel},
+	{Tool: "web_download", Wrap: WrapMutation},
 	{Tool: "web_search"},
 	{Tool: "web_lookup", AlwaysOn: true},
 	{Tool: "tool_search", AlwaysOn: true},
