@@ -898,7 +898,7 @@ func (l *Loop) logToolFailure(tc llm.ToolCall, raw json.RawMessage, res tools.Re
 	}
 	l.errorLog.Append(tools.ErrorRecord{
 		Tool:       tc.Name,
-		Args:       string(raw),
+		Args:       redactToolErrorArgs(raw),
 		Category:   cat.Category.String(),
 		Confidence: cat.Confidence,
 		Reason:     cat.Reason,
