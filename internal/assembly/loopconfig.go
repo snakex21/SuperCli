@@ -125,6 +125,9 @@ func BuildLoopConfig(s LoopSpec) agent.LoopConfig {
 		// self-declared unfinished Run completes; completion_check = false
 		// turns it off on every surface.
 		CompletionCheck: s.Toml.CompletionCheckOr(true),
+		// Verify before use: names the request treats as existing are looked
+		// up in the workspace first; name_check = false turns it off.
+		NameCheck: s.Toml.NameCheckOr(true),
 	}
 	if x := s.Interactive; x != nil {
 		cfg.Reflector = x.Reflector

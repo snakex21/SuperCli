@@ -370,6 +370,14 @@ type TomlConfig struct {
 	// false disables it. Read through CompletionCheckOr.
 	CompletionCheck *bool `toml:"completion_check"`
 
+	// NameCheck turns on the verify-before-use check at the start of a
+	// coordinator Run: code-like names in the request (files, config keys,
+	// functions, flags) are looked up in the workspace, and the ones that do
+	// not exist are listed for the model so it reports them instead of
+	// inventing them or editing a look-alike. nil = on; false disables it.
+	// Read through NameCheckOr.
+	NameCheck *bool `toml:"name_check"`
+
 	// MemoryBriefingTokens caps the session-start memory briefing
 	// (user preferences + recent session-journal entries) injected
 	// into the system prompt. It is a HARD budget: preferences and

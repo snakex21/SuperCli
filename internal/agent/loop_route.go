@@ -62,6 +62,7 @@ func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 	// only the user's raw prompt, and the session store keeps that raw prompt.
 	if l.route == RouteCoordinator && !webOnly {
 		l.attachCoordinatorAddon(ctx)
+		l.attachNameCheck(ctx, prompt)
 	}
 	if l.route == RouteCoordinator && l.wordDocumentContext(prompt) {
 		// These are registered but normally invisible. Promote them before the

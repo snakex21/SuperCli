@@ -117,6 +117,7 @@ in the instance-local `model-context-windows.json`; the UI manages the file.
 |---|---|---|
 | `preflight_repo` | unset = **ON** (~73 tok → −33% turns, measured) | huge non-repo directories where the mtime walk is slow, or privacy |
 | `completion_check` | unset = **ON** | `false` skips the one extra pass before a Run finishes with a reply that admits unfinished work (the model is asked to do the possible rest and report only what is blocked) |
+| `name_check` | unset = **ON** | `false` skips the verify-before-use lookup: at the start of a project request the code-like names it mentions (files, config keys, functions, flags) are searched in the workspace, and the ones that exist nowhere are listed for the model so it reports them and asks instead of inventing them or editing a look-alike (no model call; silent when the workspace is too large to scan quickly) |
 | `noop_gate` | unset = **OFF** | ON only for idempotent batch pipelines — it changes answer semantics for repeated identical question-prompts (see performance.md) |
 
 ## Delegation (see delegation.md)
