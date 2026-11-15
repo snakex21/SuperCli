@@ -82,7 +82,7 @@ func TestCatalogNoToolsModelIsSentWithoutTools(t *testing.T) {
 }
 
 func TestCatalogToolsCheckSkipsLocalAndFirstParty(t *testing.T) {
-	for _, u := range []string{"http://127.0.0.1:1234/v1", "https://api.openai.com/v1"} {
+	for _, u := range []string{"http://127.0.0.1:1234/v1", "https://api.openai.com/v1", "https://opencode.ai/zen/v1"} {
 		if catalogListsWithoutTools(context.Background(), u, "", "m") {
 			t.Fatalf("%s checked", u)
 		}

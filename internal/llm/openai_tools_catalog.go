@@ -40,7 +40,9 @@ var catalogToolsFetch = func(ctx context.Context, baseURL, apiKey string) ([]Mod
 // catalogListsWithoutTools reports whether the endpoint's model catalog
 // explicitly lists model without tool support.
 func catalogListsWithoutTools(ctx context.Context, baseURL, apiKey, model string) bool {
-	if model == "" || (catalogToolsSkipLocal && isLocalBaseURL(baseURL)) || firstPartyToolsHost(baseURL) {
+	// OpenCode Zen has its own catalog and request path (zen_*.go); never
+	// send it an extra /models request.
+	if model == "" || (catalogToolsSkipLocal && isLocalBaseURL(baseURL)) || firstPartyToolsHost(baseURL) || isOpenCodeZenBaseURL(baseURL) {
 		return false
 	}
 	v, _ := catalogTools.LoadOrStore(strings.TrimRight(baseURL, "/"), &catalogToolsEntry{})
