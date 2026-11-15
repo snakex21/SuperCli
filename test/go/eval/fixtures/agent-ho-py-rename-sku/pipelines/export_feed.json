@@ -1,0 +1,7 @@
+{
+  "name": "export_feed",
+  "steps": [
+    "strip_whitespace",
+    "denormalize_sku"
+  ]
+}

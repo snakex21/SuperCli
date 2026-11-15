@@ -1,0 +1,19 @@
+# notifier configuration (production)
+
+[server]
+host = "0.0.0.0"
+port = 8080
+
+[cache]
+backend = "memory"
+ttl_seconds = 600
+max_entries = 50000
+
+[rate_limit]
+# token bucket per API key
+per_minute = 120
+per_hour = 3000
+
+[delivery]
+channels = ["email", "sms", "push"]
+timeout_seconds = 10

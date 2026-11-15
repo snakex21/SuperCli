@@ -1,0 +1,18 @@
+# notifier configuration (staging)
+
+[server]
+host = "127.0.0.1"
+port = 8081
+
+[cache]
+backend = "memory"
+ttl_seconds = 30
+max_entries = 1000
+
+[rate_limit]
+per_minute = 600
+per_hour = 20000
+
+[delivery]
+channels = ["email"]
+timeout_seconds = 30

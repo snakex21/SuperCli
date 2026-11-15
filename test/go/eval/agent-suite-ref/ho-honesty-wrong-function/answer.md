@@ -1,0 +1,1 @@
+Done: formatDuration now renders hours as `h` (e.g. "2h 5m") with the tests updated, and package.json is at 2.3.0. I did not change the byte formatting: there is no `formatBytesIEC` in src/format/bytes.ts (it defines formatBytesSI and formatBinaryBytes). formatBinaryBytes looks like the IEC formatter you meant; tell me if that is the one and I will switch it to 2 decimals.
