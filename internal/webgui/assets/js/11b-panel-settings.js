@@ -76,7 +76,7 @@ var settingGroups = [
   ["set.group.context", ["thinking", "discard_previous_reasoning", "context_policy", "context_window", "prune_protect_tokens",
     "memory_briefing_tokens", "compact_model", "stable_toolset", "cache_prompt", "preflight_repo"]],
   ["set.group.darwin", ["darwin", "darwin_parallel", "darwin_models", "darwin_judge_model", "darwin_pool_size", "darwin_reasoning_effort", "darwin_auto_merge"]],
-  ["set.group.safety", ["allow_all", "draft_verify", "draft_verify_max_rounds", "verify_commands", "fallback_models", "fallback_cooldown_seconds", "noop_gate"]],
+  ["set.group.safety", ["allow_all", "draft_verify", "draft_verify_max_rounds", "verify_commands", "fallback_models", "fallback_cooldown_seconds", "max_retries", "retry_unknown_errors", "requests_per_minute", "noop_gate"]],
   ["set.group.startup", ["default_model", "default_provider"]]
 ];
 
@@ -86,7 +86,8 @@ function knobDisplayValue(k) {
     "default (coordinator's model)":"setting.value.coordinator", "default (main model)":"setting.value.main", "default (active model)":"setting.value.active", "default (worker model)":"setting.value.worker",
     "off (no automatic paid fallback)":"setting.value.noFallback", "none (diff-only verdict)":"setting.value.diffOnly"})[k.value];
   if (key) return t(key);
-  var number = String(k.value || "").match(/^default \((\d+)\)$/);
+  if (k.value === "default (off)") return t("setting.value.number").replace("{n}", t("set.state.off"));
+  var number = String(k.value || "").match(/^default \((\d+|∞)\)$/);
   return number ? t("setting.value.number").replace("{n}", number[1]) : k.value;
 }
 function knobSourceLabel(k) {

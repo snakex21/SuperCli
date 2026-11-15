@@ -58,4 +58,9 @@ func ApplyLLMGlobals(t TomlConfig, envTemperature *float64) {
 	if t.Thinking != nil {
 		llm.SetThinkingEnabled(*t.Thinking)
 	}
+	// Provider retry policy and the client-side request limiter:
+	// max_retries, retry_unknown_errors, requests_per_minute (global and
+	// per [[providers]] entry). Every surface — TUI, batch, web GUI and the
+	// NestCafe profile of supercli-web — reaches this call.
+	ApplyRetryGlobals(t)
 }

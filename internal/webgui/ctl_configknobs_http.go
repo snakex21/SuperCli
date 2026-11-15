@@ -45,6 +45,8 @@ func (s *Server) handleConfigKnobs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		llm.SetDiscardPreviousReasoning(tc.DiscardPreviousReasoning != nil && *tc.DiscardPreviousReasoning)
+		// Retry policy and request limiter apply to the next request.
+		config.ApplyRetryGlobals(tc)
 		if strings.TrimSpace(req.Key) == "cost_currency" && config.EffectiveCostCurrency(tc) != "USD" {
 			ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
 			// Persisting the preference succeeds offline too. Missing rates are

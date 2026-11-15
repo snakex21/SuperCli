@@ -3,20 +3,11 @@ package llm
 import (
 	"errors"
 	"fmt"
-	"math/rand/v2"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 )
-
-// rateLimitWaitBudget caps the TOTAL time a single Complete call may
-// spend sleeping between rate-limit/5xx retries. A provider that asks
-// for a longer Retry-After than the remaining budget gets clamped: we
-// still retry once more after the clamped wait, and if the limit
-// persists the run fails fast with an actionable error instead of
-// hanging for minutes.
-const rateLimitWaitBudget = 10 * time.Second
 
 // HTTPResponseError preserves response metadata that higher-level routing
 // needs to make a useful decision. In particular, an ordered fallback chain
@@ -100,32 +91,6 @@ func parseRetryAfter(h http.Header) (time.Duration, bool) {
 	return 0, false
 }
 
-// retryWait picks the sleep before retry number attempt (1-based
-// count of attempts already made). The Retry-After header wins when
-// present; otherwise the historical exponential backoff (0.5s, 1s,
-// …) applies. Whatever the source, the wait is clamped so that the
-// total slept time across the request never exceeds
-// rateLimitWaitBudget. The remaining budget must be tracked by the
-// caller and passed in; the returned wait is guaranteed <= remaining.
-func retryWait(h http.Header, attempt int, remaining time.Duration) time.Duration {
-	wait, ok := parseRetryAfter(h)
-	if !ok {
-		ceiling := 500 * time.Millisecond << (attempt - 1)
-		// Jitter prevents many workers that hit the same reseller limit from
-		// retrying in lockstep. Keep at least half the historical delay so the
-		// retry remains a real backoff rather than an immediate spin.
-		floor := ceiling / 2
-		wait = floor + time.Duration(rand.Int64N(int64(ceiling-floor)+1))
-	}
-	if wait > remaining {
-		wait = remaining
-	}
-	if wait < 0 {
-		wait = 0
-	}
-	return wait
-}
-
 // isRetryableHTTPStatus is deliberately conservative. Permanent client
 // errors must return immediately; only transient gateway, timeout and
 // throttling statuses get the bounded retry budget.
@@ -143,17 +108,6 @@ func isRetryableHTTPStatus(status int) bool {
 	default:
 		return false
 	}
-}
-
-// providerRetryAttempts keeps normal throttling conservative while giving a
-// genuine 503 a few more chances inside the same ten-second wait budget. A
-// 503 means the selected upstream route is temporarily absent; retrying only
-// twice was too short for gateways that recover after several seconds.
-func providerRetryAttempts(status int) int {
-	if status == http.StatusServiceUnavailable {
-		return 5
-	}
-	return 3
 }
 
 // isRetryableProviderResponse extends the status-only policy for one common
@@ -189,16 +143,19 @@ func isRetryableProviderResponse(status int, body []byte) bool {
 
 // rateLimitNotice renders the user-visible status line emitted (as
 // Delta.Notice) before sleeping on a 429/5xx retry, so the UI shows
-// "waiting for the provider" instead of appearing hung.
-func rateLimitNotice(model string, status int, wait time.Duration, attempt, maxAttempts int) string {
+// "waiting for the provider" instead of appearing hung. retry is the 1-based
+// retry number; the progress reads "3/5" or "12/∞" (max_retries = -1). The
+// English wire text is localized by the TUI (localizeNotice) and the web GUI
+// (SYSTEM_TEXTS); keep the three formats in sync.
+func rateLimitNotice(model string, status int, wait time.Duration, retry int) string {
 	kind := fmt.Sprintf("temporary provider error (HTTP %d)", status)
 	if status == http.StatusTooManyRequests {
 		kind = "rate limited (HTTP 429)"
 	} else if status/100 == 5 {
 		kind = fmt.Sprintf("provider error (HTTP %d)", status)
 	}
-	return fmt.Sprintf("%s: %s — retrying in %s (attempt %d/%d)",
-		model, kind, wait.Round(100*time.Millisecond), attempt+1, maxAttempts)
+	return fmt.Sprintf("%s: %s — retrying in %s (retry %s)",
+		model, kind, wait.Round(100*time.Millisecond), RetryProgress(retry))
 }
 
 // rateLimitExhaustedHint is appended to the terminal error after all

@@ -66,6 +66,9 @@ cache telemetry, stored portably in `supercli-data/prefill-profiles.json`.
 | `context_window` | 0 = auto (loaded size from a local server: LM Studio `/api/v1/models`, llama.cpp `/props`, Ollama `/api/ps`; then provider metadata/catalog > learned > 16384) | only as a global fallback when several models share the same hard ceiling |
 | `fallback_models` | empty = **OFF** | explicit local-to-cloud continuity, e.g. `["cloud/gpt-5-mini", "cloud/gpt-5"]`; the list itself is consent to call those backends |
 | `fallback_cooldown_seconds` | 0 = 30 | a remote/local host flaps and should be retried sooner or later |
+| `max_retries` | unset = **5** | how many times a temporary provider error is retried before it is shown: `0` = never, any positive number, or `-1` (also `"inf"` / `"infinite"`) = until it works or you stop the run. Invalid values (`-5`, `"abc"`) fall back to 5 with a logged warning |
+| `retry_unknown_errors` | unset = **OFF** | "ignore errors": also retry provider errors that SuperCli does not recognize, within `max_retries`. Auth (401/403), invalid request (400), unknown model (404) and context overflow are still never retried |
+| `requests_per_minute` | 0 = **OFF** | client-side limit of request starts per minute to each provider endpoint, shared by all parallel workers; `[[providers]].requests_per_minute` overrides it for one entry |
 
 `fallback_models` is ordered and safe-before-output only. SuperCli tries the
 selected model first, skips a backend temporarily after an early connection or
@@ -84,6 +87,64 @@ type = "openai"
 base_url = "https://api.example.com/v1"
 api_key = "..."
 ```
+
+### Retries and request limits
+
+Temporary provider failures are retried with one shared policy on every
+surface (TUI, `--batch`, desktop/web GUI and the NestCafe embedded engine,
+which all read the same `config.toml` through the shared runtime):
+
+- **What is retried:** HTTP 408/425/429/500/502/503/504/52x/529, a gateway's
+  "model temporarily unavailable" 400/422, in-stream provider errors that
+  report a rate limit, overload or temporary unavailability (for example
+  Cloudflare Workers AI `rate limiting: inference request per min rate
+  reached`, Anthropic `overloaded_error`, OpenRouter `code: 429`), dropped
+  connections, timeouts and short network outages. The provider's error code
+  is used first, case-insensitive text patterns second.
+- **Never retried:** 400 invalid request, 401/403 auth, 404 unknown model,
+  context-window overflow, quota/billing errors and anything else classified
+  as permanent — regardless of `max_retries` and `retry_unknown_errors`. The
+  one-shot repairs (401 token refresh, reasoning-effort learning, retry
+  without images) keep working as before and do not use the retry budget.
+- **How long it waits:** the provider's `Retry-After` (seconds or HTTP date)
+  when present, otherwise exponential backoff with jitter (0.5 s, 1 s, 2 s, …
+  for HTTP errors; 1 s, 2 s, 4 s, … for connection failures), every single wait
+  capped at 60 s. A 429 whose `Retry-After` is longer than 60 s is a quota
+  window: it is shown at once so `fallback_models` can take over.
+- **Status:** each wait shows a localized line such as
+  `Ponawianie 3/5 za 8 s (503)` / `retry 12/∞`.
+- **Stopping:** with `max_retries = -1` SuperCli keeps retrying until the
+  request succeeds or you stop it. Every wait ends immediately on Ctrl+C / Esc
+  in the TUI, the Stop button in the GUI, or the signal in batch mode.
+- **Partial streams:** an in-stream error is retried only when the failed
+  attempt produced no tool call and no visible answer text, so nothing was
+  executed and nothing already shown is duplicated (reasoning-only progress
+  is re-requested).
+
+`requests_per_minute` limits how many requests SuperCli itself starts per
+minute (a sliding 60-second window, at most N starts in any minute). Use it for
+gateways with a per-minute request limit: parallel task workers, darwin
+candidates, advisor/review/compaction side calls and retries all count toward
+the same provider budget, so one process can reach such a limit while the
+upstream account is nowhere near its own. Waiting shows a status line and is
+cancelled immediately by Stop/Ctrl+C. The per-entry value is keyed by the
+entry's `base_url`, so it needs one.
+
+```toml
+max_retries = -1             # or "inf"; 0 = no retries; default 5
+retry_unknown_errors = false # true = also retry unrecognized provider errors
+requests_per_minute = 0      # global default for every provider; 0 = off
+
+[[providers]]
+name = "workers-ai"
+type = "openai"
+base_url = "https://api.cloudflare.com/client/v4/accounts/ACCOUNT/ai/v1"
+api_key = "..."
+requests_per_minute = 50     # this endpoint only
+```
+
+All three are also in TUI `/settings` (Context category) and in the GUI
+Settings panel ("Verification, access and fallback"); changes apply to the next request.
 
 After a successful provider scan, SuperCli stores only the returned model IDs
 as `cached_models` inside that provider entry. This tiny portable inventory

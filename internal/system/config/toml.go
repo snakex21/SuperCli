@@ -77,6 +77,25 @@ type TomlConfig struct {
 	// first output is skipped. Zero selects the conservative 30s default.
 	FallbackCooldownSeconds int `toml:"fallback_cooldown_seconds"`
 
+	// MaxRetries is how many times a request that failed with a temporary
+	// provider error (HTTP 429/5xx/529, overloaded, in-stream rate limit,
+	// dropped connection, network outage) is retried before the error is
+	// shown. Accepted forms: a non-negative integer (0 = never retry), -1
+	// (canonical) or the string "inf"/"infinite" = retry until it works or
+	// the user stops the run. Unset = 5. Anything else falls back to 5 with
+	// a logged warning. Read it through MaxRetriesSetting; it is `any`
+	// because TOML has no integer-or-string type.
+	MaxRetries any `toml:"max_retries,omitempty"`
+	// RetryUnknownErrors also retries provider errors that are neither known
+	// transient nor known permanent ("ignore errors"); auth, invalid request,
+	// model-not-found and context overflow are still never retried. nil/false
+	// = off.
+	RetryUnknownErrors *bool `toml:"retry_unknown_errors,omitempty"`
+	// RequestsPerMinute is the client-side request limit applied to every
+	// provider endpoint without its own [[providers]].requests_per_minute.
+	// 0 (default) = off.
+	RequestsPerMinute int `toml:"requests_per_minute,omitzero"`
+
 	// Sampling is the `[sampling]` table: temperature, top_p and friends.
 	// Every field is optional; unset parameters are never sent, so the
 	// model server keeps applying its own defaults. See SamplingConf.
@@ -516,6 +535,10 @@ type ProviderConf struct {
 	Model        string   `toml:"model"`
 	CachedModels []string `toml:"cached_models,omitempty"` // last successful /models result; keeps offline servers selectable
 	Disabled     bool     `toml:"disabled,omitempty"`      // keep configuration but exclude from scans/model picker
+	// RequestsPerMinute caps request starts to this endpoint (base_url),
+	// shared by every parallel worker of the process; 0 = the global
+	// requests_per_minute (itself 0 = off by default).
+	RequestsPerMinute int `toml:"requests_per_minute,omitzero"`
 }
 
 // ModelTierConf is a [[model_tiers]] entry: a glob pattern on

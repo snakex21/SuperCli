@@ -211,6 +211,15 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.FallbackCooldownSeconds > 0 {
 		dst.FallbackCooldownSeconds = src.FallbackCooldownSeconds
 	}
+	if src.MaxRetries != nil {
+		dst.MaxRetries = src.MaxRetries
+	}
+	if src.RetryUnknownErrors != nil {
+		dst.RetryUnknownErrors = src.RetryUnknownErrors
+	}
+	if src.RequestsPerMinute > 0 {
+		dst.RequestsPerMinute = src.RequestsPerMinute
+	}
 	// Model prices: append (user may add more).
 	if len(src.ModelPrices) > 0 {
 		dst.ModelPrices = src.ModelPrices

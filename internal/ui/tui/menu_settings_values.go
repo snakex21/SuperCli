@@ -65,6 +65,14 @@ func settingToggleKey(c *config.TomlConfig, key string) {
 		c.DraftVerify = cycleTri(c.DraftVerify)
 	case "noop_gate":
 		c.NoopGate = cycleTri(c.NoopGate)
+	case "retry_unknown_errors":
+		// Off by default: one press turns it on, the next resets it.
+		if c.RetryUnknownErrors == nil || !*c.RetryUnknownErrors {
+			on := true
+			c.RetryUnknownErrors = &on
+		} else {
+			c.RetryUnknownErrors = nil
+		}
 	case "preflight_repo":
 		c.PreflightRepo = cycleTri(c.PreflightRepo)
 	case "cache_prompt":
@@ -166,6 +174,12 @@ func settingResetKey(c *config.TomlConfig, key string) {
 		c.FallbackModels = nil
 	case "fallback_cooldown_seconds":
 		c.FallbackCooldownSeconds = 0
+	case "max_retries":
+		c.MaxRetries = nil
+	case "retry_unknown_errors":
+		c.RetryUnknownErrors = nil
+	case "requests_per_minute":
+		c.RequestsPerMinute = 0
 	case "draft_verify":
 		c.DraftVerify = nil
 	case "noop_gate":
@@ -307,6 +321,12 @@ func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, so
 		return strings.Join(c.FallbackModels, " ; "), "manual"
 	case "fallback_cooldown_seconds":
 		return m.intDisplay(c.FallbackCooldownSeconds, m.tr("tui.setting_value.1a9561da73")+"30)")
+	case "max_retries":
+		return m.maxRetriesDisplay(c)
+	case "retry_unknown_errors":
+		return m.triDisplay(c.RetryUnknownErrors, "off")
+	case "requests_per_minute":
+		return m.intDisplay(c.RequestsPerMinute, m.tr("tui.setting_value.1a9561da73")+m.settingStateDisplay("off")+")")
 	case "draft_verify":
 		return m.triDisplay(c.DraftVerify, "off")
 	case "noop_gate":
@@ -348,6 +368,20 @@ func (m Model) triAutoDisplay(p *bool, on, off string) (value, source string) {
 		return m.settingStateDisplay(on), "manual"
 	}
 	return m.settingStateDisplay(off), "manual"
+}
+
+// maxRetriesDisplay shows the effective retry count: "default (5)", a number,
+// or the localized unlimited form for -1/"inf".
+func (m Model) maxRetriesDisplay(c *config.TomlConfig) (value, source string) {
+	n := c.MaxRetriesSetting()
+	label := strconv.Itoa(n)
+	if n < 0 {
+		label = m.tr("tui.setting_max_retries.unlimited")
+	}
+	if c.MaxRetries == nil {
+		return m.tr("tui.setting_value.1a9561da73") + label + ")", "default"
+	}
+	return label, "manual"
 }
 
 func (m Model) intDisplay(v int, def string) (value, source string) {

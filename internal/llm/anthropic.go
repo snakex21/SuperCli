@@ -232,19 +232,21 @@ func (p *AnthropicProvider) Complete(ctx context.Context, msgs []Message, tools 
 	return out, nil
 }
 
-// do posts the request with the same bounded 429/5xx retry policy as
-// the OpenAI provider: up to maxAttempts total, Retry-After honoured
-// (clamped by rateLimitWaitBudget), a notify callback per wait so the
-// UI shows the rate-limit pause. notify may be nil.
+// do posts the request with the same 429/5xx retry policy as the OpenAI
+// provider: up to max_retries retries (-1 = until success or cancel),
+// Retry-After honoured (capped at MaxRetryBackoff), a notify callback per
+// wait so the UI shows the pause. notify may be nil.
 func (p *AnthropicProvider) do(ctx context.Context, cancel context.CancelFunc, body, imageFallback []byte, notify func(string)) (*http.Response, error) {
-	waitBudget := rateLimitWaitBudget
-	rateAttempts := 0
+	retries := 0
 	thinkingRetried := false
 	betaRetried := false
 	visionRetried := false
 	zenRemapped := false
 	authRetried := false
 	for {
+		if err := WaitRequestSlot(ctx, p.cfg.BaseURL, notify); err != nil {
+			return nil, err
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.cfg.BaseURL+"/messages", bytes.NewReader(body))
 		if err != nil {
 			return nil, err
@@ -356,23 +358,20 @@ func (p *AnthropicProvider) do(ctx context.Context, cancel context.CancelFunc, b
 				}
 			}
 		}
-		if !isRetryableProviderResponse(resp.StatusCode, respBody) {
-			return nil, fmt.Errorf("http %d: %s%s", resp.StatusCode, string(respBody), providerErrorHint(p.cfg.BaseURL, p.cfg.Model, resp.StatusCode, respBody))
+		terminal := fmt.Errorf("http %d: %s%s", resp.StatusCode, string(respBody), providerErrorHint(p.cfg.BaseURL, p.cfg.Model, resp.StatusCode, respBody))
+		if !providerResponseRetryable(resp.StatusCode, respBody) || !RetryAllowed(retries) {
+			return nil, terminal
 		}
-		rateAttempts++
-		maxAttempts := providerRetryAttempts(resp.StatusCode)
-		if rateAttempts >= maxAttempts {
-			return nil, fmt.Errorf("http %d: %s%s", resp.StatusCode, string(respBody), providerErrorHint(p.cfg.BaseURL, p.cfg.Model, resp.StatusCode, respBody))
+		backoff, ok := providerRetryWait(resp.StatusCode, resp.Header, retries+1)
+		if !ok {
+			return nil, terminal
 		}
-		backoff := retryWait(resp.Header, rateAttempts, waitBudget)
-		waitBudget -= backoff
+		retries++
 		if notify != nil {
-			notify(rateLimitNotice(p.cfg.Model, resp.StatusCode, backoff, rateAttempts, maxAttempts))
+			notify(rateLimitNotice(p.cfg.Model, resp.StatusCode, backoff, retries))
 		}
-		select {
-		case <-time.After(backoff):
-		case <-ctx.Done():
-			return nil, ctx.Err()
+		if err := retrySleep(ctx, backoff); err != nil {
+			return nil, err
 		}
 	}
 }

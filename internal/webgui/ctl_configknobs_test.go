@@ -58,6 +58,7 @@ func TestConfigKnobs_DefaultsMirrorTUI(t *testing.T) {
 		"cache_prompt", "darwin", "darwin_parallel", "darwin_models", "darwin_judge_model", "darwin_pool_size", "darwin_auto_merge", "task_parallel",
 		"context_policy", "context_window", "prune_protect_tokens", "memory_briefing_tokens", "task_max_steps", "task_max_tokens",
 		"task_model", "task_reasoning_effort", "advisor_reasoning_effort", "review_reasoning_effort", "darwin_reasoning_effort", "advisor_model", "review_model", "orchestrator_model", "compact_model", "fallback_models", "fallback_cooldown_seconds",
+		"max_retries", "retry_unknown_errors", "requests_per_minute",
 		"noop_gate", "preflight_repo", "draft_verify",
 		"draft_verify_max_rounds", "verify_commands",
 		"default_model", "default_provider",

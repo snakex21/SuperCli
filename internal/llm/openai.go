@@ -275,17 +275,17 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 				}
 			}
 		}()
-		// HTTP request with bounded retry: 429 and 5xx
-		// responses are retried with a status-specific bounded attempt count. The wait
-		// honours the Retry-After header when present (seconds or
-		// HTTP-date), falling back to exponential backoff (0.5s,
-		// 1s); total sleep is capped by rateLimitWaitBudget. Each
-		// retry emits a Delta.Notice so the UI shows the wait
-		// instead of appearing hung. Other statuses and transport
-		// errors fail immediately.
+		// HTTP request with retry: transient statuses (429/5xx and the
+		// narrow model-unavailable 4xx) are retried up to max_retries
+		// times (-1 = until success or cancel; retry_unknown_errors adds
+		// unclassified statuses). The wait honours Retry-After (seconds or
+		// HTTP-date), otherwise exponential backoff with jitter; every wait
+		// is capped at MaxRetryBackoff and ends at once on ctx cancel. Each
+		// retry emits a Delta.Notice so the UI shows the wait instead of
+		// appearing hung. Permanent statuses and transport errors fail
+		// immediately (the agent loop owns transport retries).
 		url := ResolveOpenAIEndpoints(p.cfg.BaseURL).ChatCompletions
-		waitBudget := rateLimitWaitBudget
-		rateAttempts := 0
+		retries := 0
 		var resp *http.Response
 		// streamCancel cancels the request context of the attempt that
 		// actually proceeds to streaming. It is invoked after the read
@@ -297,6 +297,14 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		visionRetried := false
 		zenRemapped := false
 		for {
+			if err := WaitRequestSlot(ctx, p.cfg.BaseURL, func(text string) {
+				select {
+				case out <- Delta{Notice: text}:
+				case <-ctx.Done():
+				}
+			}); err != nil {
+				return
+			}
 			reqCtx, cancel := context.WithCancel(ctx)
 			req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, url, bytes.NewReader(reqBody))
 			if err != nil {
@@ -399,7 +407,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			}
 			responseErr := newHTTPResponseError(resp.StatusCode, body,
 				providerErrorHint(p.cfg.BaseURL, p.cfg.Model, resp.StatusCode, body), resp.Header)
-			if !isRetryableProviderResponse(resp.StatusCode, body) {
+			if !providerResponseRetryable(resp.StatusCode, body) || !RetryAllowed(retries) {
 				select {
 				case out <- Delta{Err: responseErr}:
 				case <-ctx.Done():
@@ -407,35 +415,23 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 				return
 			}
 			// A long, explicit 429 Retry-After is a quota window, not a
-			// transient burst. Sleeping only our ten-second retry budget and
-			// asking the same backend again cannot succeed; surface it now so
-			// an explicitly configured fallback can take over.
-			if retryAfter, ok := parseRetryAfter(resp.Header); resp.StatusCode == http.StatusTooManyRequests && ok && retryAfter > waitBudget {
+			// transient burst: surface it now so an explicitly configured
+			// fallback can take over (providerRetryWait reports !ok).
+			retries++
+			backoff, retryOK := providerRetryWait(resp.StatusCode, resp.Header, retries)
+			if !retryOK {
 				select {
 				case out <- Delta{Err: responseErr}:
 				case <-ctx.Done():
 				}
 				return
 			}
-			rateAttempts++
-			maxAttempts := providerRetryAttempts(resp.StatusCode)
-			if rateAttempts >= maxAttempts {
-				select {
-				case out <- Delta{Err: responseErr}:
-				case <-ctx.Done():
-				}
-				return
-			}
-			backoff := retryWait(resp.Header, rateAttempts, waitBudget)
-			waitBudget -= backoff
 			select {
-			case out <- Delta{Notice: rateLimitNotice(p.cfg.Model, resp.StatusCode, backoff, rateAttempts, maxAttempts)}:
+			case out <- Delta{Notice: rateLimitNotice(p.cfg.Model, resp.StatusCode, backoff, retries)}:
 			case <-ctx.Done():
 				return
 			}
-			select {
-			case <-time.After(backoff):
-			case <-ctx.Done():
+			if retrySleep(ctx, backoff) != nil {
 				return
 			}
 		}
@@ -501,7 +497,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 				return fmt.Errorf("%w: %v (%q)", errSSEUnexpected, err, sample)
 			}
 			if len(chunk.Error) > 0 && string(chunk.Error) != "null" {
-				return fmt.Errorf("provider stream error: %s", openAIErrorMessage(chunk.Error))
+				return openAIStreamError(chunk.Error)
 			}
 			if len(chunk.Choices) > 0 || chunk.Usage != nil || chunk.ID != "" || chunk.Object != "" {
 				sawResponse = true
