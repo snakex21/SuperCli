@@ -43,7 +43,7 @@ func TestBenchScoresFilesChecksAndModelMatrix(t *testing.T) {
 // and grader overlays present, valid graders).
 func TestRepositoryAgentSuitesLoad(t *testing.T) {
 	// The held-out suite (1.0.27) is deliberately small: 7 tasks never tuned against.
-	for name, minTasks := range map[string]int{"agent-suite.json": 15, "agent-suite-v2.json": 15, "agent-suite-heldout.json": 7} {
+	for name, minTasks := range map[string]int{"agent-suite.json": 15, "agent-suite-v2.json": 15, "agent-suite-heldout.json": 7, "agent-suite-ho2.json": 8} {
 		suite, err := LoadSuite(filepath.Join("..", "..", "test", "go", "eval", name))
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
