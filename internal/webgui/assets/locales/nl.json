@@ -1168,6 +1168,7 @@
   "notice.connectionRetry": "Verbinding met het model verbroken ({reason}) — nieuwe poging over {wait} (herhaling {attempt}/{max})",
   "notice.connectionWait": "Geen verbinding met het model — wacht {wait} voor herhaling {attempt}/{max}.",
   "notice.requestLimit": "{host}: limiet van {n} verzoeken/min bereikt — wacht {wait}",
+  "notice.toolsUnsupported": "Model ‘{model}’ ondersteunt op dit endpoint geen toolaanroepen; er wordt doorgegaan zonder tools (alleen antwoorden). Kies voor agentwerk een model met functieaanroepen.",
   "error.loopUnchanged": "Agent gestopt: toolrondes achter elkaar zonder nieuwe gegevens of wijzigingen: {n}. Het werk tot nu toe blijft in dit gesprek bewaard.",
   "error.loopSource": "Agent gestopt: leesrondes achter elkaar die alleen ongewijzigde regels herhaalden: {n}. Het werk tot nu toe blijft in dit gesprek bewaard.",
   "error.loopFailure": "Agent gestopt: opeenvolgende mislukkingen van dezelfde toolaanroep: {n}. Het werk tot nu toe blijft in dit gesprek bewaard.",

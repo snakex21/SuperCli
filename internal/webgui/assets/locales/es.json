@@ -1168,6 +1168,7 @@
   "notice.connectionRetry": "Se perdió la conexión con el modelo ({reason}) — reintentando en {wait} (reintento {attempt}/{max})",
   "notice.connectionWait": "Conexión con el modelo no disponible — esperando {wait} antes del reintento {attempt}/{max}.",
   "notice.requestLimit": "{host}: alcanzado el límite de {n} solicitudes/min — esperando {wait}",
+  "notice.toolsUnsupported": "El modelo «{model}» no admite llamadas a herramientas en este endpoint; se continúa sin herramientas (solo respuestas). Elige un modelo con llamadas a funciones para el trabajo del agente.",
   "error.loopUnchanged": "El agente se detuvo: rondas de herramientas seguidas sin datos nuevos ni cambios: {n}. El trabajo hecho hasta ahora se conserva en esta conversación.",
   "error.loopSource": "El agente se detuvo: rondas de lectura seguidas que solo repitieron líneas sin cambios: {n}. El trabajo hecho hasta ahora se conserva en esta conversación.",
   "error.loopFailure": "El agente se detuvo: fallos seguidos de la misma llamada a herramienta: {n}. El trabajo hecho hasta ahora se conserva en esta conversación.",

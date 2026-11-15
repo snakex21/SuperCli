@@ -1168,6 +1168,7 @@
   "notice.connectionRetry": "Modelle bağlantı koptu ({reason}) — {wait} sonra yeniden deneniyor (yeniden deneme {attempt}/{max})",
   "notice.connectionWait": "Modelle bağlantı yok — {wait} bekleniyor, ardından yeniden deneme {attempt}/{max}.",
   "notice.requestLimit": "{host}: {n} istek/min sınırına ulaşıldı — {wait} bekleniyor",
+  "notice.toolsUnsupported": "\"{model}\" modeli bu uç noktada araç çağırmayı desteklemiyor; araçlar olmadan devam ediliyor (yalnızca yanıtlar). Ajan çalışması için işlev çağırmayı destekleyen bir model seçin.",
   "error.loopUnchanged": "Ajan durduruldu: yeni bulgu veya değişiklik olmadan art arda araç turları: {n}. Şimdiye kadarki çalışma bu konuşmada kalır.",
   "error.loopSource": "Ajan durduruldu: yalnızca değişmemiş satırları yeniden okuyan art arda okuma turları: {n}. Şimdiye kadarki çalışma bu konuşmada kalır.",
   "error.loopFailure": "Ajan durduruldu: aynı araç çağrısının art arda başarısızlıkları: {n}. Şimdiye kadarki çalışma bu konuşmada kalır.",

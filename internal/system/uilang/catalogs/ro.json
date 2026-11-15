@@ -588,6 +588,7 @@
   "tui.notice.connection_retry": "Conexiunea cu modelul s-a întrerupt (%s) — nouă încercare în %s (reîncercarea %s)",
   "tui.notice.connection_wait": "Conexiunea cu modelul nu este disponibilă — se așteaptă %s înainte de reîncercarea %s.",
   "tui.notice.request_limit": "%s: s-a atins limita de %s cereri/min — se așteaptă %s",
+  "tui.notice.tools_unsupported": "Modelul „%s” nu acceptă apelarea instrumentelor pe acest endpoint; se continuă fără instrumente (doar răspunsuri). Pentru lucrul agentului alegeți un model cu apelare de funcții.",
   "tui.setting_allow_all.77ea1b1074": "Permite lucrul în afara proiectului activ; folderele de sistem sensibile rămân blocate.",
   "tui.setting_allow_all.adad46e596": "Acces în afara proiectului",
   "tui.setting_noop_gate.a1c16ea2ae": "Omite o sarcină batch identică, fără apel către model, dacă nu s-a schimbat nimic.",

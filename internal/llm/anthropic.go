@@ -362,7 +362,7 @@ func (p *AnthropicProvider) do(ctx context.Context, cancel context.CancelFunc, b
 		if !providerResponseRetryable(resp.StatusCode, respBody) || !RetryAllowed(retries) {
 			return nil, terminal
 		}
-		backoff, ok := providerRetryWait(resp.StatusCode, resp.Header, retries+1)
+		backoff, ok := providerRetryWait(resp.StatusCode, resp.Header, respBody, retries+1)
 		if !ok {
 			return nil, terminal
 		}

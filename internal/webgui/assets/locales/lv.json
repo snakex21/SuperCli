@@ -1168,6 +1168,7 @@
   "notice.connectionRetry": "Savienojums ar modeli pārtrūka ({reason}) — atkārtots mēģinājums pēc {wait} (atkārtojums {attempt}/{max})",
   "notice.connectionWait": "Savienojums ar modeli nav pieejams — gaida {wait} pirms atkārtojuma {attempt}/{max}.",
   "notice.requestLimit": "{host}: sasniegts {n} pieprasījumu/min ierobežojums — gaida {wait}",
+  "notice.toolsUnsupported": "Modelis “{model}” šajā galapunktā neatbalsta rīku izsaukšanu; turpina bez rīkiem (tikai atbildes). Aģenta darbam izvēlieties modeli ar funkciju izsaukšanu.",
   "error.loopUnchanged": "Aģents apturēts: rīku kārtas pēc kārtas bez jauniem datiem vai izmaiņām: {n}. Līdzšinējais darbs paliek šajā sarunā.",
   "error.loopSource": "Aģents apturēts: lasīšanas kārtas pēc kārtas, kas tikai atkārtoja nemainītas rindas: {n}. Līdzšinējais darbs paliek šajā sarunā.",
   "error.loopFailure": "Aģents apturēts: tā paša rīka izsaukuma neveiksmes pēc kārtas: {n}. Līdzšinējais darbs paliek šajā sarunā.",

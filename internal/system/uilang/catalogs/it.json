@@ -584,6 +584,7 @@
   "tui.notice.connection_retry": "Connessione al modello interrotta (%s) — nuovo tentativo tra %s (tentativo %s)",
   "tui.notice.connection_wait": "Connessione al modello non disponibile — attendo %s prima del tentativo %s.",
   "tui.notice.request_limit": "%s: raggiunto il limite di %s richieste/min — attendo %s",
+  "tui.notice.tools_unsupported": "Il modello «%s» non supporta la chiamata di strumenti su questo endpoint; si continua senza strumenti (solo risposte). Per il lavoro dell’agente scegli un modello con chiamata di funzioni.",
   "tui.setting_allow_all.77ea1b1074": "Consente il lavoro al di fuori del progetto attivo; le cartelle di sistema sensibili rimangono bloccate.",
   "tui.setting_allow_all.adad46e596": "Accesso al progetto esterno",
   "tui.setting_noop_gate.a1c16ea2ae": "Termina un'attività batch identica senza una chiamata al modello quando non è cambiato nulla.",

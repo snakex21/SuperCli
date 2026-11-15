@@ -875,6 +875,9 @@ type openaiChunk struct {
 	// cloud backends; ignored when nil.
 	Timings *llamaTimings   `json:"timings,omitempty"`
 	Error   json.RawMessage `json:"error,omitempty"`
+	// Errors is the Cloudflare API envelope ({"success":false,"errors":[…]})
+	// that Workers AI can send as a data line of an accepted stream.
+	Errors json.RawMessage `json:"errors,omitempty"`
 }
 
 func openAIErrorMessage(raw json.RawMessage) string {

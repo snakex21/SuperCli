@@ -17,7 +17,7 @@ func fastStreamRetry(t *testing.T) {
 	t.Helper()
 	withAgentMaxRetries(t, llm.DefaultMaxRetries)
 	saved := streamRetryBackoff
-	streamRetryBackoff = func(int) time.Duration { return time.Millisecond }
+	streamRetryBackoff = func(int, error) time.Duration { return time.Millisecond }
 	t.Cleanup(func() { streamRetryBackoff = saved })
 }
 

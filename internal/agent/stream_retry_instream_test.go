@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"supercli/internal/llm"
 	"supercli/internal/tools"
@@ -117,5 +118,22 @@ func TestInStreamPermanentAndUnknownErrors(t *testing.T) {
 				t.Fatalf("err=%v calls=%d want=%d", err, p.calls.Load(), want)
 			}
 		})
+	}
+}
+
+// A per-minute in-stream limit without Retry-After must not burn the retries
+// inside the same minute: the default agent backoff starts at
+// llm.PerMinuteRetryBase for it and stays short for transport drops.
+func TestInStreamPerMinuteLimitUsesMinuteBackoff(t *testing.T) {
+	perMinute := inStreamErr(cloudflarePerMinute)
+	var total time.Duration
+	for n := 1; n <= 3; n++ {
+		total += streamRetryBackoff(n, perMinute)
+	}
+	if total <= time.Minute {
+		t.Fatalf("three per-minute waits total %v; must cross into the next minute", total)
+	}
+	if w := streamRetryBackoff(1, errHTTP2Reset); w > time.Second {
+		t.Fatalf("transport drop wait = %v", w)
 	}
 }

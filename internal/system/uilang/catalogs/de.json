@@ -584,6 +584,7 @@
   "tui.notice.connection_retry": "Verbindung zum Modell abgebrochen (%s) — neuer Versuch in %s (Wiederholung %s)",
   "tui.notice.connection_wait": "Keine Verbindung zum Modell — warte %s vor Wiederholung %s.",
   "tui.notice.request_limit": "%s: Limit von %s Anfragen/min erreicht — warte %s",
+  "tui.notice.tools_unsupported": "Modell „%s“ unterstützt an diesem Endpunkt keine Tool-Aufrufe; es geht ohne Tools weiter (nur Antworten). Wählen Sie für Agentenarbeit ein Modell mit Funktionsaufrufen.",
   "tui.setting_allow_all.77ea1b1074": "Ermöglicht Arbeiten außerhalb des aktiven Projekts; Sensible Systemordner bleiben blockiert.",
   "tui.setting_allow_all.adad46e596": "Zugriff auf externes Projekt",
   "tui.setting_noop_gate.a1c16ea2ae": "Beendet eine identische Batch-Aufgabe ohne Modellaufruf, wenn sich nichts geändert hat.",

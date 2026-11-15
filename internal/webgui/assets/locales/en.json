@@ -1168,6 +1168,7 @@
   "notice.connectionRetry": "Connection to the model dropped ({reason}) — retrying in {wait} (retry {attempt}/{max})",
   "notice.connectionWait": "Model connection unavailable — waiting {wait} before retry {attempt}/{max}.",
   "notice.requestLimit": "{host}: request limit {n}/min reached — waiting {wait}",
+  "notice.toolsUnsupported": "Model \"{model}\" does not support tool calling on this endpoint; continuing without tools (answers only). Pick a function-calling model for agent work.",
   "error.loopUnchanged": "Agent stopped: tool rounds in a row with no new evidence or change: {n}. The work so far is kept in this conversation.",
   "error.loopSource": "Agent stopped: source-reading rounds in a row that only revisited unchanged lines: {n}. The work so far is kept in this conversation.",
   "error.loopFailure": "Agent stopped: consecutive failures of the same tool call: {n}. The work so far is kept in this conversation.",

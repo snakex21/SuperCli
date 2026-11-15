@@ -587,6 +587,7 @@
   "tui.notice.connection_retry": "Forbindelsen til modellen blev afbrudt (%s) — prøver igen om %s (genforsøg %s)",
   "tui.notice.connection_wait": "Ingen forbindelse til modellen — venter %s før genforsøg %s.",
   "tui.notice.request_limit": "%s: grænsen på %s forespørgsler/min er nået — venter %s",
+  "tui.notice.tools_unsupported": "Modellen \"%s\" understøtter ikke værktøjskald på dette endpoint; fortsætter uden værktøjer (kun svar). Vælg en model med funktionskald til agentarbejde.",
   "tui.setting_allow_all.77ea1b1074": "Tillader arbejde uden for det aktive projekt; Følsomme systemmapper forbliver blokeret.",
   "tui.setting_allow_all.adad46e596": "Adgang udenfor projekt",
   "tui.setting_noop_gate.a1c16ea2ae": "Afslutter en identisk batch-opgave uden et modelkald, når intet ændrede sig.",

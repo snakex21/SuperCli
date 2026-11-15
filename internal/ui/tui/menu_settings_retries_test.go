@@ -107,3 +107,12 @@ func TestLocalizeRetryNotices(t *testing.T) {
 		t.Fatalf("English must round-trip: %q", got)
 	}
 }
+
+func TestLocalizeToolsUnsupportedNotice(t *testing.T) {
+	m := newSettingsModel(t, "")
+	m.language = "pl"
+	in := `model "@cf/meta/llama-3.1-8b-instruct" does not support tool calling on this endpoint; continuing without tools (answers only) — pick a function-calling model for agent work`
+	if got := m.localizeNotice(in); !strings.Contains(got, "nie obsługuje wywoływania narzędzi") || !strings.Contains(got, "@cf/meta/llama-3.1-8b-instruct") {
+		t.Fatalf("localized = %q", got)
+	}
+}

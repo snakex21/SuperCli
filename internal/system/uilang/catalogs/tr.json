@@ -588,6 +588,7 @@
   "tui.notice.connection_retry": "Modelle bağlantı koptu (%s) — %s sonra yeniden deneniyor (yeniden deneme %s)",
   "tui.notice.connection_wait": "Modelle bağlantı yok — %s bekleniyor, ardından yeniden deneme %s.",
   "tui.notice.request_limit": "%s: %s istek/min sınırına ulaşıldı — %s bekleniyor",
+  "tui.notice.tools_unsupported": "\"%s\" modeli bu uç noktada araç çağırmayı desteklemiyor; araçlar olmadan devam ediliyor (yalnızca yanıtlar). Ajan çalışması için işlev çağırmayı destekleyen bir model seçin.",
   "tui.setting_allow_all.77ea1b1074": "Etkin projenin dışındaki dosyalarda çalışmaya izin verir; hassas sistem klasörleri engellenmeye devam eder.",
   "tui.setting_allow_all.adad46e596": "Proje dışından erişim",
   "tui.setting_noop_gate.a1c16ea2ae": "Hiçbir şey değişmediğinde, aynı toplu görevi model çağrısı olmadan bitirir.",

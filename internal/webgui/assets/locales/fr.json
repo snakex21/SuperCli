@@ -1168,6 +1168,7 @@
   "notice.connectionRetry": "Connexion au modèle interrompue ({reason}) — nouvel essai dans {wait} (tentative {attempt}/{max})",
   "notice.connectionWait": "Connexion au modèle indisponible — attente de {wait} avant la tentative {attempt}/{max}.",
   "notice.requestLimit": "{host} : limite de {n} requêtes/min atteinte — attente de {wait}",
+  "notice.toolsUnsupported": "Le modèle « {model} » ne prend pas en charge l’appel d’outils sur ce point de terminaison ; poursuite sans outils (réponses uniquement). Choisissez un modèle avec appel de fonctions pour le travail d’agent.",
   "error.loopUnchanged": "Agent arrêté: tours d'outils consécutifs sans nouvel élément ni changement: {n}. Le travail effectué reste dans cette conversation.",
   "error.loopSource": "Agent arrêté: tours de lecture consécutifs qui n'ont relu que des lignes inchangées: {n}. Le travail effectué reste dans cette conversation.",
   "error.loopFailure": "Agent arrêté: échecs consécutifs du même appel d'outil: {n}. Le travail effectué reste dans cette conversation.",

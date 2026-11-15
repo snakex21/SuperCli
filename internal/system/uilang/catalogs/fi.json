@@ -584,6 +584,7 @@
   "tui.notice.connection_retry": "Yhteys malliin katkesi (%s) — uusi yritys %s kuluttua (uudelleenyritys %s)",
   "tui.notice.connection_wait": "Yhteys malliin ei ole käytettävissä — odotetaan %s ennen uudelleenyritystä %s.",
   "tui.notice.request_limit": "%s: %s pyynnön/min raja täynnä — odotetaan %s",
+  "tui.notice.tools_unsupported": "Malli ”%s” ei tue työkalukutsuja tässä päätepisteessä; jatketaan ilman työkaluja (vain vastauksia). Valitse agenttityöhön funktiokutsuja tukeva malli.",
   "tui.setting_allow_all.77ea1b1074": "Mahdollistaa työskentelyn aktiivisen projektin ulkopuolella; arkaluonteiset järjestelmäkansiot pysyvät estettyinä.",
   "tui.setting_allow_all.adad46e596": "Pääsy projektin ulkopuolelle",
   "tui.setting_noop_gate.a1c16ea2ae": "Lopettaa identtisen erätehtävän ilman mallikutsua, kun mikään ei muutu.",

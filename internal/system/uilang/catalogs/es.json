@@ -584,6 +584,7 @@
   "tui.notice.connection_retry": "Se perdió la conexión con el modelo (%s) — reintentando en %s (reintento %s)",
   "tui.notice.connection_wait": "Conexión con el modelo no disponible — esperando %s antes del reintento %s.",
   "tui.notice.request_limit": "%s: alcanzado el límite de %s solicitudes/min — esperando %s",
+  "tui.notice.tools_unsupported": "El modelo «%s» no admite llamadas a herramientas en este endpoint; se continúa sin herramientas (solo respuestas). Elige un modelo con llamadas a funciones para el trabajo del agente.",
   "tui.setting_allow_all.77ea1b1074": "Permite trabajar fuera del proyecto activo; Las carpetas sensibles del sistema permanecen bloqueadas.",
   "tui.setting_allow_all.adad46e596": "Acceso fuera del proyecto",
   "tui.setting_noop_gate.a1c16ea2ae": "Finaliza una tarea por lotes idéntica sin una llamada al modelo cuando nada cambió.",

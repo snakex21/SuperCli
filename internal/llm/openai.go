@@ -258,6 +258,11 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 	// learned on an earlier turn goes straight onto the wire here, so a
 	// deprecated id stops costing a doomed round-trip every request.
 	reqModel := zenEffectiveModel(p.cfg.BaseURL, p.cfg.Model)
+	// A model this process already saw reject the tools field gets none
+	// (see openai_tools_unsupported.go); the notice was shown the first time.
+	if len(tools) > 0 && p.toolsKnownUnsupported() {
+		tools = nil
+	}
 	reqBody, err := buildOpenAIRequestWithReasoningKey(reqModel, p.reasoningKey(), msgs, tools, visionAttempt, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens, p.sampling, ctx)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
@@ -296,6 +301,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		effortRetried := false
 		visionRetried := false
 		zenRemapped := false
+		toolsDropped := false
 		for {
 			if err := WaitRequestSlot(ctx, p.cfg.BaseURL, func(text string) {
 				select {
@@ -363,6 +369,23 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 					continue
 				}
 			}
+			// The model cannot call functions: retry once without the tools
+			// field, explain it, and remember it for later requests.
+			if len(tools) > 0 && !toolsDropped && isToolsUnsupportedError(resp.StatusCode, body) {
+				rebuilt, buildErr := buildOpenAIRequestWithReasoningKey(reqModel, p.reasoningKey(), msgs, nil, visionAttempt && !visionRetried, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens, p.sampling, ctx)
+				if buildErr == nil {
+					p.noteToolsUnsupported()
+					tools = nil
+					reqBody = rebuilt
+					toolsDropped = true
+					select {
+					case out <- Delta{Notice: toolsUnsupportedNotice(p.cfg.Model)}:
+					case <-ctx.Done():
+						return
+					}
+					continue
+				}
+			}
 			// The upstream refused the image parts (text-only model behind
 			// an OpenAI-compatible gateway). Learn the rejection so later
 			// turns skip images entirely, rebuild the request without them
@@ -418,7 +441,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			// transient burst: surface it now so an explicitly configured
 			// fallback can take over (providerRetryWait reports !ok).
 			retries++
-			backoff, retryOK := providerRetryWait(resp.StatusCode, resp.Header, retries)
+			backoff, retryOK := providerRetryWait(resp.StatusCode, resp.Header, body, retries)
 			if !retryOK {
 				select {
 				case out <- Delta{Err: responseErr}:
@@ -498,6 +521,11 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			}
 			if len(chunk.Error) > 0 && string(chunk.Error) != "null" {
 				return openAIStreamError(chunk.Error)
+			}
+			if len(chunk.Errors) > 0 && string(chunk.Errors) != "null" && string(chunk.Errors) != "[]" {
+				if errs, ok := cloudflareEnvelopeErrors([]byte(data)); ok {
+					return cloudflareStreamError(errs)
+				}
 			}
 			if len(chunk.Choices) > 0 || chunk.Usage != nil || chunk.ID != "" || chunk.Object != "" {
 				sawResponse = true

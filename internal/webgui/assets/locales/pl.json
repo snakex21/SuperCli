@@ -1168,6 +1168,7 @@
   "notice.connectionRetry": "Połączenie z modelem zostało przerwane ({reason}) — ponawianie za {wait} (ponowienie {attempt}/{max})",
   "notice.connectionWait": "Brak połączenia z modelem — czekam {wait} przed ponowieniem {attempt}/{max}.",
   "notice.requestLimit": "{host}: osiągnięto limit {n} zapytań/min — czekam {wait}",
+  "notice.toolsUnsupported": "Model „{model}” nie obsługuje wywoływania narzędzi na tym endpoincie; kontynuuję bez narzędzi (tylko odpowiedzi). Do pracy agentowej wybierz model z obsługą wywoływania funkcji.",
   "error.loopUnchanged": "Agent zatrzymany: rundy narzędzi z rzędu bez nowych danych ani zmian: {n}. Dotychczasowa praca zostaje w tej rozmowie.",
   "error.loopSource": "Agent zatrzymany: rundy czytania źródeł z rzędu, które tylko powtarzały niezmienione linie: {n}. Dotychczasowa praca zostaje w tej rozmowie.",
   "error.loopFailure": "Agent zatrzymany: nieudane wywołania tego samego narzędzia z rzędu: {n}. Dotychczasowa praca zostaje w tej rozmowie.",

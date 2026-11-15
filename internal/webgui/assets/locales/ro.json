@@ -1168,6 +1168,7 @@
   "notice.connectionRetry": "Conexiunea cu modelul s-a întrerupt ({reason}) — nouă încercare în {wait} (reîncercarea {attempt}/{max})",
   "notice.connectionWait": "Conexiunea cu modelul nu este disponibilă — se așteaptă {wait} înainte de reîncercarea {attempt}/{max}.",
   "notice.requestLimit": "{host}: s-a atins limita de {n} cereri/min — se așteaptă {wait}",
+  "notice.toolsUnsupported": "Modelul „{model}” nu acceptă apelarea instrumentelor pe acest endpoint; se continuă fără instrumente (doar răspunsuri). Pentru lucrul agentului alegeți un model cu apelare de funcții.",
   "error.loopUnchanged": "Agentul s-a oprit: runde de instrumente la rând fără date noi sau modificări: {n}. Munca de până acum rămâne în această conversație.",
   "error.loopSource": "Agentul s-a oprit: runde de citire la rând care au repetat doar linii neschimbate: {n}. Munca de până acum rămâne în această conversație.",
   "error.loopFailure": "Agentul s-a oprit: eșecuri la rând ale aceluiași apel de instrument: {n}. Munca de până acum rămâne în această conversație.",

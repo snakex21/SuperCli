@@ -584,6 +584,7 @@
   "tui.notice.connection_retry": "Ryšys su modeliu nutrūko (%s) — bandoma vėl po %s (pakartojimas %s)",
   "tui.notice.connection_wait": "Nėra ryšio su modeliu — laukiama %s prieš pakartojimą %s.",
   "tui.notice.request_limit": "%s: pasiekta %s užklausų/min riba — laukiama %s",
+  "tui.notice.tools_unsupported": "Modelis „%s“ šiame galiniame taške nepalaiko įrankių kvietimo; tęsiama be įrankių (tik atsakymai). Agento darbui pasirinkite modelį su funkcijų kvietimu.",
   "tui.setting_allow_all.77ea1b1074": "Leidžia dirbti už aktyvaus projekto ribų; jautrūs sistemos aplankai lieka užblokuoti.",
   "tui.setting_allow_all.adad46e596": "Prieiga prie projekto išorės",
   "tui.setting_noop_gate.a1c16ea2ae": "Kai niekas nepasikeitė, baigia identišką paketinę užduotį be modelio iškvietimo.",

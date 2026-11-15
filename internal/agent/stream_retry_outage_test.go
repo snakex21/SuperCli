@@ -31,7 +31,7 @@ func fakeOutageClock(t *testing.T) (*time.Time, *[]time.Duration) {
 	savedWait, savedBackoff := streamRetryWait, streamRetryBackoff
 	now := time.Unix(1000, 0)
 	var waits []time.Duration
-	streamRetryBackoff = func(retry int) time.Duration {
+	streamRetryBackoff = func(retry int, _ error) time.Duration {
 		if retry > 6 {
 			return llm.MaxRetryBackoff
 		}
@@ -157,7 +157,7 @@ func TestOutageRetryUnlimitedUntilCancel(t *testing.T) {
 func TestOutageRetryUnlimitedCancelDuringRealWaitIsPrompt(t *testing.T) {
 	withAgentMaxRetries(t, llm.UnlimitedRetries)
 	saved := streamRetryBackoff
-	streamRetryBackoff = func(int) time.Duration { return llm.MaxRetryBackoff }
+	streamRetryBackoff = func(int, error) time.Duration { return llm.MaxRetryBackoff }
 	t.Cleanup(func() { streamRetryBackoff = saved })
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -1168,6 +1168,7 @@
   "notice.connectionRetry": "Tilkoblingen til modellen ble brutt ({reason}) — prøver igjen om {wait} (nytt forsøk {attempt}/{max})",
   "notice.connectionWait": "Ingen tilkobling til modellen — venter {wait} før nytt forsøk {attempt}/{max}.",
   "notice.requestLimit": "{host}: grensen på {n} forespørsler/min er nådd — venter {wait}",
+  "notice.toolsUnsupported": "Modellen «{model}» støtter ikke verktøykall på dette endepunktet; fortsetter uten verktøy (bare svar). Velg en modell med funksjonskall for agentarbeid.",
   "error.loopUnchanged": "Agenten stoppet: verktøyrunder på rad uten nye funn eller endringer: {n}. Arbeidet så langt er beholdt i denne samtalen.",
   "error.loopSource": "Agenten stoppet: leserunder på rad som bare gjentok uendrede linjer: {n}. Arbeidet så langt er beholdt i denne samtalen.",
   "error.loopFailure": "Agenten stoppet: feil på rad for det samme verktøykallet: {n}. Arbeidet så langt er beholdt i denne samtalen.",

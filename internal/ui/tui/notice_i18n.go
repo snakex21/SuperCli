@@ -18,6 +18,7 @@ var localizedNotices = []struct {
 	{regexp.MustCompile(`^connection to the model dropped \(([\s\S]*)\) — retrying in (\S+) \(retry (\S+)\)$`), "tui.notice.connection_retry"},
 	{regexp.MustCompile(`^Model connection unavailable — waiting (\S+) before retry (\S+)\.$`), "tui.notice.connection_wait"},
 	{regexp.MustCompile(`^(.+): request limit (\d+)/min reached — waiting (\S+)$`), "tui.notice.request_limit"},
+	{regexp.MustCompile(`^model "(.+)" does not support tool calling on this endpoint; continuing without tools \(answers only\) — pick a function-calling model for agent work$`), "tui.notice.tools_unsupported"},
 }
 
 func (m Model) localizeNotice(text string) string {

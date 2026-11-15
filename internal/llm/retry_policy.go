@@ -166,6 +166,9 @@ func (e *ProviderStreamError) Error() string {
 // Class classifies the in-stream error by its code/type first and its message
 // text second.
 func (e *ProviderStreamError) Class() RetryClass {
+	if isQuotaExhaustedText(e.Message) {
+		return RetryPermanent
+	}
 	if c := classifyErrorCode(e.Code); c != RetryUnknown {
 		return c
 	}
@@ -198,6 +201,14 @@ func ClassifyProviderError(err error) RetryClass {
 }
 
 func classifyHTTPResponse(status int, body []byte) RetryClass {
+	// A daily/billing quota answers 429 too, but no retry within minutes can
+	// succeed (Workers AI 3036 "daily free allocation of 10,000 neurons").
+	if isQuotaExhaustedText(string(body)) {
+		return RetryPermanent
+	}
+	if c := cloudflareEnvelopeClass(body); c != RetryUnknown {
+		return c
+	}
 	if isRetryableProviderResponse(status, body) {
 		return RetryTransient
 	}
@@ -240,6 +251,9 @@ func classifyErrorCode(code string) RetryClass {
 	code = strings.ToLower(strings.TrimSpace(code))
 	if code == "" {
 		return RetryUnknown
+	}
+	if c, ok := cloudflareErrorCodes[code]; ok {
+		return c
 	}
 	if n, err := strconv.Atoi(code); err == nil {
 		if isRetryableHTTPStatus(n) {
@@ -289,6 +303,9 @@ func classifyErrorText(text string) RetryClass {
 	if strings.TrimSpace(text) == "" {
 		return RetryUnknown
 	}
+	if isQuotaExhaustedText(text) {
+		return RetryPermanent
+	}
 	for _, phrase := range permanentErrorPhrases {
 		if strings.Contains(text, phrase) {
 			return RetryPermanent
@@ -321,8 +338,15 @@ func ShouldRetryProviderError(err error) bool {
 // Retry-After exceeds MaxRetryBackoff is a quota window, not a burst: it is
 // surfaced at once so an explicitly configured fallback can take over, even
 // in unlimited mode.
-func providerRetryWait(status int, h http.Header, n int) (time.Duration, bool) {
+//
+// Without Retry-After the wait is exponential backoff with jitter; a body
+// that names a per-minute limit uses PerMinuteRetryBase so the retries reach
+// the next minute instead of hammering the same window.
+func providerRetryWait(status int, h http.Header, body []byte, n int) (time.Duration, bool) {
 	retryAfter, ok := parseRetryAfter(h)
+	if !ok {
+		retryAfter, ok = bodyRetryAfter(body)
+	}
 	if ok && status == http.StatusTooManyRequests && retryAfter > MaxRetryBackoff {
 		return 0, false
 	}
@@ -331,6 +355,9 @@ func providerRetryWait(status int, h http.Header, n int) (time.Duration, bool) {
 			retryAfter = MaxRetryBackoff
 		}
 		return retryAfter, true
+	}
+	if isPerMinuteLimitText(string(body)) {
+		return RetryBackoff(n, PerMinuteRetryBase), true
 	}
 	return RetryBackoff(n, 500*time.Millisecond), true
 }

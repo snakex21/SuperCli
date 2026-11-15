@@ -1168,6 +1168,7 @@
   "notice.connectionRetry": "Yhteys malliin katkesi ({reason}) — uusi yritys {wait} kuluttua (uudelleenyritys {attempt}/{max})",
   "notice.connectionWait": "Yhteys malliin ei ole käytettävissä — odotetaan {wait} ennen uudelleenyritystä {attempt}/{max}.",
   "notice.requestLimit": "{host}: {n} pyynnön/min raja täynnä — odotetaan {wait}",
+  "notice.toolsUnsupported": "Malli ”{model}” ei tue työkalukutsuja tässä päätepisteessä; jatketaan ilman työkaluja (vain vastauksia). Valitse agenttityöhön funktiokutsuja tukeva malli.",
   "error.loopUnchanged": "Agentti pysähtyi: peräkkäisiä työkalukierroksia ilman uutta tietoa tai muutosta: {n}. Tähänastinen työ säilyy tässä keskustelussa.",
   "error.loopSource": "Agentti pysähtyi: peräkkäisiä lukukierroksia, jotka vain toistivat muuttumattomia rivejä: {n}. Tähänastinen työ säilyy tässä keskustelussa.",
   "error.loopFailure": "Agentti pysähtyi: saman työkalukutsun peräkkäisiä epäonnistumisia: {n}. Tähänastinen työ säilyy tässä keskustelussa.",

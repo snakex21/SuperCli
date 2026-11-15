@@ -272,7 +272,7 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, cancel context.CancelFun
 			}
 		}
 		if providerResponseRetryable(resp.StatusCode, respBody) && RetryAllowed(retries) {
-			if wait, ok := providerRetryWait(resp.StatusCode, resp.Header, retries+1); ok {
+			if wait, ok := providerRetryWait(resp.StatusCode, resp.Header, respBody, retries+1); ok {
 				retries++
 				if notify != nil {
 					notify(Delta{Notice: rateLimitNotice(p.cfg.Model, resp.StatusCode, wait, retries)})

@@ -1168,6 +1168,7 @@
   "notice.connectionRetry": "Megszakadt a kapcsolat a modellel ({reason}) — újrapróbálás {wait} múlva (újrapróbálkozás {attempt}/{max})",
   "notice.connectionWait": "A modell nem érhető el — várakozás {wait} a(z) {attempt}/{max}. újrapróbálkozás előtt.",
   "notice.requestLimit": "{host}: elérte a(z) {n} kérés/min korlátot — várakozás {wait}",
+  "notice.toolsUnsupported": "A(z) „{model}” modell ezen a végponton nem támogatja az eszközhívást; folytatás eszközök nélkül (csak válaszok). Ügynöki munkához válasszon függvényhívást támogató modellt.",
   "error.loopUnchanged": "Az ügynök leállt: egymást követő eszközkörök új adat vagy változás nélkül: {n}. Az eddigi munka megmarad ebben a beszélgetésben.",
   "error.loopSource": "Az ügynök leállt: egymást követő olvasási körök, amelyek csak változatlan sorokat ismételtek: {n}. Az eddigi munka megmarad ebben a beszélgetésben.",
   "error.loopFailure": "Az ügynök leállt: ugyanannak az eszközhívásnak egymást követő hibái: {n}. Az eddigi munka megmarad ebben a beszélgetésben.",

@@ -584,6 +584,7 @@
   "tui.notice.connection_retry": "Connection to the model dropped (%s) — retrying in %s (retry %s)",
   "tui.notice.connection_wait": "Model connection unavailable — waiting %s before retry %s.",
   "tui.notice.request_limit": "%s: request limit %s/min reached — waiting %s",
+  "tui.notice.tools_unsupported": "Model \"%s\" does not support tool calling on this endpoint; continuing without tools (answers only). Pick a function-calling model for agent work.",
   "tui.setting_allow_all.77ea1b1074": "Allows work outside the active project; sensitive system folders stay blocked.",
   "tui.setting_allow_all.adad46e596": "Access outside project",
   "tui.setting_noop_gate.a1c16ea2ae": "Finishes an identical batch task without a model call when nothing changed.",

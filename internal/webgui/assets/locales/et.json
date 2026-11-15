@@ -1168,6 +1168,7 @@
   "notice.connectionRetry": "Ühendus mudeliga katkes ({reason}) — uus katse {wait} pärast (korduskatse {attempt}/{max})",
   "notice.connectionWait": "Ühendus mudeliga puudub — ootan {wait} enne korduskatset {attempt}/{max}.",
   "notice.requestLimit": "{host}: {n} päringu/min piirang täis — ootan {wait}",
+  "notice.toolsUnsupported": "Mudel „{model}” ei toeta selles lõpp-punktis tööriistade kutsumist; jätkatakse ilma tööriistadeta (ainult vastused). Agenditööks valige funktsioonikutsetega mudel.",
   "error.loopUnchanged": "Agent peatus: järjestikused tööriistavoorud ilma uute andmete või muutusteta: {n}. Seni tehtud töö jääb sellesse vestlusesse.",
   "error.loopSource": "Agent peatus: järjestikused lugemisvoorud, mis kordasid ainult muutmata ridu: {n}. Seni tehtud töö jääb sellesse vestlusesse.",
   "error.loopFailure": "Agent peatus: sama tööriistakutse järjestikused nurjumised: {n}. Seni tehtud töö jääb sellesse vestlusesse.",

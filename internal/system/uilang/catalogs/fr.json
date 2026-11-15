@@ -584,6 +584,7 @@
   "tui.notice.connection_retry": "Connexion au modèle interrompue (%s) — nouvel essai dans %s (tentative %s)",
   "tui.notice.connection_wait": "Connexion au modèle indisponible — attente de %s avant la tentative %s.",
   "tui.notice.request_limit": "%s : limite de %s requêtes/min atteinte — attente de %s",
+  "tui.notice.tools_unsupported": "Le modèle « %s » ne prend pas en charge l’appel d’outils sur ce point de terminaison ; poursuite sans outils (réponses uniquement). Choisissez un modèle avec appel de fonctions pour le travail d’agent.",
   "tui.setting_allow_all.77ea1b1074": "Permet de travailler en dehors du projet actif ; les dossiers système sensibles restent bloqués.",
   "tui.setting_allow_all.adad46e596": "Accès hors projet",
   "tui.setting_noop_gate.a1c16ea2ae": "Termine une tâche par lots identique sans appel de modèle lorsque rien n'a changé.",
