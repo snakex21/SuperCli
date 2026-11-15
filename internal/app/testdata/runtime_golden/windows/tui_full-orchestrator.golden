@@ -40,6 +40,7 @@ read_many [ro] desc=a89be90c17af schema=e5b1ec6fc768 fn=supercli/internal/tools/
 scratchpad [] desc=2c791388f9fd schema=8d24949d1787 fn=supercli/internal/tools/scratchpad.(*Scratchpad).run-fm
 patch_file [] desc=381c66726849 schema=1e472a2eb49c fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
 create_file [] desc=3e10cfbf6969 schema=cff57708c1c8 fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
+edit_files [approval] desc=956978668ce1 schema=4ff373ed1f0b fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
 write_file [] desc=4b2e40110fd4 schema=b8dab809301a fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
 make_dir [] desc=a8edc26ac5a3 schema=5c101a2235dd fn=supercli/internal/tools/files.(*MakeDir).execute-fm
 move [] desc=658efd3bf187 schema=6170c6a15ed2 fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
@@ -54,7 +55,7 @@ invoke_tool [] desc=eb061c586276 schema=0dc93db84c43 fn=supercli/internal/agent.
 outlook_mail [approval arg=confirm] desc=90919146c32c schema=37d4866eb922 fn=supercli/internal/tools/mail.(*OutlookMail).execute-fm
 thunderbird_mail [approval arg=confirm] desc=3d0f8f503164 schema=b185f9386e20 fn=supercli/internal/tools/mail.(*ThunderbirdMail).execute-fm
 ##### checkpoint wrapped
-read_zip,edit_docx,edit_xlsx,ctx_execute,task,send_message,patch_file,create_file,write_file,make_dir,move,copy,trash,web_download
+read_zip,edit_docx,edit_xlsx,ctx_execute,task,send_message,patch_file,create_file,edit_files,write_file,make_dir,move,copy,trash,web_download
 ##### loop visible tools
 task
 send_message
@@ -77,12 +78,12 @@ read_output
 ##### system prompt
 You are SuperCli, a portable AI assistant.
 
-- Use tools for actions: patch_file (batch edits), create_file (new files).
+- Use tools for actions: patch_file (edits), create_file (new files), edit_files (one change, many files).
 - Word: NEW = exactly one edit_docx(create) with content + design. EXISTING = read_docx once, then exactly one edit_docx(batch). Success means stop tools and answer. Never script or unpack DOCX.
 - list_dir/search_code/read_many. tool_search only for missing tools; apply_skill(query,auto=true) for specialized guidance.
-- Use tools to close evidence gaps. Reuse results; act on known paths/URLs. Read missing context before edits. Batch independent calls; prefer batch tools. Stop when ALL requested outcomes are verified.
+- Use tools to close evidence gaps. Reuse results; act on known paths/URLs. Read missing context before edits. Batch independent calls; prefer batch tools. Stop only when ALL requested outcomes are verified; after multi-file work, search for leftovers first.
 - Verify edits; recheck only after failures or relevant changes. Fix errors and recheck, or report the blocker.
-- Do only what was asked. Match effort to scope; a no-op is a valid result. No formatting-only edits. Missing file/target: say so and ask; never substitute another.
+- Do only what was asked. Match effort to scope; a no-op is a valid result. No formatting-only edits. Missing file/target: do every other part, then report what is missing; never invent or substitute one.
 - Ask before irreversible actions (delete, mass move, send). Verify current facts.
 - edit_docx/edit_xlsx save a backup. After edits, state which file changed and what changed.
 - Be brief, use the user's language. remember preferences; recall only for missing prior context.
@@ -129,12 +130,12 @@ Golden user preset: reply in English.
 ##### darwin system prompt
 You are SuperCli, a portable AI assistant.
 
-- Use tools for actions: patch_file (batch edits), create_file (new files).
+- Use tools for actions: patch_file (edits), create_file (new files), edit_files (one change, many files).
 - Word: NEW = exactly one edit_docx(create) with content + design. EXISTING = read_docx once, then exactly one edit_docx(batch). Success means stop tools and answer. Never script or unpack DOCX.
 - list_dir/search_code/read_many. tool_search only for missing tools; apply_skill(query,auto=true) for specialized guidance.
-- Use tools to close evidence gaps. Reuse results; act on known paths/URLs. Read missing context before edits. Batch independent calls; prefer batch tools. Stop when ALL requested outcomes are verified.
+- Use tools to close evidence gaps. Reuse results; act on known paths/URLs. Read missing context before edits. Batch independent calls; prefer batch tools. Stop only when ALL requested outcomes are verified; after multi-file work, search for leftovers first.
 - Verify edits; recheck only after failures or relevant changes. Fix errors and recheck, or report the blocker.
-- Do only what was asked. Match effort to scope; a no-op is a valid result. No formatting-only edits. Missing file/target: say so and ask; never substitute another.
+- Do only what was asked. Match effort to scope; a no-op is a valid result. No formatting-only edits. Missing file/target: do every other part, then report what is missing; never invent or substitute one.
 - Ask before irreversible actions (delete, mass move, send). Verify current facts.
 - edit_docx/edit_xlsx save a backup. After edits, state which file changed and what changed.
 - Be brief, use the user's language. remember preferences; recall only for missing prior context.
@@ -180,7 +181,7 @@ Memory: recall only for missing prior context needed by this task. Use remember 
 Provider: set
 Registry: set
 Caps: nil
-System: len=3459 sha=2fa5e027295d
+System: len=3586 sha=4b42b8ca4598
 ProjectInstructions: len=184 sha=5fcf086fd695
 UserInstructions: len=213 sha=c8493814683a
 UserInstructionsForRun: set
@@ -229,9 +230,10 @@ LearnLimit: set
 PrefillProfiles: set
 PruneProtectTokens: 0
 Stats: set
+CompletionCheck: true
 Review: nil
 provider.name: golden-model
-registry.len: 51
+registry.len: 52
 max_steps.default: true
 live_context.err: <nil>
 live_context[memory]: "[memory_briefing]\nRemembered context from previous sessions. When the user asks about themselves (their name, what they like, their preferences), answer from the facts below (or the recall tool) — do not claim you have no memory.\nProject: home (<HOME>) — active, last session <DATE>\n[/memory_briefing]"
@@ -258,12 +260,12 @@ tools: task(desc=f89e722eadce schema=cba01779811d) send_message(desc=43f46f4818e
 --- msg 0 role=system origin={"source":"instructions"}
 You are SuperCli, a portable AI assistant.
 
-- Use tools for actions: patch_file (batch edits), create_file (new files).
+- Use tools for actions: patch_file (edits), create_file (new files), edit_files (one change, many files).
 - Word: NEW = exactly one edit_docx(create) with content + design. EXISTING = read_docx once, then exactly one edit_docx(batch). Success means stop tools and answer. Never script or unpack DOCX.
 - list_dir/search_code/read_many. tool_search only for missing tools; apply_skill(query,auto=true) for specialized guidance.
-- Use tools to close evidence gaps. Reuse results; act on known paths/URLs. Read missing context before edits. Batch independent calls; prefer batch tools. Stop when ALL requested outcomes are verified.
+- Use tools to close evidence gaps. Reuse results; act on known paths/URLs. Read missing context before edits. Batch independent calls; prefer batch tools. Stop only when ALL requested outcomes are verified; after multi-file work, search for leftovers first.
 - Verify edits; recheck only after failures or relevant changes. Fix errors and recheck, or report the blocker.
-- Do only what was asked. Match effort to scope; a no-op is a valid result. No formatting-only edits. Missing file/target: say so and ask; never substitute another.
+- Do only what was asked. Match effort to scope; a no-op is a valid result. No formatting-only edits. Missing file/target: do every other part, then report what is missing; never invent or substitute one.
 - Ask before irreversible actions (delete, mass move, send). Verify current facts.
 - edit_docx/edit_xlsx save a backup. After edits, state which file changed and what changed.
 - Be brief, use the user's language. remember preferences; recall only for missing prior context.
@@ -331,12 +333,12 @@ tools: task(desc=f89e722eadce schema=cba01779811d) send_message(desc=43f46f4818e
 --- msg 0 role=system origin={"source":"instructions"}
 You are SuperCli, a portable AI assistant.
 
-- Use tools for actions: patch_file (batch edits), create_file (new files).
+- Use tools for actions: patch_file (edits), create_file (new files), edit_files (one change, many files).
 - Word: NEW = exactly one edit_docx(create) with content + design. EXISTING = read_docx once, then exactly one edit_docx(batch). Success means stop tools and answer. Never script or unpack DOCX.
 - list_dir/search_code/read_many. tool_search only for missing tools; apply_skill(query,auto=true) for specialized guidance.
-- Use tools to close evidence gaps. Reuse results; act on known paths/URLs. Read missing context before edits. Batch independent calls; prefer batch tools. Stop when ALL requested outcomes are verified.
+- Use tools to close evidence gaps. Reuse results; act on known paths/URLs. Read missing context before edits. Batch independent calls; prefer batch tools. Stop only when ALL requested outcomes are verified; after multi-file work, search for leftovers first.
 - Verify edits; recheck only after failures or relevant changes. Fix errors and recheck, or report the blocker.
-- Do only what was asked. Match effort to scope; a no-op is a valid result. No formatting-only edits. Missing file/target: say so and ask; never substitute another.
+- Do only what was asked. Match effort to scope; a no-op is a valid result. No formatting-only edits. Missing file/target: do every other part, then report what is missing; never invent or substitute one.
 - Ask before irreversible actions (delete, mass move, send). Verify current facts.
 - edit_docx/edit_xlsx save a backup. After edits, state which file changed and what changed.
 - Be brief, use the user's language. remember preferences; recall only for missing prior context.

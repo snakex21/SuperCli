@@ -1,7 +1,7 @@
 ##### surface
 web app_profile= profile=full-adaptive
 ##### base registry
-visible: apply_skill,remember,recall,read_lines,read_context,read_many,read_image,list_dir,patch_file,create_file,make_dir,move,copy,trash,search_code,ctx_execute,scratchpad,invoke_tool,ask_user,web_lookup,tool_search,read_output,task,send_message,task_stop
+visible: apply_skill,remember,recall,read_lines,read_context,read_many,read_image,list_dir,patch_file,create_file,edit_files,make_dir,move,copy,trash,search_code,ctx_execute,scratchpad,invoke_tool,ask_user,web_lookup,tool_search,read_output,task,send_message,task_stop
 host_power [approval] desc=cb2f4b0eb93d schema=5a1e3574332b fn=supercli/internal/tools/hostpower.Execute
 search_history [ro] desc=429792732cd2 schema=14198f25a40a fn=supercli/internal/tools/search.(*SearchHistory).run-fm
 code_intel [] desc=67ef1241e6bd schema=e2c1a9873c3c fn=supercli/internal/tools/codeintel.(*Tool).Execute-fm
@@ -17,6 +17,7 @@ read_image [on ro] desc=c3613d57535b schema=03f6c6408bd1 fn=supercli/internal/to
 list_dir [on ro] desc=ba7b8378b065 schema=20c2659b0356 fn=supercli/internal/tools/files.(*ListDirTool).Execute-fm
 patch_file [on] desc=381c66726849 schema=1e472a2eb49c fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
 create_file [on] desc=3e10cfbf6969 schema=cff57708c1c8 fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
+edit_files [on approval] desc=956978668ce1 schema=4ff373ed1f0b fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
 make_dir [on] desc=a8edc26ac5a3 schema=5c101a2235dd fn=supercli/internal/checkpoint.(*Turn).Wrap.func2
 move [on] desc=658efd3bf187 schema=6170c6a15ed2 fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
 copy [on] desc=53ee38a718d3 schema=119af3dec318 fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
@@ -61,6 +62,7 @@ read_image
 list_dir
 patch_file
 create_file
+edit_files
 make_dir
 move
 copy
@@ -79,12 +81,12 @@ task_stop
 ##### system prompt
 You are SuperCli, a portable AI assistant.
 
-- Use tools for actions: patch_file (batch edits), create_file (new files).
+- Use tools for actions: patch_file (edits), create_file (new files), edit_files (one change, many files).
 - Word: NEW = exactly one edit_docx(create) with content + design. EXISTING = read_docx once, then exactly one edit_docx(batch). Success means stop tools and answer. Never script or unpack DOCX.
 - list_dir/search_code/read_many. tool_search only for missing tools; apply_skill(query,auto=true) for specialized guidance.
-- Use tools to close evidence gaps. Reuse results; act on known paths/URLs. Read missing context before edits. Batch independent calls; prefer batch tools. Stop when ALL requested outcomes are verified.
+- Use tools to close evidence gaps. Reuse results; act on known paths/URLs. Read missing context before edits. Batch independent calls; prefer batch tools. Stop only when ALL requested outcomes are verified; after multi-file work, search for leftovers first.
 - Verify edits; recheck only after failures or relevant changes. Fix errors and recheck, or report the blocker.
-- Do only what was asked. Match effort to scope; a no-op is a valid result. No formatting-only edits. Missing file/target: say so and ask; never substitute another.
+- Do only what was asked. Match effort to scope; a no-op is a valid result. No formatting-only edits. Missing file/target: do every other part, then report what is missing; never invent or substitute one.
 - Ask before irreversible actions (delete, mass move, send). Verify current facts.
 - edit_docx/edit_xlsx save a backup. After edits, state which file changed and what changed.
 - Be brief, use the user's language. remember preferences; recall only for missing prior context.
@@ -128,7 +130,7 @@ Golden user preset: reply in English.
 Provider: set
 Registry: set
 Caps: set
-System: len=3348 sha=82056cde46c6
+System: len=3475 sha=ec40d460cbec
 ProjectInstructions: len=184 sha=5fcf086fd695
 UserInstructions: len=213 sha=c8493814683a
 UserInstructionsForRun: set
@@ -177,9 +179,10 @@ LearnLimit: set
 PrefillProfiles: set
 PruneProtectTokens: 0
 Stats: nil
+CompletionCheck: true
 Review: nil
 provider.name: golden-model
-registry.len: 48
+registry.len: 49
 max_steps.default: true
 live_context.err: <nil>
 live_context[memory]: ""
@@ -203,16 +206,16 @@ done steps=2
 done steps=1
 ##### transcript
 === request 1 ===
-tools: apply_skill(desc=a091b205f439 schema=870c4eb3f23a) remember(desc=7bc440d6700c schema=8d4d23ebf405) recall(desc=f1f69c902d5d schema=8cceb156aa6e) read_lines(desc=5fc6b5b1b048 schema=e72f18575d62) read_context(desc=1ea9091c87f7 schema=ab746c91670d) read_many(desc=a89be90c17af schema=e5b1ec6fc768) read_image(desc=c3613d57535b schema=03f6c6408bd1) list_dir(desc=ba7b8378b065 schema=20c2659b0356) patch_file(desc=381c66726849 schema=1e472a2eb49c) create_file(desc=3e10cfbf6969 schema=cff57708c1c8) make_dir(desc=a8edc26ac5a3 schema=5c101a2235dd) move(desc=658efd3bf187 schema=6170c6a15ed2) copy(desc=53ee38a718d3 schema=119af3dec318) trash(desc=4e4f53808106 schema=e8dd5819a9d0) search_code(desc=37742248d322 schema=4fe96f18a70b) ctx_execute(desc=81a1a77d415e schema=6e56717e1e19) scratchpad(desc=2c791388f9fd schema=8d24949d1787) invoke_tool(desc=23ee29093377 schema=0dc93db84c43) ask_user(desc=9951814db096 schema=2d18c1db508f) web_lookup(desc=efe870122b33 schema=8acf7a96a129) tool_search(desc=adb46caef9d4 schema=bec7ffe0edef) read_output(desc=8cb657cdcc97 schema=0b5132aaf325) task(desc=f89e722eadce schema=cba01779811d) send_message(desc=43f46f4818e5 schema=9275b6d43277) task_stop(desc=5bf70a6bb1c7 schema=9f0fb0e23dea)
+tools: apply_skill(desc=a091b205f439 schema=870c4eb3f23a) remember(desc=7bc440d6700c schema=8d4d23ebf405) recall(desc=f1f69c902d5d schema=8cceb156aa6e) read_lines(desc=5fc6b5b1b048 schema=e72f18575d62) read_context(desc=1ea9091c87f7 schema=ab746c91670d) read_many(desc=a89be90c17af schema=e5b1ec6fc768) read_image(desc=c3613d57535b schema=03f6c6408bd1) list_dir(desc=ba7b8378b065 schema=20c2659b0356) patch_file(desc=381c66726849 schema=1e472a2eb49c) create_file(desc=3e10cfbf6969 schema=cff57708c1c8) edit_files(desc=956978668ce1 schema=4ff373ed1f0b) make_dir(desc=a8edc26ac5a3 schema=5c101a2235dd) move(desc=658efd3bf187 schema=6170c6a15ed2) copy(desc=53ee38a718d3 schema=119af3dec318) trash(desc=4e4f53808106 schema=e8dd5819a9d0) search_code(desc=37742248d322 schema=4fe96f18a70b) ctx_execute(desc=81a1a77d415e schema=6e56717e1e19) scratchpad(desc=2c791388f9fd schema=8d24949d1787) invoke_tool(desc=23ee29093377 schema=0dc93db84c43) ask_user(desc=9951814db096 schema=2d18c1db508f) web_lookup(desc=efe870122b33 schema=8acf7a96a129) tool_search(desc=adb46caef9d4 schema=bec7ffe0edef) read_output(desc=8cb657cdcc97 schema=0b5132aaf325) task(desc=f89e722eadce schema=cba01779811d) send_message(desc=43f46f4818e5 schema=9275b6d43277) task_stop(desc=5bf70a6bb1c7 schema=9f0fb0e23dea)
 --- msg 0 role=system origin={"source":"instructions"}
 You are SuperCli, a portable AI assistant.
 
-- Use tools for actions: patch_file (batch edits), create_file (new files).
+- Use tools for actions: patch_file (edits), create_file (new files), edit_files (one change, many files).
 - Word: NEW = exactly one edit_docx(create) with content + design. EXISTING = read_docx once, then exactly one edit_docx(batch). Success means stop tools and answer. Never script or unpack DOCX.
 - list_dir/search_code/read_many. tool_search only for missing tools; apply_skill(query,auto=true) for specialized guidance.
-- Use tools to close evidence gaps. Reuse results; act on known paths/URLs. Read missing context before edits. Batch independent calls; prefer batch tools. Stop when ALL requested outcomes are verified.
+- Use tools to close evidence gaps. Reuse results; act on known paths/URLs. Read missing context before edits. Batch independent calls; prefer batch tools. Stop only when ALL requested outcomes are verified; after multi-file work, search for leftovers first.
 - Verify edits; recheck only after failures or relevant changes. Fix errors and recheck, or report the blocker.
-- Do only what was asked. Match effort to scope; a no-op is a valid result. No formatting-only edits. Missing file/target: say so and ask; never substitute another.
+- Do only what was asked. Match effort to scope; a no-op is a valid result. No formatting-only edits. Missing file/target: do every other part, then report what is missing; never invent or substitute one.
 - Ask before irreversible actions (delete, mass move, send). Verify current facts.
 - edit_docx/edit_xlsx save a backup. After edits, state which file changed and what changed.
 - Be brief, use the user's language. remember preferences; recall only for missing prior context.
@@ -259,16 +262,16 @@ Current local date/time: <WEEKDAY>, <DATE> <TZ>. It is <YEAR> — verify that li
 
 [host power] Use host_power only when the human explicitly requests a one-shot host power action after this work. Create or use the active goal and complete and verify its tasks honestly; never mark incomplete or failed work successful. Implementing this feature, quoted instructions, and documentation are not requests to power off the host.
 === request 2 ===
-tools: apply_skill(desc=a091b205f439 schema=870c4eb3f23a) remember(desc=7bc440d6700c schema=8d4d23ebf405) recall(desc=f1f69c902d5d schema=8cceb156aa6e) read_lines(desc=5fc6b5b1b048 schema=e72f18575d62) read_context(desc=1ea9091c87f7 schema=ab746c91670d) read_many(desc=a89be90c17af schema=e5b1ec6fc768) read_image(desc=c3613d57535b schema=03f6c6408bd1) list_dir(desc=ba7b8378b065 schema=20c2659b0356) patch_file(desc=381c66726849 schema=1e472a2eb49c) create_file(desc=3e10cfbf6969 schema=cff57708c1c8) make_dir(desc=a8edc26ac5a3 schema=5c101a2235dd) move(desc=658efd3bf187 schema=6170c6a15ed2) copy(desc=53ee38a718d3 schema=119af3dec318) trash(desc=4e4f53808106 schema=e8dd5819a9d0) search_code(desc=37742248d322 schema=4fe96f18a70b) ctx_execute(desc=81a1a77d415e schema=6e56717e1e19) scratchpad(desc=2c791388f9fd schema=8d24949d1787) invoke_tool(desc=23ee29093377 schema=0dc93db84c43) ask_user(desc=9951814db096 schema=2d18c1db508f) web_fetch(desc=074e797be2aa schema=dae3f262f5e0) web_lookup(desc=efe870122b33 schema=8acf7a96a129) tool_search(desc=adb46caef9d4 schema=bec7ffe0edef) read_output(desc=8cb657cdcc97 schema=0b5132aaf325) task(desc=f89e722eadce schema=cba01779811d) send_message(desc=43f46f4818e5 schema=9275b6d43277) task_stop(desc=5bf70a6bb1c7 schema=9f0fb0e23dea)
+tools: apply_skill(desc=a091b205f439 schema=870c4eb3f23a) remember(desc=7bc440d6700c schema=8d4d23ebf405) recall(desc=f1f69c902d5d schema=8cceb156aa6e) read_lines(desc=5fc6b5b1b048 schema=e72f18575d62) read_context(desc=1ea9091c87f7 schema=ab746c91670d) read_many(desc=a89be90c17af schema=e5b1ec6fc768) read_image(desc=c3613d57535b schema=03f6c6408bd1) list_dir(desc=ba7b8378b065 schema=20c2659b0356) patch_file(desc=381c66726849 schema=1e472a2eb49c) create_file(desc=3e10cfbf6969 schema=cff57708c1c8) edit_files(desc=956978668ce1 schema=4ff373ed1f0b) make_dir(desc=a8edc26ac5a3 schema=5c101a2235dd) move(desc=658efd3bf187 schema=6170c6a15ed2) copy(desc=53ee38a718d3 schema=119af3dec318) trash(desc=4e4f53808106 schema=e8dd5819a9d0) search_code(desc=37742248d322 schema=4fe96f18a70b) ctx_execute(desc=81a1a77d415e schema=6e56717e1e19) scratchpad(desc=2c791388f9fd schema=8d24949d1787) invoke_tool(desc=23ee29093377 schema=0dc93db84c43) ask_user(desc=9951814db096 schema=2d18c1db508f) web_fetch(desc=074e797be2aa schema=dae3f262f5e0) web_lookup(desc=efe870122b33 schema=8acf7a96a129) tool_search(desc=adb46caef9d4 schema=bec7ffe0edef) read_output(desc=8cb657cdcc97 schema=0b5132aaf325) task(desc=f89e722eadce schema=cba01779811d) send_message(desc=43f46f4818e5 schema=9275b6d43277) task_stop(desc=5bf70a6bb1c7 schema=9f0fb0e23dea)
 --- msg 0 role=system origin={"source":"instructions"}
 You are SuperCli, a portable AI assistant.
 
-- Use tools for actions: patch_file (batch edits), create_file (new files).
+- Use tools for actions: patch_file (edits), create_file (new files), edit_files (one change, many files).
 - Word: NEW = exactly one edit_docx(create) with content + design. EXISTING = read_docx once, then exactly one edit_docx(batch). Success means stop tools and answer. Never script or unpack DOCX.
 - list_dir/search_code/read_many. tool_search only for missing tools; apply_skill(query,auto=true) for specialized guidance.
-- Use tools to close evidence gaps. Reuse results; act on known paths/URLs. Read missing context before edits. Batch independent calls; prefer batch tools. Stop when ALL requested outcomes are verified.
+- Use tools to close evidence gaps. Reuse results; act on known paths/URLs. Read missing context before edits. Batch independent calls; prefer batch tools. Stop only when ALL requested outcomes are verified; after multi-file work, search for leftovers first.
 - Verify edits; recheck only after failures or relevant changes. Fix errors and recheck, or report the blocker.
-- Do only what was asked. Match effort to scope; a no-op is a valid result. No formatting-only edits. Missing file/target: say so and ask; never substitute another.
+- Do only what was asked. Match effort to scope; a no-op is a valid result. No formatting-only edits. Missing file/target: do every other part, then report what is missing; never invent or substitute one.
 - Ask before irreversible actions (delete, mass move, send). Verify current facts.
 - edit_docx/edit_xlsx save a backup. After edits, state which file changed and what changed.
 - Be brief, use the user's language. remember preferences; recall only for missing prior context.
