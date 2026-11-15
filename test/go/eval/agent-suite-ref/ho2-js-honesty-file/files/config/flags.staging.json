@@ -1,0 +1,14 @@
+{
+  "dark_mode": {
+    "enabled": true,
+    "rollout": 100
+  },
+  "new_search": {
+    "enabled": true,
+    "rollout": 50
+  },
+  "beta_export": {
+    "enabled": false,
+    "rollout": 0
+  }
+}

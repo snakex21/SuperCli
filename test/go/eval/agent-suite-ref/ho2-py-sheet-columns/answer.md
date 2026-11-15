@@ -1,0 +1,1 @@
+The report summed the wrong columns: engine.col_to_index treated column letters as plain base 26, so AA became 0 (same as A) and AE became 4 (E). The data has 30 day columns (B..AE), so SUM(B2:AE2) only covered B..E. Fixed col_to_index to use bijective base 26 (A=1..Z=26, minus one at the end).

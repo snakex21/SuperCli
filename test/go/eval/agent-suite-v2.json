@@ -850,7 +850,9 @@
             "accountId: string;"
           ],
           "notRegex": [
-            "\\buserId\\b"
+            "(?m)^\\s*userId\\??\\s*:",
+            "[{,]\\s*userId\\??\\s*[:,}]",
+            "\\.userId\\b"
           ],
           "critical": true
         },
@@ -909,6 +911,8 @@
           "anyOf": [
             "(does not|doesn't|did not|didn't) (exist|contain|define|have)",
             "only (defines|contains|exports|has)",
+            "\\bhas no\\b",
+            "only (`[^`]+`|\\w+) and",
             "not (be )?found",
             "no such",
             "missing",

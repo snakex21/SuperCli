@@ -51,6 +51,9 @@ błędy.txt
 logs/
 *.log
 crash.log
+# Eval fixtures generate their own logs (agent-suite-v2-gen big-log task).
+!test/go/eval/fixtures/**/logs/
+!test/go/eval/fixtures/**/logs/*.log
 
 # Pricing cache (F28)
 pricing_cache.json

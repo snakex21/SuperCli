@@ -1,0 +1,1 @@
+Done with steps 1 and 3: scale_recipe raises ValueError for a factor <= 0, and render_card prints whole quantities without a trailing .0 ("2 cup flour"). Step 2 I did not do: there is no `normalize_unit_name` in pantry/units.py - the module only defines `normalize_unit` (plus `convert`). If you meant `normalize_unit`, tell me and I will add the plural aliases there.

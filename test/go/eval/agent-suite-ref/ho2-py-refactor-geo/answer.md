@@ -1,0 +1,1 @@
+Added fleet/geo.py with haversine_km and switched trips, geofence (which keeps its (lon, lat) order and metres), dispatch, report (lat/lng dict keys) and eta (it imported the private trips helper) to it. The four private copies are gone; behaviour is unchanged and the tests pass.
