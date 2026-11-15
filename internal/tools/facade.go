@@ -112,6 +112,7 @@ type (
 	ReadLines   = files.ReadLines
 	ReadMany    = files.ReadMany
 	Trash       = files.Trash
+	EditFiles   = files.EditFiles
 	WriteFile   = files.WriteFile
 )
 
@@ -126,6 +127,7 @@ var (
 	NewReadLines   = files.NewReadLines
 	NewReadMany    = files.NewReadMany
 	NewTrash       = files.NewTrash
+	NewEditFiles   = files.NewEditFiles
 	NewWriteFile   = files.NewWriteFile
 )
 

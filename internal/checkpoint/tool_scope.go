@@ -229,6 +229,14 @@ func (m *Manager) toolScopeDetailed(ctx context.Context, name string, args json.
 			return nil, false, fmt.Errorf("checkpoint: %s requires a path", name)
 		}
 		paths = []string{a.Path}
+	case "edit_files":
+		// One edit across a folder: the baseline covers that folder (the
+		// project folder when path is omitted).
+		root := a.Path
+		if strings.TrimSpace(root) == "" {
+			root = "."
+		}
+		paths = []string{root}
 	case "edit_docx", "edit_xlsx":
 		if strings.TrimSpace(a.Path) == "" {
 			return nil, false, fmt.Errorf("checkpoint: %s requires a path", name)

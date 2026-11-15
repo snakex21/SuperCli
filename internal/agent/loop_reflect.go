@@ -209,7 +209,7 @@ func toolKind(name string) string {
 		"invoke_tool", "recall", "code_intel", "process_session", "apply_skill",
 		"scratchpad", "mcp_bridge", "search_history":
 		return "discovery"
-	case "patch_file", "create_file", "write_file", "make_dir", "move", "copy", "trash",
+	case "patch_file", "create_file", "write_file", "edit_files", "make_dir", "move", "copy", "trash",
 		"edit_docx", "edit_xlsx", "web_download":
 		return "mutation"
 	case "ctx_execute":

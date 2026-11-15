@@ -70,6 +70,7 @@ var TUILate = []Entry{
 	{Tool: "scratchpad"},
 	{Tool: "patch_file", Wrap: WrapMutation},
 	{Tool: "create_file", Wrap: WrapMutation},
+	{Tool: "edit_files", Wrap: WrapMutation},
 	{Tool: "write_file", Wrap: WrapMutation},
 	{Tool: "make_dir", Wrap: WrapMutation},
 	{Tool: "move", Wrap: WrapMutation},
@@ -97,6 +98,8 @@ var Batch = []Entry{
 	{Tool: "list_dir", Wrap: WrapMutation, AlwaysOn: true},
 	{Tool: "patch_file", Wrap: WrapMutation, AlwaysOn: true},
 	{Tool: "create_file", Wrap: WrapMutation, AlwaysOn: true},
+	// One edit across many files (rename, header); see edit_files.
+	{Tool: "edit_files", Wrap: WrapMutation, AlwaysOn: true},
 	{Tool: "write_file", Wrap: WrapMutation, AlwaysOn: true},
 	{Tool: "make_dir", Wrap: WrapMutation, AlwaysOn: true},
 	{Tool: "move", Wrap: WrapMutation, AlwaysOn: true},
@@ -140,6 +143,7 @@ var Web = []Entry{
 	{Tool: "list_dir", Wrap: WrapMutation, AlwaysOn: true},
 	{Tool: "patch_file", Wrap: WrapMutation, AlwaysOn: true},
 	{Tool: "create_file", Wrap: WrapMutation, AlwaysOn: true},
+	{Tool: "edit_files", Wrap: WrapMutation, AlwaysOn: true},
 	{Tool: "make_dir", Wrap: WrapMutation, AlwaysOn: true},
 	{Tool: "move", Wrap: WrapMutation, AlwaysOn: true},
 	{Tool: "copy", Wrap: WrapMutation, AlwaysOn: true},
@@ -209,7 +213,7 @@ func AlwaysOnProfile(coordinator, thinTools bool) []string {
 		// core for attachment/vision turns.
 		return append(out,
 			"read_lines", "read_many", "read_image", "search_code",
-			"ctx_execute", "ask_user", "patch_file", "create_file",
+			"ctx_execute", "ask_user", "patch_file", "create_file", "edit_files",
 			"list_dir", "goal", "tool_search", "invoke_tool")
 	default:
 		return append(out, "read_image", "ask_user", "tool_search", "invoke_tool", "goal", "ctx_execute")

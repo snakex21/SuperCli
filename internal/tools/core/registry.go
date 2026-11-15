@@ -69,6 +69,10 @@ type Result struct {
 	// The loop retains it only after successful verification and only within
 	// the current human request. ReplaySuccess must revalidate its evidence.
 	Operation *VerifiedOperation `json:"-"`
+	// ChangedPaths lists the files a multi-file mutation actually wrote
+	// (absolute paths). Trusted runtime metadata for wrappers such as the
+	// code-intel diagnostics hook; never sent to the model.
+	ChangedPaths []string `json:"-"`
 }
 
 // VerifiedOperation describes one completed effect, not completion of the

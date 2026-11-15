@@ -68,7 +68,7 @@ func BuiltinSubAgents() []SubAgent {
 			System:      codeSystem,
 			AllowedTools: allowedTools(
 				"search_code", "read_image", "read_lines", "read_many", "read_context", "list_dir",
-				"patch_file", "create_file",
+				"patch_file", "create_file", "edit_files",
 				"write_file", "make_dir", "move", "copy", "trash", "read_docx", "read_xlsx", "read_pdf",
 				"read_zip", "edit_docx", "edit_xlsx", "ctx_execute", "process_session", "scratchpad",
 			),

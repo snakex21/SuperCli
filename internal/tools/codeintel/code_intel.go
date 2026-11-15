@@ -195,7 +195,12 @@ var mutationTools = map[string][]string{
 	"write_file":  {"path"},
 	"move":        {"dst", "src"},
 	"copy":        {"dst"},
+	// edit_files names no single file; its result lists ChangedPaths.
+	"edit_files": {},
 }
+
+// maxChangedPathChecks bounds the warm-server checks after a multi-file edit.
+const maxChangedPathChecks = 20
 
 // WrapMutation appends diagnostics after a successful source-file mutation,
 // but only if that language server was already running. The wrapper is carried
@@ -220,6 +225,18 @@ func (t *Tool) WrapMutation(spec core.Tool) core.Tool {
 			var path string
 			if json.Unmarshal(values[field], &path) != nil || strings.TrimSpace(path) == "" {
 				continue
+			}
+			if diagnostics := t.CheckIfWarm(ctx, path); diagnostics != "" {
+				if result.Text != "" {
+					result.Text += "\n\n"
+				}
+				result.Text += "[LSP diagnostics after edit]\n" + diagnostics
+				return result, nil
+			}
+		}
+		for i, path := range result.ChangedPaths {
+			if i == maxChangedPathChecks {
+				break
 			}
 			if diagnostics := t.CheckIfWarm(ctx, path); diagnostics != "" {
 				if result.Text != "" {

@@ -135,6 +135,7 @@ var catalog = map[string]builder{
 	"scratchpad":      one(func(d *Deps) tools.Tool { return tools.NewScratchpad(d.Home).Spec() }),
 	"patch_file":      one(func(d *Deps) tools.Tool { return tools.NewPatchFile(d.Home).Spec() }),
 	"create_file":     one(func(d *Deps) tools.Tool { return tools.NewCreateFile(d.Home).Spec() }),
+	"edit_files":      one(func(d *Deps) tools.Tool { return tools.NewEditFiles(d.Home).Spec() }),
 	"write_file":      one(func(d *Deps) tools.Tool { return tools.NewWriteFile(d.Home).Spec() }),
 	"make_dir":        one(func(d *Deps) tools.Tool { return tools.NewMakeDir(d.Home).Spec() }),
 	"move":            one(func(d *Deps) tools.Tool { return tools.NewMove(d.Home).Spec() }),
@@ -322,7 +323,7 @@ func ChildToolset(root string) *tools.Registry {
 var childSet = alwaysOn(
 	"read_image", "search_code", "read_zip", "read_docx", "read_xlsx", "read_pdf",
 	"edit_docx", "edit_xlsx", "list_dir", "read_lines", "read_context", "read_many",
-	"scratchpad", "patch_file", "create_file", "write_file", "make_dir", "move",
+	"scratchpad", "patch_file", "create_file", "edit_files", "write_file", "make_dir", "move",
 	"copy", "trash", "ctx_execute",
 )
 

@@ -350,7 +350,7 @@ func (t *Turn) Wrap(spec tools.Tool) tools.Tool {
 
 func mutatingTool(name string) bool {
 	switch name {
-	case "write_file", "patch_file", "create_file",
+	case "write_file", "patch_file", "create_file", "edit_files",
 		"make_dir", "move", "copy", "trash", "ctx_execute", "edit_docx", "edit_xlsx", "web_download", "read_zip":
 		return true
 	default:
