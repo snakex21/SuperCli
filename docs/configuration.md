@@ -159,8 +159,12 @@ Gateway notes:
   notice and remembers it for the session.
 - **Logfare** (`https://logfare.ai/v1`, a custom OpenAI-compatible provider;
   `logfare/auto` routes to an available model): account limits are fixed UTC
-  windows (regular accounts 40/min, 1,000/h, 5,000/day, 6 concurrent; new
-  accounts 10/min and 2 concurrent for the first 24 h). Its 429 carries
+  windows (documented: regular accounts 40/min, 1,000/h, 5,000/day, 6
+  concurrent; new accounts 10/min and 2 concurrent for the first 24 h). The
+  live limit of your account is in every response's
+  `x-ratelimit-limit-requests` / `x-ratelimit-remaining-requests` /
+  `x-ratelimit-reset-requests` headers (a live test in November 2026 showed
+  80 per minute). Its 429 carries
   `Retry-After` and `error.retry_after`; SuperCli honours both, and a daily or
   hourly window (Retry-After over 60 s) is shown at once instead of retried.
   Clients that keep retrying through refusals are paused by Logfare, so do not
@@ -170,7 +174,11 @@ Gateway notes:
   retried with a per-minute backoff (12–25 s, 25–50 s, then 30–60 s), and with
   `logfare/auto` a retry can land on another model. The model list only offers
   entries that serve chat and reads each model's `chat_capabilities` (tools,
-  image input). Suggested: `requests_per_minute = 30` on that entry
+  image input). A model listed with `tools: false` does not reject tools: it
+  answers without calling them (and may write unrelated text), so SuperCli
+  reads the endpoint's model list once per run and sends such a model no
+  tools, with a notice; use `logfare/auto` or a tools-capable model for agent
+  work. Suggested: `requests_per_minute = 30` on that entry
   (`10` on a new account), `max_retries = 8` (or `-1` for unattended runs).
 
 All three are also in TUI `/settings` (Context category) and in the GUI

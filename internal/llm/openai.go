@@ -263,6 +263,13 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 	if len(tools) > 0 && p.toolsKnownUnsupported() {
 		tools = nil
 	}
+	// A model the endpoint's catalog lists without tool support ignores the
+	// tools field instead of rejecting it (openai_tools_catalog.go).
+	catalogNoTools := false
+	if len(tools) > 0 && catalogListsWithoutTools(ctx, p.cfg.BaseURL, p.cfg.APIKey, p.cfg.Model) {
+		p.noteToolsUnsupported()
+		tools, catalogNoTools = nil, true
+	}
 	reqBody, err := buildOpenAIRequestWithReasoningKey(reqModel, p.reasoningKey(), msgs, tools, visionAttempt, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens, p.sampling, ctx)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
@@ -272,6 +279,13 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 	out := make(chan Delta, 16)
 	go func() {
 		defer close(out)
+		if catalogNoTools {
+			select {
+			case out <- Delta{Notice: toolsUnsupportedNotice(p.cfg.Model)}:
+			case <-ctx.Done():
+				return
+			}
+		}
 		defer func() {
 			if r := recover(); r != nil {
 				select {

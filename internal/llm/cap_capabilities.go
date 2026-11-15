@@ -27,6 +27,9 @@ type ModelInfo struct {
 	// provider that did not publish modality metadata at all.
 	VisionKnown    bool `json:"vision_known,omitempty"`
 	ToolUse        bool `json:"tool_use"`
+	// ToolUseKnown marks ToolUse as published by the provider catalog
+	// (chat_capabilities.tools), so false means "cannot call tools".
+	ToolUseKnown bool `json:"tool_use_known,omitempty"`
 	Stream         bool `json:"stream"`
 	Reasoning      bool `json:"reasoning"`
 	ReasoningKnown bool `json:"reasoning_known,omitempty"`

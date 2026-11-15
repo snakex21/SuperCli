@@ -69,7 +69,7 @@ func applyChatCapabilities(model *ModelInfo, wire providerModelWire) {
 		return
 	}
 	if caps.Tools != nil {
-		model.ToolUse = *caps.Tools
+		model.ToolUse, model.ToolUseKnown = *caps.Tools, true
 	}
 	if len(caps.InputModalities) > 0 {
 		model.Vision, model.VisionKnown = containsFold(caps.InputModalities, "image"), true
