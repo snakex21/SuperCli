@@ -160,4 +160,6 @@ function applyI18n() {
   $$("[data-i18n-refresh]").forEach(function (node) {
     if (typeof node._languageRefresh === "function") node._languageRefresh();
   });
+  // Tab labels change width with the language; refresh the scroll fades.
+  if (typeof updateSideTabFades === "function") updateSideTabFades();
 }

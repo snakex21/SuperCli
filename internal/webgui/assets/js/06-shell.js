@@ -75,7 +75,25 @@ function activateSideTab(button) {
     pane.classList.toggle("active", selected);
     pane.hidden = !selected;
   });
+  // A scrolled tab row (narrow panel, long labels) keeps the active tab visible.
+  var row = $("#side-tabs");
+  if (button.scrollIntoView && row.scrollWidth > row.clientWidth) {
+    button.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+  updateSideTabFades();
 }
+
+// Faded edges show that the tab row scrolls when its labels do not fit.
+function updateSideTabFades() {
+  var tabs = $("#side-tabs");
+  if (!tabs) return;
+  var max = tabs.scrollWidth - tabs.clientWidth;
+  tabs.classList.toggle("fade-l", max > 1 && tabs.scrollLeft > 1);
+  tabs.classList.toggle("fade-r", max > 1 && tabs.scrollLeft < max - 1);
+}
+$("#side-tabs").addEventListener("scroll", updateSideTabFades, { passive: true });
+window.addEventListener("resize", updateSideTabFades);
+if (window.ResizeObserver) new ResizeObserver(updateSideTabFades).observe($("#side-tabs"));
 (function initSideTabs() {
   var tabs = $("#side-tabs");
   tabs.setAttribute("role", "tablist");

@@ -277,14 +277,27 @@ a:hover { text-decoration: underline; }
 .shell.sidebar-hidden .sidebar { display: none; }
 .sidebar-backdrop { display: none; }
 .sidebar-head { display: flex; flex: none; border-bottom: 1px solid var(--line); }
+/* Tab labels never overlap in any locale: each tab is at least as wide as its
+   label (no shrinking below the text) and shares the spare width; when the
+   labels do not fit (long words, narrow panel) the row scrolls horizontally
+   with faded edges instead of letting labels run into each other. */
 .side-tabs {
   display: flex; flex: 1; min-width: 0;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  /* The row overlaps the head's bottom border so the active underline, which
+     the scroll container would otherwise clip, sits on that line. */
+  margin-bottom: -1px;
 }
+.side-tabs::-webkit-scrollbar { display: none; }
+.side-tabs.fade-r { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent); }
+.side-tabs.fade-l { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 22px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 22px), transparent); }
+.side-tabs.fade-l.fade-r { -webkit-mask-image: linear-gradient(to right, transparent, #000 22px, #000 calc(100% - 22px), transparent); mask-image: linear-gradient(to right, transparent, #000 22px, #000 calc(100% - 22px), transparent); }
 .side-tabs button {
-  flex: 1; padding: 9px 0 8px;
-  min-width: 0; font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+  flex: 1 0 auto; padding: 9px 7px 8px;
+  white-space: nowrap; font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase;
   color: var(--faint);
-  border-bottom: 1px solid transparent; margin-bottom: -1px;
+  border-bottom: 1px solid transparent;
 }
 .side-tabs button:hover { color: var(--muted); }
 .side-tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
