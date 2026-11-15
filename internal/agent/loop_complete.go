@@ -27,7 +27,7 @@ func (l *Loop) completeOnce(ctx context.Context, toolRequest preparedToolRequest
 	// tool result. Never send a known oversized request (including retries),
 	// and never summarize the active user turn just to make it fit.
 	if estimate := l.nextRequestTokenEstimate(); requestEstimate > window.Tokens || estimate.Effective > window.Tokens {
-		return "", nil, nil, fmt.Errorf("agent: request exceeds context window after compaction (%d tokens, window %d); active user turn is preserved. %s", max(requestEstimate, estimate.Effective), window.Tokens, contextWindowRemedy)
+		return "", nil, nil, &contextStillTooLargeError{tokens: max(requestEstimate, estimate.Effective), window: window.Tokens}
 	}
 	hardThreshold := autoCompactThreshold(window.Tokens)
 	effectiveThreshold, thresholdSource := l.effectiveCompactThreshold(hardThreshold, window.Source)

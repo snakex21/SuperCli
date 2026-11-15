@@ -141,7 +141,17 @@ func (l *Loop) runStep(
 			_, truncatedToolCalls = err.(*truncatedToolResponseError)
 		}
 	}
+	// Still too large after the regular prune/compaction: one emergency
+	// prune of every older tool result, then one retry.
+	if err != nil && isContextStillTooLarge(err) && ctx.Err() == nil && l.emergencyPrune(ctx, out) > 0 {
+		text, toolCalls, usage, err = l.completeOnce(llm.WithCallReason(callCtx, llm.ReasonContextRetry), toolRequest, out)
+		_, truncatedToolCalls = err.(*truncatedToolResponseError)
+	}
 	usageErr := l.recordStepUsage(ctx, totalUsage, usage)
+	if err != nil && !truncatedToolCalls && isContextStillTooLarge(err) {
+		// Never end on an empty reply: say what was done and why it stopped.
+		out <- MessageEvent{Text: l.contextOverflowAnswer(err)}
+	}
 	if err != nil && !truncatedToolCalls {
 		l.retainInterruptedReply(text)
 		l.statsEndStep(stepStart)
