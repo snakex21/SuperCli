@@ -55,6 +55,18 @@ const (
 	// The verdict can only flip when the context actually grows, so
 	// growth is the only thing worth waking up for.
 	pruneRecheckGrowFrac = 0.1
+	// pruneLowWaterFrac: once a prune is accepted inside a long single turn
+	// (at least pruneDeepenMinResults tool results since the user spoke), it
+	// goes on into that turn's protected tail (oldest first, never the
+	// current step nor the pruneDeepenKeep newest earlier results) until the
+	// request is back under this share of the working window. Every prune rewrites the cache from its first
+	// victim; stopping right under the trigger made long single turns on a
+	// 16k window prune one ~2.4k result every couple of steps (1.0.26:
+	// long-multi-fix up to 5 prunes, long-inventory up to 6). One deeper
+	// batch buys more growth before the next cache rewrite.
+	pruneLowWaterFrac      = 0.45
+	pruneDeepenMinResults  = 6
+	pruneDeepenKeep        = 2
 )
 
 // defaultPruneProtectTokens scales the verbatim tool-result tail with the
@@ -204,6 +216,10 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 	acc := 0
 	reclaimable := 0
 	var victims []pruneVictim
+	// tail holds the active turn's protected-tail results older than the
+	// current step, newest first: the reserve a deeper (low-water) prune
+	// may draw on. Earlier user turns keep their protected results.
+	var tail []pruneTailResult
 	var archive pruneArchive
 	for viewIndex := len(projected) - 1; viewIndex >= 0; viewIndex-- {
 		m := projected[viewIndex]
@@ -228,6 +244,9 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 		}
 		if acc < protect {
 			acc += t
+			if active {
+				tail = append(tail, pruneTailResult{index: i, tokens: t, content: m.Content})
+			}
 			continue
 		}
 		marker, markerTokens, ok := l.pruneCandidate(i, t)
@@ -277,6 +296,9 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 		l.pruneRefusedEst = est // remember: don't re-scan until it grows
 		return 0                // not worth invalidating the KV cache
 	}
+	if !latencyOnly && activeResults(projected, lastUser) >= pruneDeepenMinResults {
+		victims, reclaimable = l.deepenPrune(victims, reclaimable, tail, est, int(pruneLowWaterFrac*float64(workingWindow)), &archive)
+	}
 	// Shorter recent results can free room for other archived results to reenter
 	// the request. Price that complete projection before paying for retention or
 	// rewriting any cacheable prefix; per-result subtraction can overstate gain.
@@ -320,4 +342,48 @@ func (l *Loop) maybePruneToolResults(ctx context.Context, out chan<- Event) int 
 		}
 	}
 	return reclaimable
+}
+
+// pruneTailResult is one protected-tail tool result considered by deepenPrune.
+type pruneTailResult struct {
+	index, tokens int
+	content       string
+}
+
+// deepenPrune extends an ACCEPTED prune into the active turn's protected
+// tail, oldest result first, until the estimate after the prune is at most
+// lowWater. The pruneDeepenKeep newest tail results (the last completed
+// steps' evidence) and the current step are never taken. It only adds victims to a batch that rewrites the
+// cache anyway, so it never causes a prune by itself.
+func (l *Loop) deepenPrune(victims []pruneVictim, reclaimable int, tail []pruneTailResult, est, lowWater int, archive *pruneArchive) ([]pruneVictim, int) {
+	for k := len(tail) - 1; k >= pruneDeepenKeep && est-reclaimable > lowWater; k-- {
+		c := tail[k]
+		marker, markerTokens, ok := l.pruneCandidate(c.index, c.tokens)
+		if !ok {
+			continue
+		}
+		victim := pruneVictim{index: c.index, marker: marker}
+		if l.registry != nil {
+			if markerTokens, ok = archive.plan(&victim, c.content, c.tokens, markerTokens); !ok {
+				continue
+			}
+		}
+		victims = append(victims, victim)
+		reclaimable += c.tokens - markerTokens
+	}
+	return victims, reclaimable
+}
+
+// activeResults counts the tool results after the last user turn.
+func activeResults(msgs []llm.Message, lastUser int) int {
+	if lastUser < 0 {
+		return 0
+	}
+	n := 0
+	for _, m := range msgs[lastUser+1:] {
+		if m.Role == llm.RoleTool {
+			n++
+		}
+	}
+	return n
 }
