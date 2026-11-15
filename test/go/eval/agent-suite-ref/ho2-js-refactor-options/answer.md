@@ -1,0 +1,1 @@
+createClient now takes a single options object { host, port, timeoutMs, retries, tls } with the same defaults (0 stays 0 for timeoutMs and retries). Updated pool.js, every service, scripts/healthcheck.js, the tests and the README; createClientPool keeps its positional signature.

@@ -1,0 +1,1 @@
+Root cause: meter.normalizeModel kept only letters, so "EM-6" normalised to "EM", which is not in the registry; Digits fell back to 5 and the 6-digit meter's wrap-around was computed with modulus 100000, so readings.Deltas reported a negative delta and billing failed. normalizeModel now keeps digits too. go test ./... passes.

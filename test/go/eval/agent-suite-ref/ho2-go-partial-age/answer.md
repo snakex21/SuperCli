@@ -1,0 +1,1 @@
+Added `prune --older-than AGE`. It reuses parseAge, so it takes the same format as `list --max-age` (36h, 10d, 2w, or a bare number of days), and age is measured from the timestamp in the snapshot name, like list does. --keep still protects the newest N snapshots and --dry-run still only prints. Added cli/older_test.go and documented the flag in the README.

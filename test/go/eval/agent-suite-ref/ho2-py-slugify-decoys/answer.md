@@ -1,0 +1,1 @@
+slugify now transliterates Ł/ł to l before folding accents, so "Łódź nocą" becomes "lodz-noca". The shared _ascii_fold helper is unchanged, so slugify_filename, the legacy permalink slugs and blogkit.compat.v1.slugify produce exactly what they did before.

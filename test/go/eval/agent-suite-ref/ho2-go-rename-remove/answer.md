@@ -1,0 +1,1 @@
+Renamed lru.Store.Evict to Remove (returns whether the key was present) and updated its callers in session/manager.go, admin/purge.go and cmd/slabctl, the lru test and docs/API.md. PurgeKeys now counts only keys that were actually removed. ttl.Cache.Evict, EvictAll and OnEvict are unchanged.
