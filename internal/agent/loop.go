@@ -439,6 +439,9 @@ type Loop struct {
 	// A small bounded retry handles providers that need one extra turn without
 	// ever allowing an empty post-tool response to masquerade as Done.
 	emptyReplyNudges int
+	// runawayRetries counts per-Run re-requests after a tool call whose
+	// arguments degenerated into whitespace (loop_runaway_retry.go).
+	runawayRetries int
 	// completion is the per-Run completion-check state; completionCheck
 	// is LoopConfig.CompletionCheck.
 	completion      completionCheckState
@@ -1048,6 +1051,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	l.verifyTrail.reset()
 	l.checkCycles.reset()
 	l.emptyReplyNudges = 0
+	l.runawayRetries = 0
 	l.resetPostReview(prompt)
 	l.resetCompletionCheck()
 	l.completion.mu.Lock()

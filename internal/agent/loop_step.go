@@ -141,6 +141,12 @@ func (l *Loop) runStep(
 			_, truncatedToolCalls = err.(*truncatedToolResponseError)
 		}
 	}
+	// A tool call whose arguments degenerated into whitespace was cancelled
+	// before it ran: ask for it again (bounded per Run) instead of ending.
+	for err != nil && l.retryRunawayToolCall(ctx, err, out) {
+		text, toolCalls, usage, err = l.completeOnce(llm.WithCallReason(callCtx, llm.ReasonTransportRetry), toolRequest, out)
+		_, truncatedToolCalls = err.(*truncatedToolResponseError)
+	}
 	// Still too large after the regular prune/compaction: one emergency
 	// prune of every older tool result, then one retry.
 	if err != nil && isContextStillTooLarge(err) && ctx.Err() == nil && l.emergencyPrune(ctx, out) > 0 {

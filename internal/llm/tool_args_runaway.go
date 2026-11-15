@@ -41,5 +41,17 @@ func checkRunawayToolArguments(name string, args *strings.Builder, prevLen int) 
 			return nil
 		}
 	}
-	return fmt.Errorf("stopped a runaway tool call: the model streamed %d KB of only whitespace into %q arguments; the request was cancelled to stop paying for more output", n>>10, name)
+	return &RunawayToolCallError{Tool: name, KB: n >> 10}
+}
+
+// RunawayToolCallError reports a tool call whose streamed arguments
+// degenerated into whitespace; the request was cancelled and the call was
+// never executed, so the agent may safely ask for it again.
+type RunawayToolCallError struct {
+	Tool string
+	KB   int
+}
+
+func (e *RunawayToolCallError) Error() string {
+	return fmt.Sprintf("stopped a runaway tool call: the model streamed %d KB of only whitespace into %q arguments; the request was cancelled to stop paying for more output", e.KB, e.Tool)
 }

@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -106,6 +107,11 @@ func TestRunawayToolArgumentsStopTheStream(t *testing.T) {
 			}
 			if calls != 0 {
 				t.Fatalf("a runaway call must not be executed: %d calls", calls)
+			}
+			// The agent recognizes it to ask for the call again.
+			var runaway *RunawayToolCallError
+			if !errors.As(streamErr, &runaway) || runaway.Tool != "ctx_execute" {
+				t.Fatalf("runaway error is not typed: %#v", streamErr)
 			}
 			// Stopping the call also means hanging up, not draining the stream.
 			select {
