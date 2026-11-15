@@ -25,6 +25,9 @@ func TestSearchIncludeGlobSemantics(t *testing.T) {
 		{"{src,lib}/**/*.{go,zig}", "tests/a.zig", false}, {"./src/**", "src/deep/a.go", true},
 		{"[ab]*.go", "src/alpha.go", true}, {"[^a]*.go", "src/alpha.go", false},
 		{"*.go", "src/ąść.go", true}, {"*.go", "src/A.GO", false},
+		// A top-level comma list equals the brace form.
+		{"*.go,*.zig", "src/a.zig", true}, {"*.go, src/*.md", "src/a.md", true}, {"*.go,*.zig", "a.md", false},
+		{"*.{go,zig},*.md", "a.md", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.pattern+"/"+tc.name, func(t *testing.T) {
@@ -37,7 +40,7 @@ func TestSearchIncludeGlobSemantics(t *testing.T) {
 			}
 		})
 	}
-	for _, bad := range []string{"!*.go", "../*.go", "/src/*.go", "src\\*.go", "*.go,*.zig", "[", "src/**bad", "{go}", "{go,}", "{a,{b,c}}", strings.Repeat("*", 513)} {
+	for _, bad := range []string{"!*.go", "../*.go", "/src/*.go", "src\\*.go", ",", " , ", "[", "src/**bad", "{go}", "{go,}", "{a,{b,c}}", strings.Repeat("*", 513)} {
 		if _, err := compileSearchGlob(bad); err == nil {
 			t.Fatalf("accepted invalid filter %q", bad)
 		}

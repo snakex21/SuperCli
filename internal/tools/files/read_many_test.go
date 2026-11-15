@@ -139,9 +139,13 @@ func TestReadMany_GlobExpansionHonorsGlobalCap(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Past the cap the first (sorted) matches are read and the rest named.
 	res, _ := NewReadMany(dir).execute(context.Background(), []byte(`{"reads":"*.go:1-1"}`))
-	if res.Err == nil || !strings.Contains(res.Err.Error(), "glob expansion produced") {
-		t.Fatalf("want expansion cap error, got %+v", res)
+	if res.Err != nil {
+		t.Fatalf("glob past the cap failed: %v", res.Err)
+	}
+	if !strings.Contains(res.Text, "00.go") || !strings.Contains(res.Text, "1 more files beyond the cap of 12, not read: 12.go]") {
+		t.Fatalf("want first matches read and the rest listed, got:\n%s", res.Text)
 	}
 }
 

@@ -22,7 +22,35 @@ func compileSearchGlob(pattern string) (*searchGlob, error) {
 	if len(pattern) > 512 || strings.TrimSpace(pattern) == "" || strings.HasPrefix(pattern, "!") || strings.HasPrefix(pattern, "/") || strings.ContainsAny(pattern, "\\:") {
 		return nil, fmt.Errorf("include must be one positive relative glob using /, up to 512 bytes")
 	}
-	patterns := []string{strings.TrimPrefix(pattern, "./")}
+	// A comma list outside braces ("*.go,*.py" or "*.go, *.py") is the same
+	// set of alternatives as {*.go,*.py}; models write both forms.
+	var patterns []string
+	depth, start := 0, 0
+	for i := 0; i <= len(pattern); i++ {
+		if i < len(pattern) {
+			switch pattern[i] {
+			case '{':
+				depth++
+				continue
+			case '}':
+				depth--
+				continue
+			case ',':
+				if depth != 0 {
+					continue
+				}
+			default:
+				continue
+			}
+		}
+		if p := strings.TrimPrefix(strings.TrimSpace(pattern[start:i]), "./"); p != "" {
+			patterns = append(patterns, p)
+		}
+		start = i + 1
+	}
+	if len(patterns) == 0 || len(patterns) > 32 {
+		return nil, fmt.Errorf("include: use 1 to 32 comma-separated globs")
+	}
 	for i := 0; i < len(patterns); {
 		p := patterns[i]
 		left := strings.IndexByte(p, '{')

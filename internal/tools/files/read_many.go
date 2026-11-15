@@ -73,8 +73,15 @@ func (t *ReadMany) execute(ctx context.Context, args json.RawMessage) (Result, e
 		return Result{Err: fmt.Errorf("read_many: %d reads exceeds cap %d; nothing read: split them into read_many calls of at most %d reads and send all of those calls in the same turn", len(requests), maxReadManyRequests, maxReadManyRequests)}, nil
 	}
 	work := expandReadManyRequests(t.BaseDir, requests)
+	// A glob that expands past the cap reads the first matches (sorted, so
+	// deterministic) and names the rest instead of failing the whole call:
+	// the model continues with one more call for the listed files.
+	var unread []string
 	if len(work) > maxReadManyRequests {
-		return Result{Err: fmt.Errorf("read_many: glob expansion produced %d reads, exceeds cap %d", len(work), maxReadManyRequests)}, nil
+		for _, item := range work[maxReadManyRequests:] {
+			unread = append(unread, item.request.File)
+		}
+		work = work[:maxReadManyRequests]
 	}
 
 	outcomes := make([]readManyOutcome, len(work))
@@ -159,7 +166,19 @@ func (t *ReadMany) execute(ctx context.Context, args json.RawMessage) (Result, e
 	}
 	wg.Wait()
 
-	return renderReadMany(outcomes), nil
+	res := renderReadMany(outcomes)
+	if len(unread) > 0 {
+		note := fmt.Sprintf("[read_many: glob matched %d more files beyond the cap of %d, not read: %s]\n",
+			len(unread), maxReadManyRequests, strings.Join(unread, " | "))
+		res.Text += note
+		if res.ModelPreview != "" {
+			res.ModelPreview += "\n" + note
+		}
+		if res.RetainedText != "" {
+			res.RetainedText += note
+		}
+	}
+	return res, nil
 }
 
 type readManyOutcome struct {
