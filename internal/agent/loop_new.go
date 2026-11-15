@@ -129,6 +129,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		// no longer gated on the F11 draft bridge being configured.
 		stats:     cfg.Stats,
 		reviewCfg: cfg.Review,
+		completionCheck: cfg.CompletionCheck,
 	}
 
 	// GUI continuations enter through InitialMessages; TUI /resume uses

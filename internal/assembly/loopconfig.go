@@ -121,6 +121,10 @@ func BuildLoopConfig(s LoopSpec) agent.LoopConfig {
 		PruneProtectTokens: s.Toml.PruneProtectTokens,
 		Stats:              s.Stats,
 		Review:             s.Review,
+		// One leftovers/finish-the-rest pass before a multi-file or
+		// self-declared unfinished Run completes; completion_check = false
+		// turns it off on every surface.
+		CompletionCheck: s.Toml.CompletionCheckOr(true),
 	}
 	if x := s.Interactive; x != nil {
 		cfg.Reflector = x.Reflector

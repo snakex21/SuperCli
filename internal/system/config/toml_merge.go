@@ -186,6 +186,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.PruneProtectTokens != 0 {
 		dst.PruneProtectTokens = src.PruneProtectTokens
 	}
+	if src.CompletionCheck != nil {
+		dst.CompletionCheck = src.CompletionCheck
+	}
 	if src.MemoryBriefingTokens > 0 {
 		dst.MemoryBriefingTokens = src.MemoryBriefingTokens
 	}
@@ -259,6 +262,14 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 // the caller's built-in runaway safety net (agent.DefaultMaxSteps on every
 // surface). This keeps the documented `max_steps` knob honoured while an
 // empty config gets the shared default.
+// CompletionCheckOr returns completion_check when set, otherwise def.
+func (t TomlConfig) CompletionCheckOr(def bool) bool {
+	if t.CompletionCheck != nil {
+		return *t.CompletionCheck
+	}
+	return def
+}
+
 func (t TomlConfig) MaxStepsOr(def int) int {
 	if t.MaxSteps > 0 {
 		return t.MaxSteps

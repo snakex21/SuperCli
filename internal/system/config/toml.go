@@ -363,6 +363,13 @@ type TomlConfig struct {
 	// to 2048..65536). Negative disables pruning.
 	PruneProtectTokens int `toml:"prune_protect_tokens"`
 
+	// CompletionCheck turns on the one-time completion check before a Run
+	// finishes: after edits to several files, or when the reply itself says
+	// part of the request is unfinished, the model is asked once to search
+	// for leftovers and finish (or report exactly what is blocked). nil = on;
+	// false disables it. Read through CompletionCheckOr.
+	CompletionCheck *bool `toml:"completion_check"`
+
 	// MemoryBriefingTokens caps the session-start memory briefing
 	// (user preferences + recent session-journal entries) injected
 	// into the system prompt. It is a HARD budget: preferences and

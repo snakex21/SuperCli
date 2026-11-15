@@ -733,6 +733,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) (r
 		l.identicalFails.recordSuccess(tc.Name, tc.Arguments, l.failedChecks.stateRevision())
 		l.identicalWrites.recordSuccess(tc.Name, tc.Arguments)
 		if toolCallKind(tc.Name, tc.Arguments) == "mutation" && !res.Inert {
+			l.noteCompletionMutation(tc.Name, tc.Arguments, res)
 			l.identicalFails.workspaceChanged()
 			l.checkCycles.touch(l.baseDir, tc.Arguments)
 			l.forwardWorkerMutation(ctx)

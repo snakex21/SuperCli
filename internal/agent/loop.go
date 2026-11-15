@@ -439,6 +439,10 @@ type Loop struct {
 	// A small bounded retry handles providers that need one extra turn without
 	// ever allowing an empty post-tool response to masquerade as Done.
 	emptyReplyNudges int
+	// completion is the per-Run completion-check state; completionCheck
+	// is LoopConfig.CompletionCheck.
+	completion      completionCheckState
+	completionCheck bool
 
 	// reviewCfg is the optional interactive post-work review (config
 	// review_model); nil = off. postReview is its per-Run state.
@@ -787,6 +791,9 @@ type LoopConfig struct {
 	// impl is the in-memory default; the persistent
 	// path is out of scope for F11.
 	Stats stats.Recorder
+	// CompletionCheck enables the one-time completion check before a Run
+	// completes (loop_completion_check.go). false = off.
+	CompletionCheck bool
 	// Review, when non-nil, runs one tool-free post-work review (config
 	// review_model) before a file-changing Run completes. Nil = off.
 	Review *PostReviewConfig
@@ -1027,6 +1034,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	l.checkCycles.reset()
 	l.emptyReplyNudges = 0
 	l.resetPostReview(prompt)
+	l.resetCompletionCheck()
 	l.finalReplyOnly = false
 	l.finalReplyFallback = ""
 	// Finish already-collected history even after cancellation, then rebuild

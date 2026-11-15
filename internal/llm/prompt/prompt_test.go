@@ -6,11 +6,12 @@ import (
 )
 
 // Core must stay lightweight: every request pays for it and
-// small models receive ONLY it. ~300 tokens at ~4 chars/token.
+// small models receive ONLY it. ~330 tokens at ~4 chars/token (1.0.27 added
+// the edit_files pointer, the leftovers search and do-the-rest-and-report).
 func TestCoreStaysSmall(t *testing.T) {
-	const charBudget = 1200
+	const charBudget = 1320
 	if len(Core) > charBudget {
-		t.Errorf("Core is %d chars, budget %d (~300 tokens)", len(Core), charBudget)
+		t.Errorf("Core is %d chars, budget %d (~330 tokens)", len(Core), charBudget)
 	}
 }
 
@@ -64,11 +65,12 @@ func TestCoreWordContractIsCompactAndDeterministic(t *testing.T) {
 	}
 }
 
-// A missing target must stop the work, not redirect it: in the eval a
-// model edited a different file than the (nonexistent) one named and
-// reported success.
+// A missing target must never be redirected: in the eval a model edited a
+// different file than the (nonexistent) one named and reported success. It
+// must not sink the rest of the request either (1.0.27): the doable parts
+// are done and the missing one is reported.
 func TestCoreMissingTargetHonesty(t *testing.T) {
-	for _, want := range []string{"Missing file/target", "say so and ask", "never substitute another"} {
+	for _, want := range []string{"Missing file/target", "do every other part", "report what is missing", "never invent or substitute"} {
 		if !strings.Contains(Core, want) {
 			t.Errorf("Core missing honesty rule %q", want)
 		}

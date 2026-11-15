@@ -378,6 +378,13 @@ func (l *Loop) runStep(
 			l.statsEndStep(stepStart)
 			return stepContinue
 		}
+		// Completion check: once per Run, a multi-file edit or a reply that
+		// says work is unfinished gets one more pass to find and finish
+		// leftovers (or report exactly what is blocked) before it completes.
+		if l.completionCheck && l.runCompletionCheck(ctx, out, text, step+1 < stepLimit) {
+			l.statsEndStep(stepStart)
+			return stepContinue
+		}
 		// Post-work review (config review_model): a file-changing Run gets
 		// one tool-free verdict before it completes; revise/takeover notes go
 		// back to the main model for another pass (capped per Run).
