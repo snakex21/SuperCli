@@ -131,9 +131,6 @@ func BuildLoopConfig(s LoopSpec) agent.LoopConfig {
 		// Exact aggregates (counts, percentiles, cycles) are computed with a
 		// script; compute_hint = false turns the hint off.
 		ComputeHint: s.Toml.ComputeHintOr(true),
-		// A "nothing else" request that changed other files reviews them once
-		// before finishing; scope_check = false turns it off.
-		ScopeCheck: s.Toml.ScopeCheckOr(true),
 	}
 	if x := s.Interactive; x != nil {
 		cfg.Reflector = x.Reflector

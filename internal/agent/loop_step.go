@@ -401,12 +401,6 @@ func (l *Loop) runStep(
 			l.statsEndStep(stepStart)
 			return stepContinue
 		}
-		// Scope check: once per Run, a "nothing else" request whose Run
-		// changed other files reviews them before it completes.
-		if l.scopeCheck && l.runScopeCheck(ctx, out, step+1 < stepLimit) {
-			l.statsEndStep(stepStart)
-			return stepContinue
-		}
 		// Post-work review (config review_model): a file-changing Run gets
 		// one tool-free verdict before it completes; revise/takeover notes go
 		// back to the main model for another pass (capped per Run).
