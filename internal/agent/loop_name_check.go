@@ -480,6 +480,16 @@ func (l *Loop) attachNameCheck(ctx context.Context, prompt string) {
 		return
 	}
 	cands := requestNameCandidates(prompt)
+	// SuperCli's own tool names ("use web_fetch") are not workspace names.
+	if l.registry != nil {
+		kept := cands[:0]
+		for _, c := range cands {
+			if _, isTool := l.registry.Get(c.name); !isTool {
+				kept = append(kept, c)
+			}
+		}
+		cands = kept
+	}
 	if len(cands) == 0 {
 		return
 	}

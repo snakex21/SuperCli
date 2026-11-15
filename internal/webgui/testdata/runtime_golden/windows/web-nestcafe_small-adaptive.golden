@@ -177,6 +177,7 @@ PrefillProfiles: set
 PruneProtectTokens: 0
 Stats: nil
 CompletionCheck: true
+NameCheck: true
 Review: nil
 provider.name: golden-model
 registry.len: 49
@@ -270,8 +271,10 @@ send_message(to, message, mode) — Continue a finished task worker by ID, or us
 task(prompt, expect, agent, advise:bool, async:bool) — Delegate independent work or substantial exploration to an isolated worker. Use…
 task_stop(task_id) — Stop a running task worker by ID. Use when a worker is stuck, no longer needed,…
 trash — Remove a file or folder by moving it to the project's trash folder (recoverable…
---- msg 1 role=user origin={"source":"human"}
+--- msg 1 role=user origin={"spans":[{"source":"human"},{"source":"runtime"}]}
 GOLDEN_CALL tool_search {"query":"web_fetch"}
+
+[name check] These names from the request were not found anywhere in the workspace: `GOLDEN_CALL`; Confirm with a search before relying on this. Where the request treats such a name as existing (change, set, raise, lower, fix, use it), it is missing: do not add, define, wire up or rename anything to make it exist, and do not apply that part to a similar-looking name instead. Do every other part of the request, then say in the final answer exactly which name was not found (and which similar one exists, if any) and ask how to proceed. Names the user asks you to create are not affected.
 --- msg 2 role=system origin={"source":"runtime"}
 Active workspace (all file and shell tools are sandboxed here): <HOME>
 
@@ -348,8 +351,10 @@ send_message(to, message, mode) — Continue a finished task worker by ID, or us
 task(prompt, expect, agent, advise:bool, async:bool) — Delegate independent work or substantial exploration to an isolated worker. Use…
 task_stop(task_id) — Stop a running task worker by ID. Use when a worker is stuck, no longer needed,…
 trash — Remove a file or folder by moving it to the project's trash folder (recoverable…
---- msg 1 role=user origin={"source":"human"}
+--- msg 1 role=user origin={"spans":[{"source":"human"},{"source":"runtime"}]}
 GOLDEN_CALL tool_search {"query":"web_fetch"}
+
+[name check] These names from the request were not found anywhere in the workspace: `GOLDEN_CALL`; Confirm with a search before relying on this. Where the request treats such a name as existing (change, set, raise, lower, fix, use it), it is missing: do not add, define, wire up or rename anything to make it exist, and do not apply that part to a similar-looking name instead. Do every other part of the request, then say in the final answer exactly which name was not found (and which similar one exists, if any) and ask how to proceed. Names the user asks you to create are not affected.
 --- msg 2 role=system origin={"source":"runtime"}
 Active workspace (all file and shell tools are sandboxed here): <HOME>
 
@@ -369,8 +374,10 @@ You are SuperCli. Answer directly in the user's language. For plain conversation
 
 User instructions (enabled preset: Golden). Apply these preferences unless the current user request conflicts; the current request, safety rules, and tool rules take priority:
 Golden user preset: reply in English.
---- msg 1 role=user origin={"source":"human"}
+--- msg 1 role=user origin={"spans":[{"source":"human"},{"source":"runtime"}]}
 GOLDEN_CALL tool_search {"query":"web_fetch"}
+
+[name check] These names from the request were not found anywhere in the workspace: `GOLDEN_CALL`; Confirm with a search before relying on this. Where the request treats such a name as existing (change, set, raise, lower, fix, use it), it is missing: do not add, define, wire up or rename anything to make it exist, and do not apply that part to a similar-looking name instead. Do every other part of the request, then say in the final answer exactly which name was not found (and which similar one exists, if any) and ask how to proceed. Names the user asks you to create are not affected.
 --- msg 2 role=assistant origin={"source":"model"}
 [part 0 text source=]
 done after tool

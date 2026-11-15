@@ -141,6 +141,7 @@ PrefillProfiles: set
 PruneProtectTokens: 0
 Stats: set
 CompletionCheck: true
+NameCheck: true
 Review: nil
 provider.name: golden-model
 registry.len: 30
@@ -225,6 +226,8 @@ notes.txt (<AGE>)
 AGENTS.md (<AGE>)
 files (2):
 ./: AGENTS.md notes.txt
+
+[name check] These names from the request were not found anywhere in the workspace: `GOLDEN_CALL`; `web_fetch`; Confirm with a search before relying on this. Where the request treats such a name as existing (change, set, raise, lower, fix, use it), it is missing: do not add, define, wire up or rename anything to make it exist, and do not apply that part to a similar-looking name instead. Do every other part of the request, then say in the final answer exactly which name was not found (and which similar one exists, if any) and ask how to proceed. Names the user asks you to create are not affected.
 --- msg 2 role=system origin={"source":"runtime"}
 Working directory (file sandbox root): <HOME>
 Use this exact path for file and directory operations. Relative paths resolve here; paths must stay inside it.
@@ -292,6 +295,8 @@ notes.txt (<AGE>)
 AGENTS.md (<AGE>)
 files (2):
 ./: AGENTS.md notes.txt
+
+[name check] These names from the request were not found anywhere in the workspace: `GOLDEN_CALL`; `web_fetch`; Confirm with a search before relying on this. Where the request treats such a name as existing (change, set, raise, lower, fix, use it), it is missing: do not add, define, wire up or rename anything to make it exist, and do not apply that part to a similar-looking name instead. Do every other part of the request, then say in the final answer exactly which name was not found (and which similar one exists, if any) and ask how to proceed. Names the user asks you to create are not affected.
 --- msg 2 role=system origin={"source":"runtime"}
 Working directory (file sandbox root): <HOME>
 Use this exact path for file and directory operations. Relative paths resolve here; paths must stay inside it.
@@ -317,6 +322,8 @@ notes.txt (<AGE>)
 AGENTS.md (<AGE>)
 files (2):
 ./: AGENTS.md notes.txt
+
+[name check] These names from the request were not found anywhere in the workspace: `GOLDEN_CALL`; `web_fetch`; Confirm with a search before relying on this. Where the request treats such a name as existing (change, set, raise, lower, fix, use it), it is missing: do not add, define, wire up or rename anything to make it exist, and do not apply that part to a similar-looking name instead. Do every other part of the request, then say in the final answer exactly which name was not found (and which similar one exists, if any) and ask how to proceed. Names the user asks you to create are not affected.
 --- msg 2 role=assistant origin={"source":"model"}
 [part 0 text source=]
 done after tool
