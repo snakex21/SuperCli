@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -15,11 +14,31 @@ import (
 // ctx_execute call degenerated into an endless " \n \n ..." argument stream,
 // ~70k output tokens over seven minutes, until the harness killed the process.
 // Both streaming transports must stop such a call after a bounded amount.
+//
+// The bound is checked on what the client consumed, not on how much the
+// server managed to write: the server streams at most runawayTestChunks
+// degenerate chunks and then holds the stream open without data. A guard
+// that fires within those chunks ends the stream with the runaway error and
+// hangs up; a missing or late guard leaves the client waiting until the
+// server gives up and ends the stream normally, which fails the test. The
+// old check ("the server sent at most 20000 chunks") also counted what the
+// kernel buffered after the client had stopped reading, so it failed
+// intermittently under load.
+const runawayTestChunks = 20000
+
 func TestRunawayToolArgumentsStopTheStream(t *testing.T) {
 	for _, transport := range []string{"chat", "responses"} {
 		t.Run(transport, func(t *testing.T) {
-			var sent atomic.Int64
+			disconnected := make(chan struct{})
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Report a client hang-up however the handler ends.
+				defer func() {
+					select {
+					case <-r.Context().Done():
+						close(disconnected)
+					case <-time.After(10 * time.Second):
+					}
+				}()
 				w.Header().Set("Content-Type", "text/event-stream")
 				w.WriteHeader(200)
 				fl := w.(http.Flusher)
@@ -35,9 +54,7 @@ func TestRunawayToolArgumentsStopTheStream(t *testing.T) {
 				} else {
 					write(`{"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"ctx_execute","arguments":""}}`)
 				}
-				// "Endless" degenerate output: bounded only so a broken guard fails
-				// the assertion below instead of hanging the test.
-				for i := 0; i < 200000; i++ {
+				for i := 0; i < runawayTestChunks; i++ {
 					var chunk string
 					if transport == "chat" {
 						chunk = `{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \\n"}}]}}]}`
@@ -47,7 +64,14 @@ func TestRunawayToolArgumentsStopTheStream(t *testing.T) {
 					if !write(chunk) {
 						return
 					}
-					sent.Add(1)
+				}
+				// Every degenerate chunk is out: hold the stream open without data
+				// until the client hangs up. A client that has not stopped the
+				// call is still waiting; end its stream normally after a while so
+				// the test fails on the missing runaway error instead of hanging.
+				select {
+				case <-r.Context().Done():
+				case <-time.After(5 * time.Second):
 				}
 			}))
 			defer srv.Close()
@@ -78,13 +102,16 @@ func TestRunawayToolArgumentsStopTheStream(t *testing.T) {
 				}
 			}
 			if streamErr == nil || !strings.Contains(streamErr.Error(), "runaway tool call") {
-				t.Fatalf("degenerate tool call was not stopped: err=%v calls=%d", streamErr, calls)
+				t.Fatalf("degenerate tool call was not stopped within %d chunks: err=%v calls=%d", runawayTestChunks, streamErr, calls)
 			}
 			if calls != 0 {
 				t.Fatalf("a runaway call must not be executed: %d calls", calls)
 			}
-			if n := sent.Load(); n > 20000 {
-				t.Fatalf("server streamed %d chunks before the guard fired", n)
+			// Stopping the call also means hanging up, not draining the stream.
+			select {
+			case <-disconnected:
+			case <-time.After(10 * time.Second):
+				t.Fatal("client kept the runaway stream open")
 			}
 		})
 	}
