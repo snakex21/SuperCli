@@ -378,6 +378,12 @@ type TomlConfig struct {
 	// Read through NameCheckOr.
 	NameCheck *bool `toml:"name_check"`
 
+	// ComputeHint adds one request-tail line asking to compute exact
+	// aggregates (counts, totals, percentiles, top-N, sorting, graph
+	// cycles) with a script. nil = on; false disables it. Read through
+	// ComputeHintOr.
+	ComputeHint *bool `toml:"compute_hint"`
+
 	// MemoryBriefingTokens caps the session-start memory briefing
 	// (user preferences + recent session-journal entries) injected
 	// into the system prompt. It is a HARD budget: preferences and

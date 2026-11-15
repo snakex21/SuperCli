@@ -128,6 +128,9 @@ func BuildLoopConfig(s LoopSpec) agent.LoopConfig {
 		// Verify before use: names the request treats as existing are looked
 		// up in the workspace first; name_check = false turns it off.
 		NameCheck: s.Toml.NameCheckOr(true),
+		// Exact aggregates (counts, percentiles, cycles) are computed with a
+		// script; compute_hint = false turns the hint off.
+		ComputeHint: s.Toml.ComputeHintOr(true),
 	}
 	if x := s.Interactive; x != nil {
 		cfg.Reflector = x.Reflector

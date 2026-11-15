@@ -171,6 +171,7 @@ PruneProtectTokens: 0
 Stats: nil
 CompletionCheck: true
 NameCheck: true
+ComputeHint: true
 Review: nil
 provider.name: golden-model
 registry.len: 49

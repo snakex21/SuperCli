@@ -131,6 +131,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 		reviewCfg: cfg.Review,
 		completionCheck: cfg.CompletionCheck,
 		nameCheck:       cfg.NameCheck,
+		computeHintOn:   cfg.ComputeHint,
 	}
 
 	// GUI continuations enter through InitialMessages; TUI /resume uses

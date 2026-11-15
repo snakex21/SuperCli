@@ -445,6 +445,8 @@ type Loop struct {
 	completionCheck bool
 	// nameCheck is LoopConfig.NameCheck (loop_name_check.go).
 	nameCheck bool
+	// computeHintOn is LoopConfig.ComputeHint (compute_hint.go).
+	computeHintOn bool
 
 	// reviewCfg is the optional interactive post-work review (config
 	// review_model); nil = off. postReview is its per-Run state.
@@ -799,6 +801,9 @@ type LoopConfig struct {
 	// NameCheck enables the verify-before-use lookup of the names a
 	// coordinator request mentions (loop_name_check.go). false = off.
 	NameCheck bool
+	// ComputeHint adds the "compute it with a script" line to the request
+	// tail of a Run that asks for exact aggregates (compute_hint.go).
+	ComputeHint bool
 	// Review, when non-nil, runs one tool-free post-work review (config
 	// review_model) before a file-changing Run completes. Nil = off.
 	Review *PostReviewConfig

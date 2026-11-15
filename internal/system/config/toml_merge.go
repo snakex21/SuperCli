@@ -192,6 +192,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.NameCheck != nil {
 		dst.NameCheck = src.NameCheck
 	}
+	if src.ComputeHint != nil {
+		dst.ComputeHint = src.ComputeHint
+	}
 	if src.MemoryBriefingTokens > 0 {
 		dst.MemoryBriefingTokens = src.MemoryBriefingTokens
 	}
@@ -269,6 +272,14 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 func (t TomlConfig) CompletionCheckOr(def bool) bool {
 	if t.CompletionCheck != nil {
 		return *t.CompletionCheck
+	}
+	return def
+}
+
+// ComputeHintOr returns compute_hint when set, otherwise def.
+func (t TomlConfig) ComputeHintOr(def bool) bool {
+	if t.ComputeHint != nil {
+		return *t.ComputeHint
 	}
 	return def
 }

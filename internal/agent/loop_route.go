@@ -76,6 +76,11 @@ func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 	if l.route == RouteCoordinator && !l.skipImplementationHint {
 		l.implementationHintForRun = implementationVerificationHint(prompt)
 	}
+	if l.route == RouteCoordinator && l.computeHintOn {
+		if hint := l.computeHint(prompt); hint != "" {
+			l.implementationHintForRun = strings.TrimSpace(l.implementationHintForRun + "\n" + hint)
+		}
+	}
 }
 
 func containsScreenshotReference(prompt string) bool {
