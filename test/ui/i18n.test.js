@@ -138,7 +138,7 @@ test('tn picks CLDR plural forms in every language and keeps "#" as the number',
 test('known backend notices and stop messages follow the UI language; unknown text stays',async()=>{
  const ui=languageUI(); await ui.loadLanguage('pl');
  assert.equal(ui.localizeSystemText('preflight: repo context ~42 tok (project turn)'),'Kontekst repozytorium ~42 tok (tura projektu)');
- assert.match(ui.localizeSystemText('fake: provider error (HTTP 500) — retrying in 300ms (attempt 2/3)'),/^fake: błąd dostawcy AI \(HTTP 500\) — ponowienie za 300ms \(próba 2\/3\)$/);
+ assert.match(ui.localizeSystemText('fake: provider error (HTTP 500) — retrying in 300ms (retry 2/3)'),/^fake: błąd dostawcy AI \(HTTP 500\) — ponawianie za 300ms \(ponowienie 2\/3\)$/); assert.match(ui.localizeSystemText('fake: rate limited (HTTP 429) — retrying in 30s (retry 12/∞)'),/^fake: limit zapytań \(HTTP 429\) — ponawianie za 30s \(ponowienie 12\/∞\)$/); assert.match(ui.localizeSystemText('Model connection unavailable — waiting 4s before retry 2/5.'),/^Brak połączenia z modelem — czekam 4s przed ponowieniem 2\/5\.$/); assert.match(ui.localizeSystemText('gw.example: request limit 50/min reached — waiting 1.2s'),/^gw\.example: osiągnięto limit 50 zapytań\/min — czekam 1\.2s$/);
  assert.match(ui.localizeSystemText('agent: stopped — the last 8 consecutive tool rounds returned only previously observed successful results, with no new evidence'),/^Agent zatrzymany: .*: 8\./);
  assert.equal(ui.localizeSystemText('something new from the backend'),'something new from the backend');
 });

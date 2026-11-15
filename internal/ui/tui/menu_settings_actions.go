@@ -36,6 +36,9 @@ func (m Model) settingsApply(mutate func(*config.TomlConfig)) (tea.Model, tea.Cm
 		return m, nil
 	}
 	llm.SetDiscardPreviousReasoning(cfg.DiscardPreviousReasoning != nil && *cfg.DiscardPreviousReasoning)
+	// max_retries / retry_unknown_errors / requests_per_minute apply to the
+	// next request, no restart needed.
+	config.ApplyRetryGlobals(cfg)
 	m.menu.settingsCfg = &cfg
 	m.menu.formErr = ""
 	m.applyGenerationSpeedPreference(cfg.ShowGenerationSpeed)
@@ -165,6 +168,8 @@ func (m Model) settingsCommitInt() (tea.Model, tea.Cmd) {
 			c.TaskMaxTokens = int64(n)
 		case "fallback_cooldown_seconds":
 			c.FallbackCooldownSeconds = n
+		case "requests_per_minute":
+			c.RequestsPerMinute = n
 		case "draft_verify_max_rounds":
 			c.DraftVerifyMaxRounds = n
 		case "darwin_pool_size":
@@ -209,6 +214,11 @@ func settingTextValue(c *config.TomlConfig, key string) string {
 		return strings.Join(c.VerifyCommands, " ; ")
 	case "fallback_models":
 		return strings.Join(c.FallbackModels, " ; ")
+	case "max_retries":
+		if c.MaxRetries == nil {
+			return ""
+		}
+		return strconv.Itoa(c.MaxRetriesSetting())
 	}
 	return ""
 }
@@ -229,6 +239,15 @@ func (m Model) settingsCommitText() (tea.Model, tea.Cmd) {
 			m.menu.formErr = err.Error()
 			return m, nil
 		}
+	}
+	var maxRetries any
+	if r.key == "max_retries" {
+		v, err := config.MaxRetriesTOMLValue(buf)
+		if err != nil {
+			m.menu.formErr = m.tr("tui.setting_max_retries.invalid")
+			return m, nil
+		}
+		maxRetries = v
 	}
 	if r.key == "cost_currency" && buf != "" {
 		code, err := fx.NormalizeCurrency(buf)
@@ -270,6 +289,8 @@ func (m Model) settingsCommitText() (tea.Model, tea.Cmd) {
 			c.VerifyCommands = parseCommandList(buf)
 		case "fallback_models":
 			c.FallbackModels = parseCommandList(buf)
+		case "max_retries":
+			c.MaxRetries = maxRetries
 		}
 	})
 }

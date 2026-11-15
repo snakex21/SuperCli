@@ -45,33 +45,30 @@ func TestParseRetryAfter(t *testing.T) {
 	}
 }
 
-func TestRetryWait_HeaderWinsAndIsCapped(t *testing.T) {
+func TestProviderRetryWait_HeaderWinsAndIsCapped(t *testing.T) {
 	h := http.Header{}
 	h.Set("Retry-After", "3")
-	if w := retryWait(h, 1, rateLimitWaitBudget); w != 3*time.Second {
-		t.Fatalf("header within budget: w=%v want 3s", w)
+	if w, ok := providerRetryWait(http.StatusServiceUnavailable, h, 1); !ok || w != 3*time.Second {
+		t.Fatalf("header: w=%v ok=%v want 3s", w, ok)
 	}
-	// A huge Retry-After must be clamped to the remaining budget —
-	// this is the cap that keeps a 429 storm from hanging a turn.
+	// A huge Retry-After on a 5xx is clamped to the per-wait cap.
 	h.Set("Retry-After", "3600")
-	if w := retryWait(h, 1, rateLimitWaitBudget); w != rateLimitWaitBudget {
-		t.Fatalf("header over budget: w=%v want %v", w, rateLimitWaitBudget)
+	if w, ok := providerRetryWait(http.StatusServiceUnavailable, h, 1); !ok || w != MaxRetryBackoff {
+		t.Fatalf("5xx header over cap: w=%v ok=%v want %v", w, ok, MaxRetryBackoff)
 	}
-	if w := retryWait(h, 1, 2*time.Second); w != 2*time.Second {
-		t.Fatalf("partial budget: w=%v want 2s", w)
-	}
-	if w := retryWait(h, 1, 0); w != 0 {
-		t.Fatalf("exhausted budget: w=%v want 0", w)
+	// The same on a 429 is a quota window: surfaced, not slept on.
+	if _, ok := providerRetryWait(http.StatusTooManyRequests, h, 1); ok {
+		t.Fatal("429 with Retry-After beyond the cap must not be retried")
 	}
 }
 
-func TestRetryWait_FallbackBackoffWithoutHeader(t *testing.T) {
+func TestProviderRetryWait_FallbackBackoffWithoutHeader(t *testing.T) {
 	h := http.Header{}
-	if w := retryWait(h, 1, rateLimitWaitBudget); w < 250*time.Millisecond || w > 500*time.Millisecond {
-		t.Fatalf("attempt 1: w=%v want jittered 250-500ms", w)
+	if w, _ := providerRetryWait(http.StatusServiceUnavailable, h, 1); w < 250*time.Millisecond || w > 500*time.Millisecond {
+		t.Fatalf("retry 1: w=%v want jittered 250-500ms", w)
 	}
-	if w := retryWait(h, 2, rateLimitWaitBudget); w < 500*time.Millisecond || w > time.Second {
-		t.Fatalf("attempt 2: w=%v want jittered 500ms-1s", w)
+	if w, _ := providerRetryWait(http.StatusServiceUnavailable, h, 2); w < 500*time.Millisecond || w > time.Second {
+		t.Fatalf("retry 2: w=%v want jittered 500ms-1s", w)
 	}
 }
 
@@ -85,15 +82,6 @@ func TestRetryableHTTPStatusRejectsPermanentClientErrors(t *testing.T) {
 		if !isRetryableHTTPStatus(status) {
 			t.Errorf("status %d should be retried", status)
 		}
-	}
-}
-
-func TestProviderRetryAttemptsGives503LongerRecoveryWindow(t *testing.T) {
-	if got := providerRetryAttempts(http.StatusServiceUnavailable); got != 5 {
-		t.Fatalf("503 attempts = %d, want 5", got)
-	}
-	if got := providerRetryAttempts(http.StatusTooManyRequests); got != 3 {
-		t.Fatalf("429 attempts = %d, want conservative 3", got)
 	}
 }
 
@@ -126,7 +114,8 @@ func TestRetryableProviderResponseHandlesWrappedModelUnavailable400(t *testing.T
 
 // --- integration: OpenAI provider over httptest ---
 
-func TestOpenAI_503GetsFiveBoundedAttempts(t *testing.T) {
+func TestOpenAI_503GetsDefaultFiveRetries(t *testing.T) {
+	withMaxRetries(t, DefaultMaxRetries)
 	var calls int32
 	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&calls, 1)
@@ -143,8 +132,8 @@ func TestOpenAI_503GetsFiveBoundedAttempts(t *testing.T) {
 		t.Fatal(err)
 	}
 	deltas := drainDeltas(t, ch)
-	if got := atomic.LoadInt32(&calls); got != 5 {
-		t.Fatalf("calls = %d, want 5", got)
+	if got := atomic.LoadInt32(&calls); got != 6 {
+		t.Fatalf("calls = %d, want 1 + 5 retries", got)
 	}
 	var notices int
 	for _, delta := range deltas {
@@ -152,7 +141,7 @@ func TestOpenAI_503GetsFiveBoundedAttempts(t *testing.T) {
 			notices++
 		}
 	}
-	if notices != 4 || deltas[len(deltas)-1].Err == nil {
+	if notices != 5 || deltas[len(deltas)-1].Err == nil {
 		t.Fatalf("notices=%d terminal=%v", notices, deltas[len(deltas)-1].Err)
 	}
 }
@@ -261,6 +250,7 @@ func TestOpenAI_429_RetryAfterZeroSkipsBackoff(t *testing.T) {
 func TestOpenAI_429_ExhaustedSaysSwitchModel(t *testing.T) {
 	// All attempts 429 → the terminal error must say the model is
 	// rate-limited and suggest switching, not just dump "http 429".
+	withMaxRetries(t, 2)
 	p, calls := openai429ThenOK(t, 99, "0")
 	ch, err := p.Complete(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, nil)
 	if err != nil {
@@ -268,7 +258,7 @@ func TestOpenAI_429_ExhaustedSaysSwitchModel(t *testing.T) {
 	}
 	ds := drainDeltas(t, ch)
 	if got := atomic.LoadInt32(calls); got != 3 {
-		t.Fatalf("calls = %d, want 3 (maxAttempts)", got)
+		t.Fatalf("calls = %d, want 3 (1 + max_retries=2)", got)
 	}
 	last := ds[len(ds)-1]
 	if last.Err == nil {
@@ -433,6 +423,7 @@ func TestAnthropic_429_RetryAndNotice(t *testing.T) {
 }
 
 func TestAnthropic_429_ExhaustedSaysSwitchModel(t *testing.T) {
+	withMaxRetries(t, 2)
 	var calls int32
 	srv, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&calls, 1)
@@ -450,7 +441,7 @@ func TestAnthropic_429_ExhaustedSaysSwitchModel(t *testing.T) {
 	}
 	ds := drainDeltas(t, ch)
 	if got := atomic.LoadInt32(&calls); got != 3 {
-		t.Fatalf("calls = %d, want 3 (maxAttempts)", got)
+		t.Fatalf("calls = %d, want 3 (1 + max_retries=2)", got)
 	}
 	last := ds[len(ds)-1]
 	if last.Err == nil {

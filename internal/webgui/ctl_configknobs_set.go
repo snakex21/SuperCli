@@ -190,6 +190,17 @@ func knobSet(c *config.TomlConfig, key, val string) error {
 		return nil
 	case "fallback_cooldown_seconds":
 		return setInt(&c.FallbackCooldownSeconds)
+	case "max_retries":
+		v, err := config.MaxRetriesTOMLValue(val)
+		if err != nil {
+			return fmt.Errorf("bad value %q (want a number >= 0, -1 or inf)", val)
+		}
+		c.MaxRetries = v
+		return nil
+	case "retry_unknown_errors":
+		return setTri(&c.RetryUnknownErrors)
+	case "requests_per_minute":
+		return setInt(&c.RequestsPerMinute)
 	case "noop_gate":
 		return setTri(&c.NoopGate)
 	case "preflight_repo":

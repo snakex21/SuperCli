@@ -89,9 +89,12 @@ function tn(key, n) {
 var SYSTEM_TEXTS = [
   { key: "notice.preflight", re: /^preflight: repo context ~(\d+) tok \(project turn\)$/, args: ["n"] },
   { key: "notice.loopWarning", re: /^repeated tool evidence: loop warning injected$/, args: [] },
-  { key: "notice.rateLimitRetry", re: /^(.+): rate limited \(HTTP 429\) — retrying in (\S+) \(attempt (\d+)\/(\d+)\)$/, args: ["model", "wait", "attempt", "max"] },
-  { key: "notice.providerRetry", re: /^(.+): (?:temporary )?provider error \(HTTP (\d+)\) — retrying in (\S+) \(attempt (\d+)\/(\d+)\)$/, args: ["model", "status", "wait", "attempt", "max"] },
-  { key: "notice.connectionRetry", re: /^connection to the model dropped \(([\s\S]*)\) — retrying in (\S+) \(attempt (\d+)\/(\d+)\)$/, args: ["reason", "wait", "attempt", "max"] },
+  // Retry progress is "3/5" or "12/∞" (max_retries = -1); keep in sync with llm.rateLimitNotice and the TUI localizeNotice.
+  { key: "notice.rateLimitRetry", re: /^(.+): rate limited \(HTTP 429\) — retrying in (\S+) \(retry (\d+)\/(\d+|∞)\)$/, args: ["model", "wait", "attempt", "max"] },
+  { key: "notice.providerRetry", re: /^(.+): (?:temporary )?provider error \(HTTP (\d+)\) — retrying in (\S+) \(retry (\d+)\/(\d+|∞)\)$/, args: ["model", "status", "wait", "attempt", "max"] },
+  { key: "notice.connectionRetry", re: /^connection to the model dropped \(([\s\S]*)\) — retrying in (\S+) \(retry (\d+)\/(\d+|∞)\)$/, args: ["reason", "wait", "attempt", "max"] },
+  { key: "notice.connectionWait", re: /^Model connection unavailable — waiting (\S+) before retry (\d+)\/(\d+|∞)\.$/, args: ["wait", "attempt", "max"] },
+  { key: "notice.requestLimit", re: /^(.+): request limit (\d+)\/min reached — waiting (\S+)$/, args: ["host", "n", "wait"] },
   { key: "error.loopUnchanged", re: /^agent: stopped — the last (\d+) consecutive tool rounds returned only previously observed successful results/, args: ["n"] },
   { key: "error.loopSource", re: /^agent: stopped — the last (\d+) source-reading rounds only revisited unchanged lines/, args: ["n"] },
   { key: "error.loopFailure", re: /^agent: stopped — the same tool call failed (\d+) consecutive times/, args: ["n"] },

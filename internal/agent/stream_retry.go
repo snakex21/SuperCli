@@ -17,24 +17,12 @@ import (
 	"supercli/internal/llm"
 )
 
-// streamRetryDelays preserve the generic pre-stream transport retry budget.
-// Accepted streams, including reasoning-only/error-only frames, are not replayed.
-var streamRetryDelays = []time.Duration{time.Second, 3 * time.Second}
-
-// Clock seams keep outage recovery tests deterministic and socket-free.
-var streamRetryNow = time.Now
-var streamRetryWait = waitForStreamRetry
-
-func waitForStreamRetry(ctx context.Context, wait time.Duration) error {
-	timer := time.NewTimer(wait)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return ctx.Err()
-	}
-}
+// Retry seams keep outage recovery tests deterministic and socket-free. The
+// count comes from the shared llm retry setting (config.toml max_retries,
+// -1 = until success or cancel); the wait is llm.RetryBackoff (exponential
+// from 1 s, jittered, capped at 60 s) and always selects on ctx.Done().
+var streamRetryWait = llm.SleepRetry
+var streamRetryBackoff = func(retry int) time.Duration { return llm.RetryBackoff(retry, time.Second) }
 
 // transientStreamErrors are transport failures where the same request can
 // succeed when sent again. Provider HTTP status errors are retried inside
@@ -205,8 +193,8 @@ func nothingVisibleYet(text string, calls []llm.ToolCall) bool {
 	return strings.TrimSpace(plain) == ""
 }
 
-// Only real, typed connectivity failures get the longer outage allowance.
-// EOF/HTTP2 compatibility failures retain the old 3-total-attempt budget;
+// Typed connectivity failures (network down, unreachable host, reset) get a
+// quieter "waiting" notice; EOF/HTTP2 compatibility failures report the drop.
 // HTTP status retries remain entirely provider-owned.
 func isShortNetworkOutage(err error) bool {
 	cause, ok := startupTransportCause(err)
@@ -241,21 +229,41 @@ func isConnectivityErrno(err error) bool {
 	return false
 }
 
-const shortNetworkOutageWindow = 30 * time.Second
+// retryableAcceptedStreamError reports whether an error delivered INSIDE an
+// accepted stream may be re-requested: a provider error event classified as
+// transient (rate limit, overload, temporarily unavailable, capacity — e.g.
+// Cloudflare Workers AI "rate limiting: inference request per min rate
+// reached"), or an unclassified one when retry_unknown_errors is on. Context
+// overflow, auth, invalid-request and quota errors never qualify. The caller
+// additionally requires that no tool call and no visible answer text was
+// produced, so nothing was executed and nothing shown is duplicated.
+func retryableAcceptedStreamError(err error) bool {
+	var accepted *acceptedStreamError
+	if !errors.As(err, &accepted) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	if isContextLimitErr(err) {
+		return false
+	}
+	var startup *providerCompleteError
+	if errors.As(err, &startup) {
+		return false
+	}
+	return llm.ShouldRetryProviderError(accepted.cause)
+}
 
-var shortNetworkOutageDelays = [...]time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 8 * time.Second}
-
-// Retry only the failed pre-stream model call, never its enclosing step/tool
-// batch. The outage window begins at the first connectivity failure and counts
-// time spent inside subsequent attempts too. It limits scheduling, not the
-// duration of an already-started provider request (which keeps its own timeout).
+// Retry only the failed model call, never its enclosing step/tool batch:
+// pre-stream transport failures, and accepted streams that failed with a
+// retryable provider error before any tool call or visible answer text. The
+// number of retries is the shared max_retries setting (unlimited when -1);
+// every wait ends immediately when ctx is cancelled (Ctrl+C, Esc, Stop, the
+// batch signal).
 func (l *Loop) completeWithStreamRetry(ctx context.Context, toolRequest preparedToolRequest, out chan<- Event) (string, []llm.ToolCall, *llm.Usage, error) {
 	if err := ctx.Err(); err != nil {
 		return "", nil, nil, err
 	}
 	text, calls, usage, err := l.completeOnce(ctx, toolRequest, out)
-	var outageStart time.Time
-	for attempt := 0; ; attempt++ {
+	for retries := 0; ; {
 		if ctx.Err() != nil {
 			return text, calls, usage, ctx.Err()
 		}
@@ -263,33 +271,22 @@ func (l *Loop) completeWithStreamRetry(ctx context.Context, toolRequest prepared
 			break
 		}
 		outage := isShortNetworkOutage(err)
-		var wait time.Duration
-		var notice string
-		if outage {
-			if outageStart.IsZero() {
-				outageStart = streamRetryNow()
-			}
-			if attempt >= len(shortNetworkOutageDelays) {
-				break
-			}
-			wait = shortNetworkOutageDelays[attempt]
-			if streamRetryNow().Sub(outageStart)+wait >= shortNetworkOutageWindow {
-				break
-			}
-			notice = fmt.Sprintf("Model connection unavailable — waiting %s before retry (attempt %d/%d; recovery window %s).",
-				wait, attempt+2, len(shortNetworkOutageDelays)+1, shortNetworkOutageWindow)
-		} else {
-			if attempt >= len(streamRetryDelays) || !isTransientCompletionError(err) {
-				break
-			}
-			wait = streamRetryDelays[attempt]
-			notice = fmt.Sprintf("connection to the model dropped (%v) — retrying in %s (attempt %d/%d)",
-				err, wait, attempt+2, len(streamRetryDelays)+1)
-		}
-		// A later generic failure cannot extend a recovery window already
-		// opened by a connectivity outage.
-		if !outageStart.IsZero() && streamRetryNow().Sub(outageStart)+wait >= shortNetworkOutageWindow {
+		inStream := !outage && retryableAcceptedStreamError(err)
+		if !outage && !inStream && !isTransientCompletionError(err) {
 			break
+		}
+		if !llm.RetryAllowed(retries) {
+			break
+		}
+		retries++
+		wait := streamRetryBackoff(retries)
+		progress := llm.RetryProgress(retries)
+		var notice string
+		switch {
+		case outage:
+			notice = fmt.Sprintf("Model connection unavailable — waiting %s before retry %s.", wait.Round(100*time.Millisecond), progress)
+		default:
+			notice = fmt.Sprintf("connection to the model dropped (%v) — retrying in %s (retry %s)", err, wait.Round(100*time.Millisecond), progress)
 		}
 		select {
 		case out <- NoticeEvent{Text: notice}:
@@ -301,9 +298,6 @@ func (l *Loop) completeWithStreamRetry(ctx context.Context, toolRequest prepared
 		}
 		if ctx.Err() != nil {
 			return text, calls, usage, ctx.Err()
-		}
-		if !outageStart.IsZero() && streamRetryNow().Sub(outageStart) >= shortNetworkOutageWindow {
-			break
 		}
 		text, calls, usage, err = l.completeOnce(llm.WithCallReason(ctx, llm.ReasonTransportRetry), toolRequest, out)
 	}

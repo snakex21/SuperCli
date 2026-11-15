@@ -15,9 +15,18 @@ var errHTTP2Reset = errors.New("sse: stream error: stream ID 49; NO_ERROR; recei
 
 func fastStreamRetry(t *testing.T) {
 	t.Helper()
-	saved := streamRetryDelays
-	streamRetryDelays = []time.Duration{time.Millisecond, time.Millisecond}
-	t.Cleanup(func() { streamRetryDelays = saved })
+	withAgentMaxRetries(t, llm.DefaultMaxRetries)
+	saved := streamRetryBackoff
+	streamRetryBackoff = func(int) time.Duration { return time.Millisecond }
+	t.Cleanup(func() { streamRetryBackoff = saved })
+}
+
+// withAgentMaxRetries pins the shared retry settings for one test.
+func withAgentMaxRetries(t *testing.T, n int) {
+	t.Helper()
+	saved, unknown := llm.MaxRetries(), llm.RetryUnknownErrors()
+	llm.SetMaxRetries(n)
+	t.Cleanup(func() { llm.SetMaxRetries(saved); llm.SetRetryUnknownErrors(unknown) })
 }
 
 func TestStreamRetryDoesNotResendInterruptedReasoning(t *testing.T) {

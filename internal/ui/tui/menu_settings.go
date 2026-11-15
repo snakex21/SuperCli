@@ -80,6 +80,9 @@ func settingsRowsFor(language string) []settingRow {
 		{"preflight_repo", textFor(language, "tui.setting_preflight_repo.87b593f4d4"), textFor(language, "tui.setting_preflight_repo.b0604569e8"), setTriState, true},
 		{"fallback_models", textFor(language, "tui.setting_fallback_models.9c410e8b4f"), textFor(language, "tui.setting_fallback_models.649acf7419"), setText, true},
 		{"fallback_cooldown_seconds", textFor(language, "tui.setting_fallback_cooldown_seconds.d70101b0dd"), textFor(language, "tui.setting_fallback_cooldown_seconds.071ab161ca"), setInt, true},
+		{"max_retries", textFor(language, "tui.setting_max_retries.label"), textFor(language, "tui.setting_max_retries.desc"), setText, false},
+		{"retry_unknown_errors", textFor(language, "tui.setting_retry_unknown_errors.label"), textFor(language, "tui.setting_retry_unknown_errors.desc"), setTriState, false},
+		{"requests_per_minute", textFor(language, "tui.setting_requests_per_minute.label"), textFor(language, "tui.setting_requests_per_minute.desc"), setInt, false},
 		{"allow_all", textFor(language, "tui.setting_allow_all.adad46e596"), textFor(language, "tui.setting_allow_all.77ea1b1074"), setTriState, false},
 		{"noop_gate", textFor(language, "tui.setting_noop_gate.236d6e69d9"), textFor(language, "tui.setting_noop_gate.a1c16ea2ae"), setTriState, false},
 		{"default_model", textFor(language, "tui.menu_providers_render.3840d9d294"), textFor(language, "tui.setting_default_model.eaeea4b67b"), setReadonly, false},
@@ -94,7 +97,7 @@ func settingCategory(key string) int {
 	switch key {
 	case "orchestrator", "task_parallel", "task_model", "task_reasoning_effort", "advisor_reasoning_effort", "review_reasoning_effort", "darwin_reasoning_effort", "advisor_model", "review_model", "orchestrator_model", "task_max_steps", "task_max_tokens":
 		return 1
-	case "discard_previous_reasoning", "compact_model", "context_policy", "context_window", "memory_briefing_tokens", "preflight_repo", "fallback_models", "fallback_cooldown_seconds":
+	case "discard_previous_reasoning", "compact_model", "context_policy", "context_window", "memory_briefing_tokens", "preflight_repo", "fallback_models", "fallback_cooldown_seconds", "max_retries", "retry_unknown_errors", "requests_per_minute":
 		return 2
 	case "show_generation_speed", "update_notify", "assistant_edit", "assistant_edit_model_sees", "cost_currency", "language", "default_model", "default_provider", "allow_all", "":
 		return 0
@@ -119,7 +122,7 @@ func settingSection(key string) string {
 	switch key {
 	case "orchestrator", "navigator", "task_parallel", "task_model", "task_reasoning_effort", "advisor_reasoning_effort", "review_reasoning_effort", "darwin_reasoning_effort", "advisor_model", "review_model", "orchestrator_model", "task_max_steps", "task_max_tokens", "darwin", "darwin_parallel", "darwin_models", "darwin_judge_model", "darwin_pool_size", "darwin_auto_merge", "draft_verify", "draft_verify_max_rounds", "verify_commands":
 		return textFor("pl", "tui.setting_section.86e566d0ea")
-	case "discard_previous_reasoning", "thinking", "stable_toolset", "cache_prompt", "context_policy", "context_window", "prune_protect_tokens", "memory_briefing_tokens", "preflight_repo", "fallback_models", "fallback_cooldown_seconds", "compact_model":
+	case "discard_previous_reasoning", "thinking", "stable_toolset", "cache_prompt", "context_policy", "context_window", "prune_protect_tokens", "memory_briefing_tokens", "preflight_repo", "fallback_models", "fallback_cooldown_seconds", "max_retries", "retry_unknown_errors", "requests_per_minute", "compact_model":
 		return textFor("pl", "tui.setting_section.630226b61c")
 	default:
 		return textFor("pl", "tui.action_cost.6725e7bbcd")
@@ -130,7 +133,7 @@ func (m Model) localizedSettingSection(key string) string {
 	switch key {
 	case "orchestrator", "navigator", "task_parallel", "task_model", "task_reasoning_effort", "advisor_reasoning_effort", "review_reasoning_effort", "darwin_reasoning_effort", "advisor_model", "review_model", "orchestrator_model", "task_max_steps", "task_max_tokens", "darwin", "darwin_parallel", "darwin_models", "darwin_judge_model", "darwin_pool_size", "darwin_auto_merge", "draft_verify", "draft_verify_max_rounds", "verify_commands":
 		return m.tr("tui.setting_section.86e566d0ea")
-	case "discard_previous_reasoning", "thinking", "stable_toolset", "cache_prompt", "context_policy", "context_window", "prune_protect_tokens", "memory_briefing_tokens", "preflight_repo", "fallback_models", "fallback_cooldown_seconds", "compact_model":
+	case "discard_previous_reasoning", "thinking", "stable_toolset", "cache_prompt", "context_policy", "context_window", "prune_protect_tokens", "memory_briefing_tokens", "preflight_repo", "fallback_models", "fallback_cooldown_seconds", "max_retries", "retry_unknown_errors", "requests_per_minute", "compact_model":
 		return m.tr("tui.setting_section.630226b61c")
 	default:
 		return m.tr("tui.action_cost.6725e7bbcd")

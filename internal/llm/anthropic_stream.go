@@ -163,11 +163,7 @@ func (p *AnthropicProvider) streamSSE(ctx context.Context, r io.Reader, out chan
 			}
 			return errAnthropicMessageStop
 		case "error":
-			message := ev.Error.Message
-			if message == "" {
-				message = "stream error"
-			}
-			return fmt.Errorf("anthropic: %s", message)
+			return anthropicStreamError(ev.Error.Type, ev.Error.Message)
 		}
 		return nil
 	})

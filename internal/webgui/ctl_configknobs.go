@@ -90,6 +90,9 @@ func knobDefs() []knobDef {
 		{"compact_model", "optional model/host for context summaries (\"model\" or \"provider/model\"; empty = active model)", knobText, true},
 		{"fallback_models", "ordered opt-in main-model failover list; semicolon-separated provider/model references", knobText, true},
 		{"fallback_cooldown_seconds", "seconds to skip a backend that failed before first output", knobInt, true},
+		{"max_retries", "retries after a temporary provider error (503, 429, overloaded, dropped connection); 0 = none, -1 or inf = until it works or you press Stop; default 5", knobText, false},
+		{"retry_unknown_errors", "also retry provider errors that are not recognized; auth, invalid request, unknown model and context overflow are never retried", knobTri, false},
+		{"requests_per_minute", "client-side limit of requests per minute to each provider endpoint, shared by all parallel workers; 0 = off", knobInt, false},
 		{"noop_gate", "skip a batch (-p) run with zero LLM calls when nothing changed since the last identical run", knobTri, false},
 		{"preflight_repo", "append a compact repo-state block to the first message and worker briefings (git optional)", knobTri, true},
 		{"draft_verify", "worker drafts file changes; objective sieve + big-model verdict gate them", knobTri, true},
@@ -247,6 +250,21 @@ func knobValue(c *config.TomlConfig, key string) (value, source, raw string) {
 		return joined, "manual", joined
 	case "fallback_cooldown_seconds":
 		return intKnob(c.FallbackCooldownSeconds, "30")
+	case "max_retries":
+		n := c.MaxRetriesSetting()
+		label := strconv.Itoa(n)
+		if n < 0 {
+			label = "∞"
+		}
+		if c.MaxRetries == nil {
+			return "default (" + label + ")", "default", ""
+		}
+		return label, "manual", strconv.Itoa(n)
+	case "retry_unknown_errors":
+		v, s := triKnob(c.RetryUnknownErrors, "off")
+		return v, s, ""
+	case "requests_per_minute":
+		return intKnob(c.RequestsPerMinute, "off")
 	case "noop_gate":
 		v, s := triKnob(c.NoopGate, "off")
 		return v, s, ""
@@ -351,6 +369,8 @@ func knobState(c *config.TomlConfig, key string) string {
 		return tri(c.TaskParallel)
 	case "noop_gate":
 		return tri(c.NoopGate)
+	case "retry_unknown_errors":
+		return tri(c.RetryUnknownErrors)
 	case "preflight_repo":
 		return tri(c.PreflightRepo)
 	case "draft_verify":
@@ -370,8 +390,10 @@ func knobDefault(key string) string {
 		return "auto"
 	case "thinking", "stable_toolset", "preflight_repo", "show_generation_speed", "update_notify":
 		return "on"
-	case "allow_all", "noop_gate", "draft_verify", "discard_previous_reasoning", "darwin", "assistant_edit", "assistant_edit_model_sees":
+	case "allow_all", "noop_gate", "draft_verify", "discard_previous_reasoning", "darwin", "assistant_edit", "assistant_edit_model_sees", "retry_unknown_errors", "requests_per_minute":
 		return "off"
+	case "max_retries":
+		return "5"
 	default:
 		return ""
 	}

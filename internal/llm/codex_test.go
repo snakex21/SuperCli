@@ -327,6 +327,7 @@ func TestCodexRetriesOn429WithRetryAfter(t *testing.T) {
 }
 
 func TestCodexExhausts429WithHint(t *testing.T) {
+	withMaxRetries(t, 2)
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -353,7 +354,7 @@ func TestCodexExhausts429WithHint(t *testing.T) {
 		t.Fatalf("terminal error missing switch-model hint: %q", errStr)
 	}
 	if calls != 3 {
-		t.Fatalf("server calls = %d, want 3 (maxRateLimitAttempts)", calls)
+		t.Fatalf("server calls = %d, want 3 (1 + max_retries=2)", calls)
 	}
 }
 

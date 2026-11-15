@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 )
 
 func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []ToolDef) (<-chan Delta, error) {
@@ -156,7 +155,7 @@ func (p *CodexProvider) Complete(ctx context.Context, msgs []Message, tools []To
 //   - 401: transparent token refresh (once);
 //   - 400 effort-learn: patch reasoning effort from the error (once);
 //   - explicit image-input rejection: retry without images and remember it (once);
-//   - 429/5xx: honour Retry-After (capped by rateLimitWaitBudget),
+//   - 429/5xx: up to max_retries, Retry-After honoured (capped at MaxRetryBackoff),
 //     mirroring openai.go/anthropic.go. Each rate-limit retry emits a
 //     non-terminal Delta.Notice via notify (may be nil), and after the
 //     retries are exhausted the terminal error carries the same
@@ -170,10 +169,15 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, cancel context.CancelFun
 	refreshed := false
 	visionRetried := false
 	zenRemapped := false
-	const maxRateLimitAttempts = 3
-	rlAttempt := 0
-	waitBudget := rateLimitWaitBudget
+	retries := 0
 	for {
+		if err := WaitRequestSlot(ctx, p.cfg.BackendURL, func(text string) {
+			if notify != nil {
+				notify(Delta{Notice: text})
+			}
+		}); err != nil {
+			return nil, err
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 			p.cfg.BackendURL+"/responses", bytes.NewReader(body))
 		if err != nil {
@@ -267,19 +271,17 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, cancel context.CancelFun
 				}
 			}
 		}
-		if isRetryableProviderResponse(resp.StatusCode, respBody) && rlAttempt < maxRateLimitAttempts-1 {
-			rlAttempt++
-			wait := retryWait(resp.Header, rlAttempt, waitBudget)
-			waitBudget -= wait
-			if notify != nil {
-				notify(Delta{Notice: rateLimitNotice(p.cfg.Model, resp.StatusCode, wait, rlAttempt, maxRateLimitAttempts)})
+		if providerResponseRetryable(resp.StatusCode, respBody) && RetryAllowed(retries) {
+			if wait, ok := providerRetryWait(resp.StatusCode, resp.Header, retries+1); ok {
+				retries++
+				if notify != nil {
+					notify(Delta{Notice: rateLimitNotice(p.cfg.Model, resp.StatusCode, wait, retries)})
+				}
+				if err := retrySleep(ctx, wait); err != nil {
+					return nil, err
+				}
+				continue
 			}
-			select {
-			case <-time.After(wait):
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
-			continue
 		}
 		return nil, fmt.Errorf("http %d: %s%s", resp.StatusCode, string(respBody), providerErrorHint(p.cfg.BackendURL, p.cfg.Model, resp.StatusCode, respBody))
 	}
@@ -425,21 +427,29 @@ func (p *CodexProvider) streamCodexSSE(ctx context.Context, r io.Reader, out cha
 			emit(d)
 			return
 		case "response.failed":
-			msg := "response failed"
-			if ev.Response != nil && ev.Response.Error != nil && ev.Response.Error.Message != "" {
-				msg = ev.Response.Error.Message
+			msg, code := "response failed", ""
+			if ev.Response != nil && ev.Response.Error != nil {
+				code = ev.Response.Error.Code
+				if ev.Response.Error.Message != "" {
+					msg = ev.Response.Error.Message
+				}
 			}
-			emit(Delta{Err: fmt.Errorf("%s: %s", p.responsesAPIName(), msg)})
+			emit(Delta{Err: responsesStreamError(p.responsesAPIName(), code, msg)})
 			return
 		case "error":
-			msg := ev.Message
-			if msg == "" && ev.Error != nil {
-				msg = ev.Error.Message
+			msg, code := ev.Message, ev.Code
+			if ev.Error != nil {
+				if msg == "" {
+					msg = ev.Error.Message
+				}
+				if code == "" {
+					code = ev.Error.Code
+				}
 			}
 			if msg == "" {
 				msg = "stream error"
 			}
-			emit(Delta{Err: fmt.Errorf("%s: %s", p.responsesAPIName(), msg)})
+			emit(Delta{Err: responsesStreamError(p.responsesAPIName(), code, msg)})
 			return
 		}
 	}

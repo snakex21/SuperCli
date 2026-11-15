@@ -22,13 +22,21 @@ import (
 	"supercli/internal/tools"
 )
 
-// No sockets or real sleeps: advance only the retry scheduler's clock.
+// No sockets or real sleeps: record the scheduler's waits. The backoff is
+// made deterministic (1 s doubling, no jitter, 60 s cap) so the schedule can
+// be asserted; the retry count is the default max_retries (5).
 func fakeOutageClock(t *testing.T) (*time.Time, *[]time.Duration) {
 	t.Helper()
-	savedNow, savedWait := streamRetryNow, streamRetryWait
+	withAgentMaxRetries(t, llm.DefaultMaxRetries)
+	savedWait, savedBackoff := streamRetryWait, streamRetryBackoff
 	now := time.Unix(1000, 0)
 	var waits []time.Duration
-	streamRetryNow = func() time.Time { return now }
+	streamRetryBackoff = func(retry int) time.Duration {
+		if retry > 6 {
+			return llm.MaxRetryBackoff
+		}
+		return min(time.Second<<(retry-1), llm.MaxRetryBackoff)
+	}
 	streamRetryWait = func(ctx context.Context, d time.Duration) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -37,7 +45,7 @@ func fakeOutageClock(t *testing.T) (*time.Time, *[]time.Duration) {
 		now = now.Add(d)
 		return nil
 	}
-	t.Cleanup(func() { streamRetryNow, streamRetryWait = savedNow, savedWait })
+	t.Cleanup(func() { streamRetryWait, streamRetryBackoff = savedWait, savedBackoff })
 	return &now, &waits
 }
 
@@ -86,30 +94,87 @@ func TestOutageRetryFiniteExhaustion(t *testing.T) {
 	if !errors.Is(err, cause) || p.calls.Load() != 6 {
 		t.Fatalf("err=%v calls=%d", err, p.calls.Load())
 	}
-	want := []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 8 * time.Second}
+	want := []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second}
 	if !reflect.DeepEqual(*waits, want) {
 		t.Fatalf("waits=%v want=%v", *waits, want)
 	}
 }
 
-func TestOutageRetryWindowIncludesAttempts(t *testing.T) {
-	now, waits := fakeOutageClock(t)
-	cause := outageError(syscall.ECONNRESET)
-	p := &startupRetryProvider{run: func(int) (<-chan llm.Delta, error) {
-		*now = now.Add(20 * time.Second)
-		return nil, cause
-	}}
-	l := makeLoop(t, p, tools.NewRegistry(), "")
-	_, _, _, err := l.completeWithStreamRetry(context.Background(), l.prepareToolRequest(), make(chan Event, 32))
-	if !errors.Is(err, cause) || p.calls.Load() != 3 || len(*waits) != 2 {
-		t.Fatalf("err=%v calls=%d waits=%v", err, p.calls.Load(), *waits)
+func TestOutageRetryHonoursConfiguredCount(t *testing.T) {
+	for _, n := range []int{0, 2, 9} {
+		t.Run(fmt.Sprint(n), func(t *testing.T) {
+			_, waits := fakeOutageClock(t)
+			llm.SetMaxRetries(n)
+			cause := outageError(syscall.ENETUNREACH)
+			p := &startupRetryProvider{run: func(int) (<-chan llm.Delta, error) { return nil, cause }}
+			l := makeLoop(t, p, tools.NewRegistry(), "")
+			_, _, _, err := l.completeWithStreamRetry(context.Background(), l.prepareToolRequest(), make(chan Event, 64))
+			if !errors.Is(err, cause) || p.calls.Load() != int32(n+1) || len(*waits) != n {
+				t.Fatalf("err=%v calls=%d waits=%v", err, p.calls.Load(), *waits)
+			}
+			for _, w := range *waits {
+				if w > llm.MaxRetryBackoff {
+					t.Fatalf("wait %v above the 60 s cap", w)
+				}
+			}
+		})
 	}
 }
 
-func TestOutageRetryCancelDeadlineAndExpiredWindow(t *testing.T) {
-	for _, mode := range []string{"cancel", "deadline", "window"} {
+func TestOutageRetryUnlimitedUntilCancel(t *testing.T) {
+	_, waits := fakeOutageClock(t)
+	llm.SetMaxRetries(llm.UnlimitedRetries)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cause := outageError(syscall.ENETDOWN)
+	p := &startupRetryProvider{run: func(call int) (<-chan llm.Delta, error) {
+		if call == 40 {
+			cancel()
+		}
+		return nil, cause
+	}}
+	l := makeLoop(t, p, tools.NewRegistry(), "")
+	out := make(chan Event, 128)
+	_, _, _, err := l.completeWithStreamRetry(ctx, l.prepareToolRequest(), out)
+	if !errors.Is(err, context.Canceled) || p.calls.Load() != 40 {
+		t.Fatalf("err=%v calls=%d", err, p.calls.Load())
+	}
+	if len(*waits) != 39 || (*waits)[38] != llm.MaxRetryBackoff {
+		t.Fatalf("waits=%d last=%v", len(*waits), (*waits)[len(*waits)-1])
+	}
+	close(out)
+	var last string
+	for ev := range out {
+		if e, ok := ev.(NoticeEvent); ok {
+			last = e.Text
+		}
+	}
+	if !strings.Contains(last, "retry 39/∞") {
+		t.Fatalf("last notice = %q", last)
+	}
+}
+
+func TestOutageRetryUnlimitedCancelDuringRealWaitIsPrompt(t *testing.T) {
+	withAgentMaxRetries(t, llm.UnlimitedRetries)
+	saved := streamRetryBackoff
+	streamRetryBackoff = func(int) time.Duration { return llm.MaxRetryBackoff }
+	t.Cleanup(func() { streamRetryBackoff = saved })
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	p := &startupRetryProvider{run: func(int) (<-chan llm.Delta, error) { return nil, outageError(syscall.ENETDOWN) }}
+	l := makeLoop(t, p, tools.NewRegistry(), "")
+	time.AfterFunc(30*time.Millisecond, cancel)
+	start := time.Now()
+	_, _, _, err := l.completeWithStreamRetry(ctx, l.prepareToolRequest(), make(chan Event, 8))
+	if !errors.Is(err, context.Canceled) || time.Since(start) > 5*time.Second {
+		t.Fatalf("err=%v elapsed=%v", err, time.Since(start))
+	}
+}
+
+func TestOutageRetryCancelAndDeadline(t *testing.T) {
+	for _, mode := range []string{"cancel", "deadline"} {
 		t.Run(mode, func(t *testing.T) {
-			now, _ := fakeOutageClock(t)
+			fakeOutageClock(t)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			cause := outageError(syscall.ENETDOWN)
@@ -118,22 +183,16 @@ func TestOutageRetryCancelDeadlineAndExpiredWindow(t *testing.T) {
 				case "cancel":
 					cancel()
 					return ctx.Err()
-				case "deadline":
-					return context.DeadlineExceeded
 				default:
-					*now = now.Add(31 * time.Second)
-					return nil
+					return context.DeadlineExceeded
 				}
 			}
 			p := &startupRetryProvider{run: func(int) (<-chan llm.Delta, error) { return nil, cause }}
 			l := makeLoop(t, p, tools.NewRegistry(), "")
 			_, _, _, err := l.completeWithStreamRetry(ctx, l.prepareToolRequest(), make(chan Event, 32))
-			want := cause
+			want := context.DeadlineExceeded
 			if mode == "cancel" {
 				want = context.Canceled
-			}
-			if mode == "deadline" {
-				want = context.DeadlineExceeded
 			}
 			if !errors.Is(err, want) || p.calls.Load() != 1 {
 				t.Fatalf("err=%v want=%v calls=%d", err, want, p.calls.Load())
@@ -166,13 +225,13 @@ func TestOutageRetryTypedClassification(t *testing.T) {
 	}
 }
 
-func TestOutageRetryExclusionsAndUnchangedGenericBudget(t *testing.T) {
+func TestOutageRetryExclusionsAndSharedGenericBudget(t *testing.T) {
 	for name, tc := range map[string]struct {
 		cause error
 		calls int
 	}{
-		"generic-eof":   {io.EOF, 3},
-		"http2":         {&url.Error{Op: "Post", Err: startupHTTP2TransportError("http2: server sent GOAWAY")}, 3},
+		"generic-eof":   {io.EOF, 6},
+		"http2":         {&url.Error{Op: "Post", Err: startupHTTP2TransportError("http2: server sent GOAWAY")}, 6},
 		"429":           {&llm.HTTPResponseError{Status: 429, Body: "connection reset by peer"}, 1},
 		"503":           {&llm.HTTPResponseError{Status: 503, Body: "unexpected EOF"}, 1},
 		"auth":          {&url.Error{Op: "Post", Err: &llm.HTTPResponseError{Status: 401}}, 1},
@@ -197,7 +256,8 @@ func TestOutageRetryExclusionsAndUnchangedGenericBudget(t *testing.T) {
 	}
 }
 
-func TestOutageRetryDoesNotExpandMixedGenericBudget(t *testing.T) {
+// Outage and generic transport failures draw from ONE max_retries budget.
+func TestOutageRetryMixedFailuresShareOneBudget(t *testing.T) {
 	fakeOutageClock(t)
 	p := &startupRetryProvider{run: func(call int) (<-chan llm.Delta, error) {
 		if call < 4 {
@@ -207,7 +267,7 @@ func TestOutageRetryDoesNotExpandMixedGenericBudget(t *testing.T) {
 	}}
 	l := makeLoop(t, p, tools.NewRegistry(), "")
 	_, _, _, err := l.completeWithStreamRetry(context.Background(), l.prepareToolRequest(), make(chan Event, 32))
-	if !errors.Is(err, io.EOF) || p.calls.Load() != 4 {
+	if !errors.Is(err, io.EOF) || p.calls.Load() != 6 {
 		t.Fatalf("err=%v calls=%d", err, p.calls.Load())
 	}
 }

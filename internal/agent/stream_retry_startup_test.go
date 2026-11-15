@@ -168,7 +168,7 @@ func TestStreamRetryStartupGenericBudgetAndAcceptedStreamBoundary(t *testing.T) 
 			}}
 			l := makeLoop(t, p, tools.NewRegistry(), "")
 			_, _, _, err := l.completeWithStreamRetry(context.Background(), l.prepareToolRequest(), make(chan Event, 16))
-			wantCalls := int32(3)
+			wantCalls := int32(1 + llm.DefaultMaxRetries)
 			if mixed {
 				wantCalls, cause = 2, errHTTP2Reset
 			}
@@ -182,9 +182,9 @@ func TestStreamRetryStartupGenericBudgetAndAcceptedStreamBoundary(t *testing.T) 
 func TestStreamRetryStartupCancelOrDeadlineDuringWait(t *testing.T) {
 	for _, deadline := range []bool{false, true} {
 		t.Run(fmt.Sprint("deadline=", deadline), func(t *testing.T) {
-			saved := streamRetryDelays
-			streamRetryDelays = []time.Duration{time.Hour, time.Hour}
-			t.Cleanup(func() { streamRetryDelays = saved })
+			saved := streamRetryBackoff
+			streamRetryBackoff = func(int) time.Duration { return time.Hour }
+			t.Cleanup(func() { streamRetryBackoff = saved })
 			ctx, cancel := context.WithCancel(context.Background())
 			if deadline {
 				cancel()
