@@ -116,7 +116,7 @@ in the instance-local `model-context-windows.json`; the UI manages the file.
 | knob | default | touch when |
 |---|---|---|
 | `preflight_repo` | unset = **ON** (~73 tok → −33% turns, measured) | huge non-repo directories where the mtime walk is slow, or privacy |
-| `completion_check` | unset = **ON** | `false` skips the one extra pass before a Run finishes after edits to 3+ files (search for leftovers) or after a reply that admits unfinished work (do the possible rest, report what is blocked) |
+| `completion_check` | unset = **ON** | `false` skips the one extra pass before a Run finishes with a reply that admits unfinished work (the model is asked to do the possible rest and report only what is blocked) |
 | `noop_gate` | unset = **OFF** | ON only for idempotent batch pipelines — it changes answer semantics for repeated identical question-prompts (see performance.md) |
 
 ## Delegation (see delegation.md)

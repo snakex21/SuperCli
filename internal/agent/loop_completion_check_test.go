@@ -90,32 +90,41 @@ func completionMessages(l *Loop) []string {
 	return out
 }
 
-func TestCompletionCheck_MultiFileRunGetsOneLeftoversPass(t *testing.T) {
-	l, main := completionLoop(t, true, 3, "Renamed in 3 files.", "Searched: no leftovers. Renamed in 3 files.")
-	notices := runCompletionLoop(t, l, "rename Foo to Bar everywhere")
-	if got := atomic.LoadInt32(&main.calls); got != 3 {
-		t.Fatalf("main calls = %d, want 3 (edit, answer, checked answer)", got)
-	}
-	msgs := completionMessages(l)
-	if len(msgs) != 1 || !strings.Contains(msgs[0], "You edited 3 files") || !strings.Contains(msgs[0], "search the workspace") {
-		t.Fatalf("completion messages = %q", msgs)
-	}
-	if !strings.Contains(strings.Join(notices, "\n"), "completion check: 3 files edited") {
-		t.Fatalf("notices = %v", notices)
-	}
-	if last := l.Messages[len(l.Messages)-1]; last.Role != llm.RoleAssistant || !strings.Contains(messageDraftText(last), "no leftovers") {
-		t.Fatalf("final message = %+v", last)
-	}
-}
-
-func TestCompletionCheck_FewFilesFinishNormally(t *testing.T) {
-	l, main := completionLoop(t, true, 2, "Changed two files.")
-	runCompletionLoop(t, l, "fix it")
+func TestCompletionCheck_MultiFileRunFinishesNormally(t *testing.T) {
+	// The rc1 leftovers trigger for 3+ edited files was dropped (no measured
+	// gain, +15 % cost): a finished multi-file Run ends on its answer.
+	l, main := completionLoop(t, true, 4, "Renamed in 4 files.")
+	runCompletionLoop(t, l, "rename Foo to Bar everywhere")
 	if got := atomic.LoadInt32(&main.calls); got != 2 {
 		t.Fatalf("main calls = %d, want 2", got)
 	}
 	if msgs := completionMessages(l); len(msgs) != 0 {
 		t.Fatalf("unexpected completion check: %q", msgs)
+	}
+}
+
+func TestCompletionCheck_PartialEditsThatAdmitLeftoversGetOnePass(t *testing.T) {
+	l, main := completionLoop(t, true, 3, "Added the header to 3 files; the remaining files still need it.", "Done: all files have the header.")
+	notices := runCompletionLoop(t, l, "add the header to every file")
+	if got := atomic.LoadInt32(&main.calls); got != 3 {
+		t.Fatalf("main calls = %d, want 3", got)
+	}
+	if msgs := completionMessages(l); len(msgs) != 1 {
+		t.Fatalf("completion messages = %q", msgs)
+	}
+	if !strings.Contains(strings.Join(notices, " | "), "admits unfinished work") {
+		t.Fatalf("notices = %v", notices)
+	}
+	if last := l.Messages[len(l.Messages)-1]; last.Role != llm.RoleAssistant || !strings.Contains(messageDraftText(last), "all files") {
+		t.Fatalf("final message = %+v", last)
+	}
+}
+
+func TestCompletionCheck_TypographicApostrophe(t *testing.T) {
+	l, main := completionLoop(t, true, 0, "I couldn’t complete it and haven’t changed any files.", "Done what was possible.")
+	runCompletionLoop(t, l, "do it")
+	if got := atomic.LoadInt32(&main.calls); got != 2 {
+		t.Fatalf("main calls = %d, want 2", got)
 	}
 }
 
@@ -145,7 +154,7 @@ func TestCompletionCheck_HonestPartialAfterEditsFinishes(t *testing.T) {
 }
 
 func TestCompletionCheck_AtMostOncePerRun(t *testing.T) {
-	l, main := completionLoop(t, true, 3, "Done.", "I did not finish the last file.", "never reached")
+	l, main := completionLoop(t, true, 3, "I did not finish the last file.", "I still did not finish the last file.", "never reached")
 	runCompletionLoop(t, l, "edit three files")
 	if got := atomic.LoadInt32(&main.calls); got != 3 {
 		t.Fatalf("main calls = %d, want 3", got)

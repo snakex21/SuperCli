@@ -70,7 +70,7 @@ func TestCoreWordContractIsCompactAndDeterministic(t *testing.T) {
 // must not sink the rest of the request either (1.0.27): the doable parts
 // are done and the missing one is reported.
 func TestCoreMissingTargetHonesty(t *testing.T) {
-	for _, want := range []string{"Missing file/target", "do every other part", "report what is missing", "never invent or substitute"} {
+	for _, want := range []string{"Missing file/target", "do every other part", "say what is missing and ask", "never invent or substitute"} {
 		if !strings.Contains(Core, want) {
 			t.Errorf("Core missing honesty rule %q", want)
 		}

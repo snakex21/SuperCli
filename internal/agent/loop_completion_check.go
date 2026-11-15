@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -13,27 +12,20 @@ import (
 	"supercli/internal/tools"
 )
 
-// Completion check: the would-be final answer of a Run gets ONE more pass
-// when the work is the kind that is typically finished too early:
+// Completion check: a would-be final answer that itself says part of the
+// request is not done ("I did not finish", "I haven't changed any files",
+// "nie udało się") gets ONE more pass per Run: do every remaining part that
+// is possible and report only what is truly blocked, instead of giving up on
+// the whole request. An answer that already reports a missing target after
+// other edits in the same Run is the honest partial result and is not
+// re-asked. The check costs nothing on any other Run; config
+// completion_check = false turns it off.
 //
-//   - multi-file work (completionCheckMinFiles or more distinct files
-//     edited in this Run): the model is asked to search for leftovers (an old
-//     name still present, files still lacking the change) and recheck each
-//     stated rule before answering;
-//   - a reply that itself says part of the request is not done ("I did not
-//     finish", "I haven't changed any files", "nie udało się"): the model is
-//     asked to do every remaining part that is possible and report only what
-//     is truly blocked, instead of giving up on the whole request.
-//
-// It runs at most once per Run, costs nothing on read-only or single-file
-// Runs whose answer does not admit unfinished work, and never forces tools:
-// a model that already verified simply restates its final answer. The check
-// is generic runtime behaviour (no task knowledge); config completion_check
-// = false turns it off.
-
-// completionCheckMinFiles is the number of distinct edited files that makes
-// a Run "multi-file" for the leftovers check.
-const completionCheckMinFiles = 3
+// 1.0.27 release candidate 1 also re-asked every Run that edited 3+ files to
+// search for leftovers. Its ablation on the v2 suite (3 repeats each) was
+// 75.9 +/- 3.2 % with it vs 70.4 +/- 8.5 % without, inside the noise, for +15 %
+// cost, so that trigger was dropped; the Core prompt line asking for a
+// leftovers search after multi-file work remains.
 
 type completionCheckState struct {
 	mu    sync.Mutex
@@ -130,23 +122,16 @@ func (l *Loop) runCompletionCheck(ctx context.Context, out chan<- Event, text st
 	if haveEditFiles {
 		manyFiles = " (edit_files applies one change to many files)"
 	}
-	var content, notice string
-	switch {
-	case unfinishedReply.MatchString(text) && !(files > 0 && missingTargetReply.MatchString(text)):
-		content = "[completion check] Your reply says part of the request is not done. " +
-			"Do every remaining part that is possible now" + manyFiles + "; one missing or impossible part never blocks the others. " +
-			"Never create, guess or substitute a missing file or target. " +
-			"Then give the final answer: what you changed, and exactly what could not be done and why."
-		notice = "completion check: the reply admits unfinished work; asking to finish the possible parts"
-	case files >= completionCheckMinFiles:
-		content = fmt.Sprintf("[completion check] You edited %d files. Before the final answer, make sure nothing requested was missed: "+
-			"search the workspace for what should no longer appear (e.g. an old name) or for files that still lack the change, "+
-			"and recheck every rule of the request. Fix anything left%s. "+
-			"Then give the complete final answer.", files, manyFiles)
-		notice = fmt.Sprintf("completion check: %d files edited; asking for a leftovers search before finishing", files)
-	default:
+	// Models often write typographic apostrophes (couldn’t, didn’t).
+	text = strings.ReplaceAll(text, "’", "'")
+	if !unfinishedReply.MatchString(text) || (files > 0 && missingTargetReply.MatchString(text)) {
 		return false
 	}
+	content := "[completion check] Your reply says part of the request is not done. " +
+		"Do every remaining part that is possible now" + manyFiles + "; one missing or impossible part never blocks the others. " +
+		"Never create, guess or substitute a missing file or target. " +
+		"Then give the final answer: what you changed, and exactly what could not be done and why."
+	notice := "completion check: the reply admits unfinished work; asking to finish the possible parts"
 	l.completion.mu.Lock()
 	l.completion.fired = true
 	l.completion.mu.Unlock()
