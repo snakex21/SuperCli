@@ -447,6 +447,8 @@ type Loop struct {
 	nameCheck bool
 	// computeHintOn is LoopConfig.ComputeHint (compute_hint.go).
 	computeHintOn bool
+	// scopeCheck is LoopConfig.ScopeCheck (loop_scope_check.go).
+	scopeCheck bool
 
 	// reviewCfg is the optional interactive post-work review (config
 	// review_model); nil = off. postReview is its per-Run state.
@@ -804,6 +806,9 @@ type LoopConfig struct {
 	// ComputeHint adds the "compute it with a script" line to the request
 	// tail of a Run that asks for exact aggregates (compute_hint.go).
 	ComputeHint bool
+	// ScopeCheck enables the one-time review of files changed outside a
+	// scope-limited request ("nothing else") before the Run completes.
+	ScopeCheck bool
 	// Review, when non-nil, runs one tool-free post-work review (config
 	// review_model) before a file-changing Run completes. Nil = off.
 	Review *PostReviewConfig
@@ -1045,6 +1050,9 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	l.emptyReplyNudges = 0
 	l.resetPostReview(prompt)
 	l.resetCompletionCheck()
+	l.completion.mu.Lock()
+	l.completion.prompt = prompt
+	l.completion.mu.Unlock()
 	l.finalReplyOnly = false
 	l.finalReplyFallback = ""
 	// Finish already-collected history even after cancellation, then rebuild

@@ -195,6 +195,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.ComputeHint != nil {
 		dst.ComputeHint = src.ComputeHint
 	}
+	if src.ScopeCheck != nil {
+		dst.ScopeCheck = src.ScopeCheck
+	}
 	if src.MemoryBriefingTokens > 0 {
 		dst.MemoryBriefingTokens = src.MemoryBriefingTokens
 	}
@@ -272,6 +275,14 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 func (t TomlConfig) CompletionCheckOr(def bool) bool {
 	if t.CompletionCheck != nil {
 		return *t.CompletionCheck
+	}
+	return def
+}
+
+// ScopeCheckOr returns scope_check when set, otherwise def.
+func (t TomlConfig) ScopeCheckOr(def bool) bool {
+	if t.ScopeCheck != nil {
+		return *t.ScopeCheck
 	}
 	return def
 }

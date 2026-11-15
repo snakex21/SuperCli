@@ -31,19 +31,23 @@ type completionCheckState struct {
 	mu    sync.Mutex
 	files map[string]struct{}
 	fired bool
+	// prompt and scopeFired serve the scope check (loop_scope_check.go).
+	prompt     string
+	scopeFired bool
 }
 
 func (l *Loop) resetCompletionCheck() {
 	l.completion.mu.Lock()
 	l.completion.files = nil
 	l.completion.fired = false
+	l.completion.scopeFired = false
 	l.completion.mu.Unlock()
 }
 
 // noteCompletionMutation records the files a successful, non-inert mutation
 // changed. Tool batches may run concurrently, hence the mutex.
 func (l *Loop) noteCompletionMutation(name, args string, res tools.Result) {
-	if !l.completionCheck {
+	if !l.completionCheck && !l.scopeCheck {
 		return
 	}
 	paths := mutationPaths(name, args, res)

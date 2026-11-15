@@ -179,6 +179,7 @@ Stats: nil
 CompletionCheck: true
 NameCheck: true
 ComputeHint: true
+ScopeCheck: true
 Review: nil
 provider.name: golden-model
 registry.len: 49

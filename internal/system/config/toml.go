@@ -384,6 +384,13 @@ type TomlConfig struct {
 	// ComputeHintOr.
 	ComputeHint *bool `toml:"compute_hint"`
 
+	// ScopeCheck turns on the one-time scope review before a Run finishes:
+	// a request that limits the work ("nothing else", "only these") and
+	// names its files, whose Run changed other files, is asked once to
+	// restore what no listed step needs and to report what could not be
+	// done. nil = on; false disables it. Read through ScopeCheckOr.
+	ScopeCheck *bool `toml:"scope_check"`
+
 	// MemoryBriefingTokens caps the session-start memory briefing
 	// (user preferences + recent session-journal entries) injected
 	// into the system prompt. It is a HARD budget: preferences and
