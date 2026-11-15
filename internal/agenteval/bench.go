@@ -284,7 +284,9 @@ func containsString(list []string, s string) bool {
 func runOne(parent context.Context, suiteDir string, options BenchOptions, task Task, model string, repeat int, ignore []string, runner AgentRunner) RunReport {
 	started := time.Now()
 	run := RunReport{TaskID: task.ID, Model: model, Repeat: repeat, Category: task.Category}
-	name := sanitizeName(task.ID + "-" + model + "-" + fmt.Sprint(time.Now().UnixNano()))
+	// The repeat index keeps parallel repeats of one task apart even when they
+	// start in the same clock tick (-jobs > 1).
+	name := sanitizeName(task.ID + "-" + model + "-r" + fmt.Sprint(repeat) + "-" + fmt.Sprint(time.Now().UnixNano()))
 	runDir := filepath.Join(options.WorkRoot, name)
 	workspace := runDir
 	dataDir := ""

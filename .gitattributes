@@ -1,0 +1,2 @@
+# Eval fixture logs are byte-exact inputs (no CRLF conversion on checkout).
+test/go/eval/fixtures/**/logs/*.log -text

@@ -140,7 +140,12 @@ func ExtractAnswer(stdout string) string {
 
 var thinkingRe = regexp.MustCompile(`(?s)<thinking>.*?</thinking>`)
 
-func normalizeAnswer(s string) string { return strings.ReplaceAll(s, `\`, "/") }
+// normalizeAnswer makes answer checks independent of path separators and of
+// typographic apostrophes: models often write isn’t/couldn’t (U+2019)
+// while the patterns use ASCII '.
+var answerNormalizer = strings.NewReplacer(`\`, "/", "’", "'", "‘", "'")
+
+func normalizeAnswer(s string) string { return answerNormalizer.Replace(s) }
 
 func matchPattern(text, pattern string, isRegex bool) bool {
 	if isRegex {
