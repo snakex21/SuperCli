@@ -1,0 +1,8 @@
+{
+  "name": "nightly",
+  "steps": [
+    "strip_whitespace",
+    "canonical_sku"
+  ],
+  "notes": "re-key everything with canonical_sku before the nightly diff"
+}

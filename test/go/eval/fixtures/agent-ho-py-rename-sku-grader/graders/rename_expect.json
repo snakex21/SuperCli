@@ -1,0 +1,101 @@
+{
+  "changed": [
+    "README.md",
+    "catalog/cli.py",
+    "catalog/dedupe.py",
+    "catalog/importer.py",
+    "catalog/report.py",
+    "catalog/search.py",
+    "catalog/sku.py",
+    "catalog/transforms.py",
+    "catalog/validate.py",
+    "docs/operations.md",
+    "docs/transforms.md",
+    "pipelines/import_feed.json",
+    "pipelines/nightly.json",
+    "tests/test_pipeline.py",
+    "tests/test_sku.py"
+  ],
+  "decoys": {
+    "CHANGELOG.md": {
+      "normalize_sku_prefix": 1,
+      "normalize_skus": 1
+    },
+    "README.md": {
+      "denormalize_sku": 1,
+      "normalize_sku_prefix": 1,
+      "normalize_skus": 1
+    },
+    "catalog/exporter.py": {
+      "denormalize_sku": 2
+    },
+    "catalog/importer.py": {
+      "normalize_skus": 2
+    },
+    "catalog/search.py": {
+      "normalize_sku_prefix": 1
+    },
+    "catalog/sku.py": {
+      "denormalize_sku": 2,
+      "normalize_sku_prefix": 2,
+      "normalize_skus": 2
+    },
+    "catalog/transforms.py": {
+      "denormalize_sku": 2
+    },
+    "catalog/validate.py": {
+      "denormalize_sku": 1,
+      "normalize_sku_prefix": 1
+    },
+    "docs/transforms.md": {
+      "denormalize_sku": 3,
+      "normalize_sku_prefix": 1
+    },
+    "pipelines/export_feed.json": {
+      "denormalize_sku": 1
+    },
+    "tests/test_sku.py": {
+      "denormalize_sku": 2,
+      "normalize_sku_prefix": 2,
+      "normalize_skus": 2
+    }
+  },
+  "files": [
+    "CHANGELOG.md",
+    "README.md",
+    "catalog/__init__.py",
+    "catalog/cli.py",
+    "catalog/dedupe.py",
+    "catalog/exporter.py",
+    "catalog/importer.py",
+    "catalog/media/__init__.py",
+    "catalog/media/channel_2.py",
+    "catalog/media/metric_1.py",
+    "catalog/media/report_3.py",
+    "catalog/media/webhook_4.py",
+    "catalog/pipeline.py",
+    "catalog/pricing/__init__.py",
+    "catalog/pricing/invoice_3.py",
+    "catalog/pricing/quota_2.py",
+    "catalog/pricing/region_4.py",
+    "catalog/pricing/tenant_1.py",
+    "catalog/report.py",
+    "catalog/search.py",
+    "catalog/sku.py",
+    "catalog/transforms.py",
+    "catalog/validate.py",
+    "catalog/vendors/__init__.py",
+    "catalog/vendors/bucket_2.py",
+    "catalog/vendors/bucket_3.py",
+    "catalog/vendors/coupon_4.py",
+    "catalog/vendors/quota_1.py",
+    "docs/operations.md",
+    "docs/transforms.md",
+    "pipelines/export_feed.json",
+    "pipelines/import_feed.json",
+    "pipelines/nightly.json",
+    "tests/__init__.py",
+    "tests/test_pipeline.py",
+    "tests/test_sku.py"
+  ]
+}

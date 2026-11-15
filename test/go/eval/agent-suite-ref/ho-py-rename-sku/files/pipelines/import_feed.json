@@ -1,0 +1,8 @@
+{
+  "name": "import_feed",
+  "steps": [
+    "strip_whitespace",
+    "canonical_sku",
+    "lowercase_brand"
+  ]
+}
