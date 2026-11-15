@@ -584,6 +584,7 @@
   "tui.notice.connection_retry": "Spojení s modelem bylo přerušeno (%s) — nový pokus za %s (opakování %s)",
   "tui.notice.connection_wait": "Spojení s modelem není k dispozici — čekám %s před opakováním %s.",
   "tui.notice.request_limit": "%s: dosažen limit %s požadavků/min — čekám %s",
+  "tui.notice.tools_unsupported": "Model „%s“ na tomto koncovém bodu nepodporuje volání nástrojů; pokračuje se bez nástrojů (jen odpovědi). Pro práci agenta zvolte model s voláním funkcí.",
   "tui.setting_allow_all.77ea1b1074": "Umožňuje práci mimo aktivní projekt; citlivé systémové složky zůstávají blokovány.",
   "tui.setting_allow_all.adad46e596": "Přístup mimo projekt",
   "tui.setting_noop_gate.a1c16ea2ae": "Dokončí identickou dávkovou úlohu bez volání modelu, když se nic nezměnilo.",

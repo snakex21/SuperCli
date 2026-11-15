@@ -588,6 +588,7 @@
   "tui.notice.connection_retry": "Anslutningen till modellen bröts (%s) — försöker igen om %s (nytt försök %s)",
   "tui.notice.connection_wait": "Ingen anslutning till modellen — väntar %s före nytt försök %s.",
   "tui.notice.request_limit": "%s: gränsen på %s förfrågningar/min har nåtts — väntar %s",
+  "tui.notice.tools_unsupported": "Modellen ”%s” stöder inte verktygsanrop på den här slutpunkten; fortsätter utan verktyg (endast svar). Välj en modell med funktionsanrop för agentarbete.",
   "tui.setting_allow_all.77ea1b1074": "Tillåter arbete utanför det aktiva projektet; känsliga systemmappar förblir blockerade.",
   "tui.setting_allow_all.adad46e596": "Tillgång utanför projektet",
   "tui.setting_noop_gate.a1c16ea2ae": "Avslutar en identisk batchuppgift utan ett modellanrop när inget ändrats.",

@@ -110,7 +110,9 @@ which all read the same `config.toml` through the shared runtime):
   when present, otherwise exponential backoff with jitter (0.5 s, 1 s, 2 s, …
   for HTTP errors; 1 s, 2 s, 4 s, … for connection failures), every single wait
   capped at 60 s. A 429 whose `Retry-After` is longer than 60 s is a quota
-  window: it is shown at once so `fallback_models` can take over.
+  window: it is shown at once so `fallback_models` can take over. Without
+  Retry-After, an error body's `retry_after` is used; an error that names a
+  per-minute limit backs off from 25 s so the retries reach the next minute.
 - **Status:** each wait shows a localized line such as
   `Ponawianie 3/5 za 8 s (503)` / `retry 12/∞`.
 - **Stopping:** with `max_retries = -1` SuperCli keeps retrying until the
@@ -142,6 +144,34 @@ base_url = "https://api.cloudflare.com/client/v4/accounts/ACCOUNT/ai/v1"
 api_key = "..."
 requests_per_minute = 50     # this endpoint only
 ```
+
+Gateway notes:
+
+- **Cloudflare Workers AI** (`https://api.cloudflare.com/client/v4/accounts/<account>/ai/v1`,
+  model ids `@cf/...`): text generation is limited to 300 requests per minute
+  per model (20 per minute for models that need the Workers Paid plan). Error
+  bodies use the `{"success":false,"errors":[{"code":…,"message":…}]}`
+  envelope, in HTTP bodies and inside the stream; SuperCli reads it. Code 3040
+  (capacity) is retried; 3036 (daily free allocation of neurons used up),
+  5035 (paid plan required) and unknown/invalid model codes are not, even with
+  `max_retries = -1`. Many Workers AI text models cannot call tools: when a
+  model rejects the `tools` field SuperCli retries once without tools, shows a
+  notice and remembers it for the session.
+- **Logfare** (`https://logfare.ai/v1`, a custom OpenAI-compatible provider;
+  `logfare/auto` routes to an available model): account limits are fixed UTC
+  windows (regular accounts 40/min, 1,000/h, 5,000/day, 6 concurrent; new
+  accounts 10/min and 2 concurrent for the first 24 h). Its 429 carries
+  `Retry-After` and `error.retry_after`; SuperCli honours both, and a daily or
+  hourly window (Retry-After over 60 s) is shown at once instead of retried.
+  Clients that keep retrying through refusals are paused by Logfare, so do not
+  lower the waits. Part of its catalog runs on Workers AI and upstream errors
+  pass through, so `AiError: rate limiting: inference request per min rate
+  reached` is the shared upstream model limit, not your account limit: it is
+  retried with a per-minute backoff (12–25 s, 25–50 s, then 30–60 s), and with
+  `logfare/auto` a retry can land on another model. The model list only offers
+  entries that serve chat and reads each model's `chat_capabilities` (tools,
+  image input). Suggested: `requests_per_minute = 30` on that entry
+  (`10` on a new account), `max_retries = 8` (or `-1` for unattended runs).
 
 All three are also in TUI `/settings` (Context category) and in the GUI
 Settings panel ("Verification, access and fallback"); changes apply to the next request.

@@ -588,6 +588,7 @@
   "tui.notice.connection_retry": "Povezava z modelom je prekinjena (%s) — nov poskus čez %s (ponovitev %s)",
   "tui.notice.connection_wait": "Povezava z modelom ni na voljo — čakam %s pred ponovitvijo %s.",
   "tui.notice.request_limit": "%s: dosežena omejitev %s zahtev/min — čakam %s",
+  "tui.notice.tools_unsupported": "Model »%s« na tej končni točki ne podpira klicanja orodij; nadaljuje se brez orodij (samo odgovori). Za delo agenta izberite model s klicanjem funkcij.",
   "tui.setting_allow_all.77ea1b1074": "Omogoča delo izven aktivnega projekta; občutljive sistemske mape ostanejo blokirane.",
   "tui.setting_allow_all.adad46e596": "Dostop do zunanjega projekta",
   "tui.setting_noop_gate.a1c16ea2ae": "Konča identično paketno nalogo brez klica modela, ko se nič ne spremeni.",

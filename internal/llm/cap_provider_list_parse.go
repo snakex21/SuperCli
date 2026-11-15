@@ -28,6 +28,55 @@ type providerModelWire struct {
 	InputModalities     []string        `json:"input_modalities"`
 	// Routers publish an object; LM Studio publishes a string such as qwen35.
 	Architecture json.RawMessage `json:"architecture"`
+	// Logfare (logfare.ai) and similar aggregators list image, audio and
+	// embedding models next to chat models and publish which endpoints each
+	// serves, plus a chat_capabilities object ({"tools":bool,
+	// "input_modalities":[…],"reasoning":bool|null}). OpenRouter-style
+	// catalogs publish supported_parameters instead.
+	Endpoints           []string        `json:"endpoints"`
+	ChatCapabilities    json.RawMessage `json:"chat_capabilities"`
+	SupportedParameters []string        `json:"supported_parameters"`
+}
+
+// servesChat reports whether a catalog entry can be used as a chat model.
+// Entries without an endpoints list are assumed to (every classic /models).
+func (w providerModelWire) servesChat() bool {
+	if w.Endpoints == nil {
+		return true
+	}
+	for _, endpoint := range w.Endpoints {
+		switch strings.Trim(strings.ToLower(strings.TrimSpace(endpoint)), "/") {
+		case "chat/completions", "v1/chat/completions", "chat", "messages", "responses", "completions":
+			return true
+		}
+	}
+	return false
+}
+
+func applyChatCapabilities(model *ModelInfo, wire providerModelWire) {
+	if containsFold(wire.SupportedParameters, "tools") {
+		model.ToolUse = true
+	}
+	if len(wire.ChatCapabilities) == 0 || string(wire.ChatCapabilities) == "null" {
+		return
+	}
+	var caps struct {
+		Tools           *bool    `json:"tools"`
+		InputModalities []string `json:"input_modalities"`
+		Reasoning       *bool    `json:"reasoning"`
+	}
+	if json.Unmarshal(wire.ChatCapabilities, &caps) != nil {
+		return
+	}
+	if caps.Tools != nil {
+		model.ToolUse = *caps.Tools
+	}
+	if len(caps.InputModalities) > 0 {
+		model.Vision, model.VisionKnown = containsFold(caps.InputModalities, "image"), true
+	}
+	if caps.Reasoning != nil {
+		model.Reasoning, model.ReasoningKnown = *caps.Reasoning, true
+	}
 }
 
 func parseProviderModelInfos(body []byte) ([]ModelInfo, error) {
@@ -67,7 +116,7 @@ func parseProviderModelInfos(body []byte) ([]ModelInfo, error) {
 		if id == "" {
 			id = strings.TrimSpace(wire.Key)
 		}
-		if id == "" {
+		if id == "" || !wire.servesChat() {
 			continue
 		}
 		model := HeuristicCapabilities(id)
@@ -81,6 +130,7 @@ func parseProviderModelInfos(body []byte) ([]ModelInfo, error) {
 			model.Vision = containsFold(modalities, "image")
 		}
 		applyCapabilityMetadata(&model, wire.Capabilities)
+		applyChatCapabilities(&model, wire)
 		switch strings.ToLower(strings.TrimSpace(wire.Type)) {
 		case "vlm":
 			model.Vision, model.VisionKnown = true, true

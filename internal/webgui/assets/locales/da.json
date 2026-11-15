@@ -1168,6 +1168,7 @@
   "notice.connectionRetry": "Forbindelsen til modellen blev afbrudt ({reason}) — prøver igen om {wait} (genforsøg {attempt}/{max})",
   "notice.connectionWait": "Ingen forbindelse til modellen — venter {wait} før genforsøg {attempt}/{max}.",
   "notice.requestLimit": "{host}: grænsen på {n} forespørgsler/min er nået — venter {wait}",
+  "notice.toolsUnsupported": "Modellen \"{model}\" understøtter ikke værktøjskald på dette endpoint; fortsætter uden værktøjer (kun svar). Vælg en model med funktionskald til agentarbejde.",
   "error.loopUnchanged": "Agenten stoppede: værktøjsrunder i træk uden nye fund eller ændringer: {n}. Arbejdet indtil nu er bevaret i denne samtale.",
   "error.loopSource": "Agenten stoppede: læserunder i træk, der kun gentog uændrede linjer: {n}. Arbejdet indtil nu er bevaret i denne samtale.",
   "error.loopFailure": "Agenten stoppede: fejl i træk for det samme værktøjskald: {n}. Arbejdet indtil nu er bevaret i denne samtale.",

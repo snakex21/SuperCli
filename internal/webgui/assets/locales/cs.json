@@ -1168,6 +1168,7 @@
   "notice.connectionRetry": "Spojení s modelem bylo přerušeno ({reason}) — nový pokus za {wait} (opakování {attempt}/{max})",
   "notice.connectionWait": "Spojení s modelem není k dispozici — čekám {wait} před opakováním {attempt}/{max}.",
   "notice.requestLimit": "{host}: dosažen limit {n} požadavků/min — čekám {wait}",
+  "notice.toolsUnsupported": "Model „{model}“ na tomto koncovém bodu nepodporuje volání nástrojů; pokračuje se bez nástrojů (jen odpovědi). Pro práci agenta zvolte model s voláním funkcí.",
   "error.loopUnchanged": "Agent se zastavil: kola nástrojů po sobě bez nových zjištění nebo změn: {n}. Dosavadní práce zůstává v této konverzaci.",
   "error.loopSource": "Agent se zastavil: kola čtení zdrojů po sobě, která jen opakovala nezměněné řádky: {n}. Dosavadní práce zůstává v této konverzaci.",
   "error.loopFailure": "Agent se zastavil: neúspěchy stejného volání nástroje po sobě: {n}. Dosavadní práce zůstává v této konverzaci.",

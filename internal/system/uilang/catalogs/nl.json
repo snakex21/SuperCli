@@ -584,6 +584,7 @@
   "tui.notice.connection_retry": "Verbinding met het model verbroken (%s) — nieuwe poging over %s (herhaling %s)",
   "tui.notice.connection_wait": "Geen verbinding met het model — wacht %s voor herhaling %s.",
   "tui.notice.request_limit": "%s: limiet van %s verzoeken/min bereikt — wacht %s",
+  "tui.notice.tools_unsupported": "Model ‘%s’ ondersteunt op dit endpoint geen toolaanroepen; er wordt doorgegaan zonder tools (alleen antwoorden). Kies voor agentwerk een model met functieaanroepen.",
   "tui.setting_allow_all.77ea1b1074": "Maakt werk buiten het actieve project mogelijk; gevoelige systeemmappen blijven geblokkeerd.",
   "tui.setting_allow_all.adad46e596": "Toegang buiten project",
   "tui.setting_noop_gate.a1c16ea2ae": "Voltooit een identieke batchtaak zonder een modelaanroep als er niets is veranderd.",

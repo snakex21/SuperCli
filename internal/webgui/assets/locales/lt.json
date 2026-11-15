@@ -1168,6 +1168,7 @@
   "notice.connectionRetry": "Ryšys su modeliu nutrūko ({reason}) — bandoma vėl po {wait} (pakartojimas {attempt}/{max})",
   "notice.connectionWait": "Nėra ryšio su modeliu — laukiama {wait} prieš pakartojimą {attempt}/{max}.",
   "notice.requestLimit": "{host}: pasiekta {n} užklausų/min riba — laukiama {wait}",
+  "notice.toolsUnsupported": "Modelis „{model}“ šiame galiniame taške nepalaiko įrankių kvietimo; tęsiama be įrankių (tik atsakymai). Agento darbui pasirinkite modelį su funkcijų kvietimu.",
   "error.loopUnchanged": "Agentas sustabdytas: iš eilės įrankių ratai be naujų duomenų ar pakeitimų: {n}. Iki šiol atliktas darbas lieka šiame pokalbyje.",
   "error.loopSource": "Agentas sustabdytas: iš eilės skaitymo ratai, kurie tik kartojo nepakitusias eilutes: {n}. Iki šiol atliktas darbas lieka šiame pokalbyje.",
   "error.loopFailure": "Agentas sustabdytas: iš eilės to paties įrankio iškvietimo nesėkmės: {n}. Iki šiol atliktas darbas lieka šiame pokalbyje.",

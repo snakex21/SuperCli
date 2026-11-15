@@ -1168,6 +1168,7 @@
   "notice.connectionRetry": "Verbindung zum Modell abgebrochen ({reason}) — neuer Versuch in {wait} (Wiederholung {attempt}/{max})",
   "notice.connectionWait": "Keine Verbindung zum Modell — warte {wait} vor Wiederholung {attempt}/{max}.",
   "notice.requestLimit": "{host}: Limit von {n} Anfragen/min erreicht — warte {wait}",
+  "notice.toolsUnsupported": "Modell „{model}“ unterstützt an diesem Endpunkt keine Tool-Aufrufe; es geht ohne Tools weiter (nur Antworten). Wählen Sie für Agentenarbeit ein Modell mit Funktionsaufrufen.",
   "error.loopUnchanged": "Agent angehalten: Werkzeugrunden in Folge ohne neue Erkenntnisse oder Änderungen: {n}. Die bisherige Arbeit bleibt in dieser Unterhaltung erhalten.",
   "error.loopSource": "Agent angehalten: Leserunden in Folge, die nur unveränderte Zeilen wiederholten: {n}. Die bisherige Arbeit bleibt in dieser Unterhaltung erhalten.",
   "error.loopFailure": "Agent angehalten: Fehlschläge desselben Werkzeugaufrufs in Folge: {n}. Die bisherige Arbeit bleibt in dieser Unterhaltung erhalten.",

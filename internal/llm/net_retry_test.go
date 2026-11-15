@@ -48,26 +48,26 @@ func TestParseRetryAfter(t *testing.T) {
 func TestProviderRetryWait_HeaderWinsAndIsCapped(t *testing.T) {
 	h := http.Header{}
 	h.Set("Retry-After", "3")
-	if w, ok := providerRetryWait(http.StatusServiceUnavailable, h, 1); !ok || w != 3*time.Second {
+	if w, ok := providerRetryWait(http.StatusServiceUnavailable, h, nil, 1); !ok || w != 3*time.Second {
 		t.Fatalf("header: w=%v ok=%v want 3s", w, ok)
 	}
 	// A huge Retry-After on a 5xx is clamped to the per-wait cap.
 	h.Set("Retry-After", "3600")
-	if w, ok := providerRetryWait(http.StatusServiceUnavailable, h, 1); !ok || w != MaxRetryBackoff {
+	if w, ok := providerRetryWait(http.StatusServiceUnavailable, h, nil, 1); !ok || w != MaxRetryBackoff {
 		t.Fatalf("5xx header over cap: w=%v ok=%v want %v", w, ok, MaxRetryBackoff)
 	}
 	// The same on a 429 is a quota window: surfaced, not slept on.
-	if _, ok := providerRetryWait(http.StatusTooManyRequests, h, 1); ok {
+	if _, ok := providerRetryWait(http.StatusTooManyRequests, h, nil, 1); ok {
 		t.Fatal("429 with Retry-After beyond the cap must not be retried")
 	}
 }
 
 func TestProviderRetryWait_FallbackBackoffWithoutHeader(t *testing.T) {
 	h := http.Header{}
-	if w, _ := providerRetryWait(http.StatusServiceUnavailable, h, 1); w < 250*time.Millisecond || w > 500*time.Millisecond {
+	if w, _ := providerRetryWait(http.StatusServiceUnavailable, h, nil, 1); w < 250*time.Millisecond || w > 500*time.Millisecond {
 		t.Fatalf("retry 1: w=%v want jittered 250-500ms", w)
 	}
-	if w, _ := providerRetryWait(http.StatusServiceUnavailable, h, 2); w < 500*time.Millisecond || w > time.Second {
+	if w, _ := providerRetryWait(http.StatusServiceUnavailable, h, nil, 2); w < 500*time.Millisecond || w > time.Second {
 		t.Fatalf("retry 2: w=%v want jittered 500ms-1s", w)
 	}
 }

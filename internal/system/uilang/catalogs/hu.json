@@ -584,6 +584,7 @@
   "tui.notice.connection_retry": "Megszakadt a kapcsolat a modellel (%s) — újrapróbálás %s múlva (újrapróbálkozás %s)",
   "tui.notice.connection_wait": "A modell nem érhető el — várakozás %s a(z) %s. újrapróbálkozás előtt.",
   "tui.notice.request_limit": "%s: elérte a(z) %s kérés/min korlátot — várakozás %s",
+  "tui.notice.tools_unsupported": "A(z) „%s” modell ezen a végponton nem támogatja az eszközhívást; folytatás eszközök nélkül (csak válaszok). Ügynöki munkához válasszon függvényhívást támogató modellt.",
   "tui.setting_allow_all.77ea1b1074": "Lehetővé teszi az aktív projekten kívüli munkát; az érzékeny rendszermappák blokkolva maradnak.",
   "tui.setting_allow_all.adad46e596": "Hozzáférés a projekten kívülre",
   "tui.setting_noop_gate.a1c16ea2ae": "Befejez egy azonos kötegelt feladatot modellhívás nélkül, ha semmi sem változott.",

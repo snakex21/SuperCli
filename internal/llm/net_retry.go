@@ -41,6 +41,9 @@ func (e *HTTPResponseError) Error() string {
 
 func newHTTPResponseError(status int, body []byte, hint string, headers http.Header) error {
 	retryAfter, hasRetryAfter := parseRetryAfter(headers)
+	if !hasRetryAfter {
+		retryAfter, hasRetryAfter = bodyRetryAfter(body)
+	}
 	return &HTTPResponseError{
 		Status:        status,
 		Body:          string(body),

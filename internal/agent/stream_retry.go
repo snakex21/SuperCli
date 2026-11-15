@@ -20,9 +20,11 @@ import (
 // Retry seams keep outage recovery tests deterministic and socket-free. The
 // count comes from the shared llm retry setting (config.toml max_retries,
 // -1 = until success or cancel); the wait is llm.RetryBackoff (exponential
-// from 1 s, jittered, capped at 60 s) and always selects on ctx.Done().
+// from 1 s, jittered, capped at 60 s; a per-minute rate limit starts from
+// llm.PerMinuteRetryBase so retries reach the next minute) and always selects
+// on ctx.Done().
 var streamRetryWait = llm.SleepRetry
-var streamRetryBackoff = func(retry int) time.Duration { return llm.RetryBackoff(retry, time.Second) }
+var streamRetryBackoff = func(retry int, err error) time.Duration { return llm.RetryBackoffFor(err, retry, time.Second) }
 
 // transientStreamErrors are transport failures where the same request can
 // succeed when sent again. Provider HTTP status errors are retried inside
@@ -279,7 +281,7 @@ func (l *Loop) completeWithStreamRetry(ctx context.Context, toolRequest prepared
 			break
 		}
 		retries++
-		wait := streamRetryBackoff(retries)
+		wait := streamRetryBackoff(retries, err)
 		progress := llm.RetryProgress(retries)
 		var notice string
 		switch {

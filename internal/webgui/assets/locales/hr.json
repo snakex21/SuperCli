@@ -1168,6 +1168,7 @@
   "notice.connectionRetry": "Veza s modelom je prekinuta ({reason}) — novi pokušaj za {wait} (ponavljanje {attempt}/{max})",
   "notice.connectionWait": "Veza s modelom nije dostupna — čekam {wait} prije ponavljanja {attempt}/{max}.",
   "notice.requestLimit": "{host}: dosegnuto ograničenje od {n} zahtjeva/min — čekam {wait}",
+  "notice.toolsUnsupported": "Model „{model}” ne podržava pozivanje alata na ovoj krajnjoj točki; nastavlja se bez alata (samo odgovori). Za rad agenta odaberite model s pozivanjem funkcija.",
   "error.loopUnchanged": "Agent je zaustavljen: uzastopni krugovi alata bez novih podataka ili promjena: {n}. Dosadašnji rad ostaje u ovom razgovoru.",
   "error.loopSource": "Agent je zaustavljen: uzastopni krugovi čitanja koji su samo ponavljali nepromijenjene retke: {n}. Dosadašnji rad ostaje u ovom razgovoru.",
   "error.loopFailure": "Agent je zaustavljen: uzastopni neuspjesi istog poziva alata: {n}. Dosadašnji rad ostaje u ovom razgovoru.",

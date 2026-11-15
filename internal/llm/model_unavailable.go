@@ -190,6 +190,12 @@ func errorTextFromBody(body []byte) string {
 	if m, ok := raw["message"]; ok {
 		add(m)
 	}
+	// Cloudflare API envelope: {"success":false,"errors":[{"code":3040,"message":"…"}]}.
+	if errs, ok := cloudflareEnvelopeErrors([]byte(trimmed)); ok {
+		for _, e := range errs {
+			parts = append(parts, e.Message)
+		}
+	}
 	out := make([]string, 0, len(parts))
 	for _, p := range parts {
 		if p = strings.TrimSpace(p); p != "" {

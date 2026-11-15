@@ -1168,6 +1168,7 @@
   "notice.connectionRetry": "Anslutningen till modellen bröts ({reason}) — försöker igen om {wait} (nytt försök {attempt}/{max})",
   "notice.connectionWait": "Ingen anslutning till modellen — väntar {wait} före nytt försök {attempt}/{max}.",
   "notice.requestLimit": "{host}: gränsen på {n} förfrågningar/min har nåtts — väntar {wait}",
+  "notice.toolsUnsupported": "Modellen ”{model}” stöder inte verktygsanrop på den här slutpunkten; fortsätter utan verktyg (endast svar). Välj en modell med funktionsanrop för agentarbete.",
   "error.loopUnchanged": "Agenten stoppades: verktygsrundor i rad utan nya fynd eller ändringar: {n}. Arbetet hittills finns kvar i den här konversationen.",
   "error.loopSource": "Agenten stoppades: läsrundor i rad som bara upprepade oförändrade rader: {n}. Arbetet hittills finns kvar i den här konversationen.",
   "error.loopFailure": "Agenten stoppades: misslyckanden i rad för samma verktygsanrop: {n}. Arbetet hittills finns kvar i den här konversationen.",

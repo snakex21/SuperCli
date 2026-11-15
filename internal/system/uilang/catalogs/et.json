@@ -584,6 +584,7 @@
   "tui.notice.connection_retry": "Ühendus mudeliga katkes (%s) — uus katse %s pärast (korduskatse %s)",
   "tui.notice.connection_wait": "Ühendus mudeliga puudub — ootan %s enne korduskatset %s.",
   "tui.notice.request_limit": "%s: %s päringu/min piirang täis — ootan %s",
+  "tui.notice.tools_unsupported": "Mudel „%s” ei toeta selles lõpp-punktis tööriistade kutsumist; jätkatakse ilma tööriistadeta (ainult vastused). Agenditööks valige funktsioonikutsetega mudel.",
   "tui.setting_allow_all.77ea1b1074": "Võimaldab töötada väljaspool aktiivset projekti; tundlikud süsteemikaustad jäävad blokeerituks.",
   "tui.setting_allow_all.adad46e596": "Juurdepääs väljaspool projekti",
   "tui.setting_noop_gate.a1c16ea2ae": "Lõpetab identse partiiülesande ilma mudelikutsetata, kui midagi ei muutunud.",

@@ -584,6 +584,7 @@
   "tui.notice.connection_retry": "Savienojums ar modeli pārtrūka (%s) — atkārtots mēģinājums pēc %s (atkārtojums %s)",
   "tui.notice.connection_wait": "Savienojums ar modeli nav pieejams — gaida %s pirms atkārtojuma %s.",
   "tui.notice.request_limit": "%s: sasniegts %s pieprasījumu/min ierobežojums — gaida %s",
+  "tui.notice.tools_unsupported": "Modelis “%s” šajā galapunktā neatbalsta rīku izsaukšanu; turpina bez rīkiem (tikai atbildes). Aģenta darbam izvēlieties modeli ar funkciju izsaukšanu.",
   "tui.setting_allow_all.77ea1b1074": "Ļauj strādāt ārpus aktīvā projekta; sensitīvās sistēmas mapes paliek bloķētas.",
   "tui.setting_allow_all.adad46e596": "Piekļuve ārpus projekta",
   "tui.setting_noop_gate.a1c16ea2ae": "Pabeidz identisku pakešu uzdevumu bez modeļa izsaukuma, ja nekas nav mainījies.",

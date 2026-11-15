@@ -584,6 +584,7 @@
   "tui.notice.connection_retry": "Veza s modelom je prekinuta (%s) — novi pokušaj za %s (ponavljanje %s)",
   "tui.notice.connection_wait": "Veza s modelom nije dostupna — čekam %s prije ponavljanja %s.",
   "tui.notice.request_limit": "%s: dosegnuto ograničenje od %s zahtjeva/min — čekam %s",
+  "tui.notice.tools_unsupported": "Model „%s” ne podržava pozivanje alata na ovoj krajnjoj točki; nastavlja se bez alata (samo odgovori). Za rad agenta odaberite model s pozivanjem funkcija.",
   "tui.setting_allow_all.77ea1b1074": "Omogućuje rad izvan aktivnog projekta; osjetljive sistemske mape ostaju blokirane.",
   "tui.setting_allow_all.adad46e596": "Pristup izvan projekta",
   "tui.setting_noop_gate.a1c16ea2ae": "Završava identičan skupni zadatak bez poziva modela kada se ništa nije promijenilo.",

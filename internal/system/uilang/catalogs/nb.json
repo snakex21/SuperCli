@@ -584,6 +584,7 @@
   "tui.notice.connection_retry": "Tilkoblingen til modellen ble brutt (%s) — prøver igjen om %s (nytt forsøk %s)",
   "tui.notice.connection_wait": "Ingen tilkobling til modellen — venter %s før nytt forsøk %s.",
   "tui.notice.request_limit": "%s: grensen på %s forespørsler/min er nådd — venter %s",
+  "tui.notice.tools_unsupported": "Modellen «%s» støtter ikke verktøykall på dette endepunktet; fortsetter uten verktøy (bare svar). Velg en modell med funksjonskall for agentarbeid.",
   "tui.setting_allow_all.77ea1b1074": "Tillater arbeid utenfor det aktive prosjektet; sensitive systemmapper forblir blokkert.",
   "tui.setting_allow_all.adad46e596": "Tilgang utenfor prosjektet",
   "tui.setting_noop_gate.a1c16ea2ae": "Fullfører en identisk batchoppgave uten et modellanrop når ingenting endret seg.",

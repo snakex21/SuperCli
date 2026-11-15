@@ -1168,6 +1168,7 @@
   "notice.connectionRetry": "Povezava z modelom je prekinjena ({reason}) — nov poskus čez {wait} (ponovitev {attempt}/{max})",
   "notice.connectionWait": "Povezava z modelom ni na voljo — čakam {wait} pred ponovitvijo {attempt}/{max}.",
   "notice.requestLimit": "{host}: dosežena omejitev {n} zahtev/min — čakam {wait}",
+  "notice.toolsUnsupported": "Model »{model}« na tej končni točki ne podpira klicanja orodij; nadaljuje se brez orodij (samo odgovori). Za delo agenta izberite model s klicanjem funkcij.",
   "error.loopUnchanged": "Agent se je ustavil: zaporedni krogi orodij brez novih podatkov ali sprememb: {n}. Dosedanje delo ostane v tem pogovoru.",
   "error.loopSource": "Agent se je ustavil: zaporedni krogi branja, ki so le ponavljali nespremenjene vrstice: {n}. Dosedanje delo ostane v tem pogovoru.",
   "error.loopFailure": "Agent se je ustavil: zaporedne napake istega klica orodja: {n}. Dosedanje delo ostane v tem pogovoru.",

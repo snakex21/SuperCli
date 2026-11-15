@@ -183,7 +183,7 @@ func TestStreamRetryStartupCancelOrDeadlineDuringWait(t *testing.T) {
 	for _, deadline := range []bool{false, true} {
 		t.Run(fmt.Sprint("deadline=", deadline), func(t *testing.T) {
 			saved := streamRetryBackoff
-			streamRetryBackoff = func(int) time.Duration { return time.Hour }
+			streamRetryBackoff = func(int, error) time.Duration { return time.Hour }
 			t.Cleanup(func() { streamRetryBackoff = saved })
 			ctx, cancel := context.WithCancel(context.Background())
 			if deadline {

@@ -588,6 +588,7 @@
   "tui.notice.connection_retry": "Conexão com o modelo perdida (%s) — nova tentativa em %s (repetição %s)",
   "tui.notice.connection_wait": "Conexão com o modelo indisponível — aguardando %s antes da repetição %s.",
   "tui.notice.request_limit": "%s: limite de %s solicitações/min atingido — aguardando %s",
+  "tui.notice.tools_unsupported": "O modelo “%s” não oferece suporte a chamadas de ferramentas neste endpoint; continuando sem ferramentas (apenas respostas). Escolha um modelo com chamadas de função para o trabalho do agente.",
   "tui.setting_allow_all.77ea1b1074": "Permite trabalhar fora do projeto ativo; pastas confidenciais do sistema permanecem bloqueadas.",
   "tui.setting_allow_all.adad46e596": "Acesso fora do projeto",
   "tui.setting_noop_gate.a1c16ea2ae": "Termina uma tarefa em lote idêntica sem uma chamada de modelo quando nada mudou.",
