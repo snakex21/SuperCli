@@ -37,7 +37,10 @@ func (m Model) resumeConversation(id string) (tea.Model, tea.Cmd) {
 	if store == nil {
 		return m, func() tea.Msg { return slashResultMsg{Err: fmt.Errorf("%s", m.tr("tui.model_resume.e1501e7a39"))} }
 	}
+	// busy adds the working row to the chrome; refit after flipping it so
+	// the viewport leaves room for that row (as for slash commands).
 	m.busy = true
+	m.refreshTranscript()
 	ctx, cancel := context.WithCancel(context.Background())
 	m.resumeContext = ctx
 	m.cancel.Arm(cancelRun, cancel)

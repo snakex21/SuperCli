@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"supercli/internal/storage/session"
 )
 
 func audit130Type(m Model, text string) Model {
@@ -54,5 +56,38 @@ func TestAudit130BusyAfterRefreshFits(t *testing.T) {
 	m.refreshTranscript()
 	if n := len(strings.Split(m.View(), "\n")); n > 24 {
 		t.Fatalf("busy frame %d rows > 24", n)
+	}
+}
+
+// /resume flips busy while the session loads; the viewport must be refit for
+// the working row at once, not one row too tall until the next refresh.
+func TestResumeBusyRowRefitsViewport(t *testing.T) {
+	dir := t.TempDir()
+	store, err := session.OpenStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	m := New(Options{Home: dir, DataDir: dir, Language: "pl", StatusFn: func() string { return "status" }})
+	m.sessionStore = store
+	out, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = out.(Model)
+	for i := 0; i < 60; i++ {
+		m.appendLine("line")
+	}
+	m.refreshTranscript()
+	out, _ = m.resumeConversation("missing-session")
+	m = out.(Model)
+	if !m.busy {
+		t.Fatal("resume did not start (busy=false)")
+	}
+	got := m.viewport.Height
+	refit := m
+	refit.refreshTranscript()
+	if got != refit.viewport.Height {
+		t.Fatalf("viewport height %d right after /resume started, %d after a refit (busy row not accounted for)", got, refit.viewport.Height)
+	}
+	if n := len(strings.Split(m.View(), "\n")); n > 24 {
+		t.Fatalf("frame is %d rows on a 24-row terminal", n)
 	}
 }
