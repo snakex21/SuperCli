@@ -186,6 +186,13 @@ func ClassifyProviderError(err error) RetryClass {
 	if err == nil {
 		return RetryUnknown
 	}
+	// A stalled stream (idle watchdog / header timeout) and a dropped
+	// connection are provider-side faults: the same request can succeed when
+	// sent again. Checked before the cancellation veto because the watchdog
+	// stops the request through its context.
+	if IsStreamTransportFailure(err) {
+		return RetryTransient
+	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return RetryPermanent
 	}

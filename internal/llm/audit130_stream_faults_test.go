@@ -418,9 +418,9 @@ func TestA130_SilentHangAfterHeaders(t *testing.T) {
 	}
 }
 
-// 1j'. The idle-timeout error is indistinguishable from a user cancel: it
-// surfaces as "context canceled" and classifies as permanent, so it is never
-// retried although docs/configuration.md lists timeouts as retried.
+// 1j'. The idle-timeout error must not look like a user cancel: it is a
+// typed StreamIdleTimeoutError ("no data from provider for ..."), not
+// context.Canceled, and classified transient so the agent retries it.
 func TestA130_SilentHangErrorIsClearAndRetryable(t *testing.T) {
 	for _, wire := range a130Wires {
 		t.Run(string(wire), func(t *testing.T) {
@@ -434,9 +434,12 @@ func TestA130_SilentHangErrorIsClearAndRetryable(t *testing.T) {
 			clear := strings.Contains(msg, "idle") || strings.Contains(msg, "timeout") || strings.Contains(msg, "no data")
 			cls := ClassifyProviderError(res.Err)
 			t.Logf("%s: err=%q class=%s", wire, res.Err, cls)
-			if !clear || cls == RetryPermanent {
-				a130KnownFailing(t, "idle-timeout stall surfaces as '"+res.Err.Error()+"' (class "+cls.String()+"): not identifiable as a timeout and classified permanent, so never retried ("+string(wire)+")")
-				t.Fatalf("unclear/permanent idle-timeout error")
+			if !clear || cls != RetryTransient {
+				t.Fatalf("unclear/non-transient idle-timeout error %q (class %s)", res.Err, cls)
+			}
+			var idle *StreamIdleTimeoutError
+			if !errors.Is(res.Err, ErrStreamIdleTimeout) || !errors.As(res.Err, &idle) || idle.Idle != 500*time.Millisecond || errors.Is(res.Err, context.Canceled) {
+				t.Fatalf("idle timeout not typed: %T %v (canceled=%v)", res.Err, res.Err, errors.Is(res.Err, context.Canceled))
 			}
 		})
 	}

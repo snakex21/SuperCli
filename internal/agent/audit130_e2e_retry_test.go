@@ -4,7 +4,9 @@ package agent
 // Completions / Responses providers and the agent loop (127.0.0.1 mock).
 // docs/configuration.md ("Retries and request limits") promises that dropped
 // connections, timeouts and short outages are retried, and that an in-stream
-// error before any tool call / visible text is re-requested.
+// error before any tool call / visible text is re-requested. Providers type
+// these failures (llm.StreamTransportError / llm.StreamIdleTimeoutError) as
+// transient, so the agent's in-stream retry replays them.
 
 import (
 	"context"
@@ -194,9 +196,8 @@ func TestA130Agent_DroppedConnectionIsRetried(t *testing.T) {
 			})
 			out := a130RunAgent(t, a130AgentProvider(t, wire, m.srv.URL, 5*time.Second), "hello", 20*time.Second)
 			t.Logf("%s: done=%v err=%v requests=%d notices=%q elapsed=%s", wire, out.done, out.err, m.requests.Load(), out.notices, out.elapsed)
-			if !out.done || m.requests.Load() != 2 {
-				a130AgentKnownFailing(t, fmt.Sprintf("a connection dropped before the response is NOT retried by the agent with the real %s provider (requests=%d, err=%v): providers deliver transport errors in-stream, the agent only replays providerCompleteError startup failures, and the in-stream text classifies as unknown", wire, m.requests.Load(), out.err))
-				t.Fatalf("not retried")
+			if !out.done || m.requests.Load() != 2 || !strings.Contains(out.text, "recovered") {
+				t.Fatalf("dropped connection not retried: done=%v requests=%d err=%v", out.done, m.requests.Load(), out.err)
 			}
 		})
 	}
@@ -219,9 +220,8 @@ func TestA130Agent_MidStreamDropBeforeVisibleOutputIsRetried(t *testing.T) {
 			})
 			out := a130RunAgent(t, a130AgentProvider(t, wire, m.srv.URL, 5*time.Second), "hello", 20*time.Second)
 			t.Logf("%s: done=%v err=%v requests=%d elapsed=%s", wire, out.done, out.err, m.requests.Load(), out.elapsed)
-			if !out.done || m.requests.Load() != 2 {
-				a130AgentKnownFailing(t, fmt.Sprintf("mid-stream 'unexpected EOF' before any visible output is not re-requested with the real %s provider (requests=%d, err=%v): classified unknown, retried only with retry_unknown_errors", wire, m.requests.Load(), out.err))
-				t.Fatalf("not retried")
+			if !out.done || m.requests.Load() != 2 || !strings.Contains(out.text, "recovered") {
+				t.Fatalf("mid-stream drop not retried: done=%v requests=%d err=%v", out.done, m.requests.Load(), out.err)
 			}
 		})
 	}
@@ -247,9 +247,15 @@ func TestA130Agent_IdleStallSurfacesAsTimeoutAndRetries(t *testing.T) {
 			if out.elapsed > 5*time.Second {
 				t.Fatalf("stall not bounded by the idle timeout: %s", out.elapsed)
 			}
-			if !out.done {
-				a130AgentKnownFailing(t, fmt.Sprintf("idle-timeout stall ends the run with %q (errors.Is(context.Canceled)=%v) and no retry (%s)", out.err, errors.Is(out.err, context.Canceled), wire))
-				t.Fatalf("stall not retried")
+			if !out.done || m.requests.Load() != 2 {
+				t.Fatalf("stall not retried: done=%v err=%v requests=%d", out.done, out.err, m.requests.Load())
+			}
+			idleNotice := false
+			for _, n := range out.notices {
+				idleNotice = idleNotice || strings.Contains(n, "no data from provider for 700ms; retrying")
+			}
+			if !idleNotice {
+				t.Fatalf("no idle-timeout retry notice: %q", out.notices)
 			}
 		})
 	}

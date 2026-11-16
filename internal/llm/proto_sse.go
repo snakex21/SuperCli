@@ -1,7 +1,6 @@
 package llm
 
 import (
-	"bufio"
 	"errors"
 	"io"
 	"strings"
@@ -19,11 +18,9 @@ import (
 // single stream should wrap onEvent to short-circuit on a "done"
 // marker.
 func parseSSE(r io.Reader, onEvent func(eventName, data string) error) error {
-	scanner := bufio.NewScanner(r)
-	// Some SSE payloads (especially the [DONE] terminator plus one
-	// large final chunk) exceed the default 64 KiB token size.
-	// 1 MiB is plenty for chat-completion chunks.
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	// Lines of any length up to maxSSELineBytes (a 1 MiB bufio.Scanner
+	// failed large single-line tool calls with "token too long").
+	lines := newSSELineReader(r)
 
 	var (
 		event string
@@ -44,8 +41,14 @@ func parseSSE(r io.Reader, onEvent func(eventName, data string) error) error {
 		multi.Reset()
 		return err
 	}
-	for scanner.Scan() {
-		line := scanner.Text()
+	for {
+		line, err := lines.next()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return err
+		}
 		if line == "" {
 			if err := flush(); err != nil {
 				return err
@@ -91,9 +94,6 @@ func parseSSE(r io.Reader, onEvent func(eventName, data string) error) error {
 		default:
 			// unknown field, ignore
 		}
-	}
-	if err := scanner.Err(); err != nil {
-		return err
 	}
 	// Trailing event without a blank line terminator.
 	if err := flush(); err != nil {

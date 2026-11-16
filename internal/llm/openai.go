@@ -346,7 +346,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			if err != nil {
 				cancel()
 				select {
-				case out <- Delta{Err: fmt.Errorf("http: %w", err)}:
+				case out <- Delta{Err: wrapStreamError("http", err)}:
 				case <-ctx.Done():
 				}
 				return
@@ -663,7 +663,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		})
 		if parseErr != nil {
 			select {
-			case out <- Delta{Err: fmt.Errorf("sse: %w", parseErr)}:
+			case out <- Delta{Err: wrapStreamError("sse", parseErr)}:
 			case <-ctx.Done():
 			}
 		} else if !sawResponse {

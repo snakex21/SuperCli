@@ -1,7 +1,7 @@
 package llm
 
 import (
-	"bufio"
+	"errors"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -373,10 +373,16 @@ func randUint32() uint32 {
 }
 
 func parseOpenAIDataLines(r io.Reader, onData func(data string) error) (bool, error) {
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+	lines := newSSELineReader(r)
+	for {
+		raw, err := lines.next()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return false, nil
+			}
+			return false, err
+		}
+		line := strings.TrimSpace(raw)
 		if line == "" || strings.HasPrefix(line, ":") {
 			continue
 		}
@@ -394,7 +400,6 @@ func parseOpenAIDataLines(r io.Reader, onData func(data string) error) (bool, er
 			return false, err
 		}
 	}
-	return false, scanner.Err()
 }
 
 // --- request body ---

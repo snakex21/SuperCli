@@ -1,8 +1,8 @@
 package llm
 
 import (
-	"bufio"
 	"bytes"
+	"errors"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -201,7 +201,7 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, cancel context.CancelFun
 		}
 		resp, err := doWithResponseHeaderTimeout(p.http, req, p.cfg.Timeout, cancel)
 		if err != nil {
-			return nil, fmt.Errorf("http: %w", err)
+			return nil, wrapStreamError("http", err)
 		}
 		if resp.StatusCode/100 == 2 {
 			// The ChatGPT backend stamps usage limits on the headers
@@ -283,7 +283,9 @@ func (p *CodexProvider) doWithAuth(ctx context.Context, cancel context.CancelFun
 				continue
 			}
 		}
-		return nil, fmt.Errorf("http %d: %s%s", resp.StatusCode, string(respBody), providerErrorHint(p.cfg.BackendURL, p.cfg.Model, resp.StatusCode, respBody))
+		// Same typed error as Chat Completions: the status and Retry-After
+		// survive for FailoverProvider cooldowns; Error() keeps the text.
+		return nil, newHTTPResponseError(resp.StatusCode, respBody, providerErrorHint(p.cfg.BackendURL, p.cfg.Model, resp.StatusCode, respBody), resp.Header)
 	}
 }
 
@@ -301,10 +303,17 @@ func (p *CodexProvider) streamCodexSSE(ctx context.Context, r io.Reader, out cha
 	sentRole := false
 	toolOutputStarted := false
 	var toolCalls responsesToolStream
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+	lines := newSSELineReader(r)
+	for {
+		raw, readErr := lines.next()
+		if readErr != nil {
+			if !errors.Is(readErr, io.EOF) {
+				emit(Delta{Err: wrapStreamError("sse", readErr)})
+				return
+			}
+			break
+		}
+		line := strings.TrimSpace(raw)
 		if !strings.HasPrefix(line, "data:") {
 			continue
 		}
@@ -452,10 +461,6 @@ func (p *CodexProvider) streamCodexSSE(ctx context.Context, r io.Reader, out cha
 			emit(Delta{Err: responsesStreamError(p.responsesAPIName(), code, msg)})
 			return
 		}
-	}
-	if err := scanner.Err(); err != nil {
-		emit(Delta{Err: fmt.Errorf("sse: %w", err)})
-		return
 	}
 	emit(Delta{Err: fmt.Errorf("%s: stream ended before response.completed", p.responsesAPIName())})
 }

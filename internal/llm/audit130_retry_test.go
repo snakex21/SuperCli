@@ -253,8 +253,8 @@ func TestA130_RetryUnknownErrors(t *testing.T) {
 
 // 2h. A 429 with Retry-After > 60 s is a quota window: surfaced at once, and
 // the terminal error must keep the typed Retry-After so a FailoverProvider
-// can keep that backend asleep (failover.go failureCooldown). The Responses
-// transport returns a plain fmt error and loses the metadata.
+// can keep that backend asleep (failover.go failureCooldown). Both wires
+// return the typed HTTPResponseError.
 func TestA130_LongRetryAfterQuotaWindowTyped(t *testing.T) {
 	for _, wire := range a130Wires {
 		t.Run(string(wire), func(t *testing.T) {
@@ -270,9 +270,8 @@ func TestA130_LongRetryAfterQuotaWindowTyped(t *testing.T) {
 			wait, is429 := RateLimitRetryAfter(res.Err)
 			cooldown := (&FailoverProvider{}).failureCooldown(res.Err, 1)
 			t.Logf("%s: err=%q typed429=%v retryAfter=%s failoverCooldown=%s", wire, res.Err, is429, wait, cooldown)
-			if !is429 || wait != time.Hour {
-				a130KnownFailing(t, "Responses transport returns terminal HTTP errors as plain fmt errors (codex_stream.go doWithAuth), so 429 Retry-After / status are lost for FailoverProvider cooldowns (got cooldown "+cooldown.String()+" instead of 1h)")
-				t.Fatalf("typed 429 metadata lost")
+			if !is429 || wait != time.Hour || cooldown != time.Hour {
+				t.Fatalf("typed 429 metadata lost: typed429=%v retryAfter=%s cooldown=%s", is429, wait, cooldown)
 			}
 		})
 	}
@@ -486,8 +485,9 @@ func TestA130_NoGoroutineLeakAcrossMixedFaults(t *testing.T) {
 }
 
 // 2k. A connection dropped before any response (hijack + close) is
-// delivered in-stream as an "http:" error. Pin its classification: it is
-// NOT a typed startup error, so only the agent's in-stream path can retry it.
+// delivered in-stream as an "http:" error. It is NOT a typed startup error;
+// it is a typed StreamTransportError classified transient, so the agent's
+// in-stream path retries it.
 func TestA130_DroppedConnectionBeforeHeadersClassification(t *testing.T) {
 	for _, wire := range a130Wires {
 		t.Run(string(wire), func(t *testing.T) {
@@ -507,6 +507,10 @@ func TestA130_DroppedConnectionBeforeHeadersClassification(t *testing.T) {
 			t.Logf("%s: in-stream err=%q class=%s requests=%d", wire, got, ClassifyProviderError(got), m.requests.Load())
 			if got == nil || errors.Is(got, context.Canceled) {
 				t.Fatalf("want transport error, got %v", got)
+			}
+			var transport *StreamTransportError
+			if !errors.As(got, &transport) || ClassifyProviderError(got) != RetryTransient || !strings.HasPrefix(got.Error(), "http: ") {
+				t.Fatalf("dropped connection not a transient StreamTransportError: %T %v (%s)", got, got, ClassifyProviderError(got))
 			}
 		})
 	}

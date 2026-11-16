@@ -109,7 +109,7 @@ func collectR13SSE(parse func(io.Reader, func(string, string) error) error, r io
 	return out, ""
 }
 func TestSSESingleLineExactOracle(t *testing.T) {
-	inputs := []string{"", "event: pending\ndata:\n\nevent: later\ndata: value\n\n", "data: first\ndata:\ndata: third\n\n", "data: \ndata:  \ndata:\n", "event: old\ndata: first\nevent: new\ndata: second\n\n", "data: \x00\xff\xfe\n\n", "event: źródło\r\ndata: ż界😀\r\n\r\n", "data: first\n\ndata: last", "data:" + strings.Repeat("x", 1024*1024) + "\n"}
+	inputs := []string{"", "event: pending\ndata:\n\nevent: later\ndata: value\n\n", "data: first\ndata:\ndata: third\n\n", "data: \ndata:  \ndata:\n", "event: old\ndata: first\nevent: new\ndata: second\n\n", "data: \x00\xff\xfe\n\n", "event: źródło\r\ndata: ż界😀\r\n\r\n", "data: first\n\ndata: last"}
 	rng := rand.New(rand.NewSource(731))
 	fields := []string{"event: delta", "event: alternate", "event:", "data: first", "data: ", "data:", "data: second  ", "data: ż界😀", "data: \x00\xff", ": heartbeat", "unknown: ignored", "id: 3", "retry: 1", "withoutcolon", ""}
 	for n := 0; n < 300; n++ {
@@ -139,6 +139,12 @@ func TestSSESingleLineExactOracle(t *testing.T) {
 				t.Fatalf("case %d/%s differs: want %#v %q, got %#v %q", i, mode, want, werr, got, gerr)
 			}
 		}
+	}
+	// The legacy oracle stopped at a 1 MiB bufio.Scanner limit ("token too
+	// long"); the line reader accepts long lines up to maxSSELineBytes.
+	long := strings.Repeat("x", 1024*1024)
+	if got, err := collectR13SSE(parseSSE, strings.NewReader("data:"+long+"\n"), 0); err != "" || len(got) != 1 || got[0].Data != long {
+		t.Fatalf("1 MiB line: err=%q events=%d", err, len(got))
 	}
 }
 func TestSSECallbacksOwnStrings(t *testing.T) {
