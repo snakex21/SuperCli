@@ -54,6 +54,20 @@ var (
 	// A rename/move/split clause whose target follows "to"/"into"/"na".
 	nameCheckRenameVerb = regexp.MustCompile(`(?i)\b(?:renam\w*|mov(?:e|es|ing)|split\w*|extract\w*|migrat\w*|convert\w*|przemianuj\w*|zmie[nń]\s+nazw\w*|przenie[sś]\w*|wydziel\w*)\b`)
 	nameCheckRenameTo   = regexp.MustCompile(`(?i)\b(?:to|into|as|na|do)\s*` + "[`'\"]?$")
+	// A value change whose new value follows "to"/"na": "change the region
+	// from `westeurope` to `polandcentral`", "set `mode` to `strict`",
+	// "raise X to Y". The new value is the user's, not an existing name.
+	nameCheckChangeVerb = regexp.MustCompile(`(?i)\b(?:chang\w*|set|sets|setting|from|updat\w*|bump\w*|rais\w*|lower\w*|increas\w*|decreas\w*|switch\w*|replac\w*|modif\w*|turn\w*|zmie[nń]\w*|ustaw\w*|podnie[sś]\w*|obni[zż]\w*|zwi[eę]ksz\w*|zmniejsz\w*|prze[lł][aą]cz\w*|zast[aą]p\w*)(?:[^\pL\pN_]|$)`)
+	nameCheckChangeTo   = regexp.MustCompile(`(?i)\b(?:to|na)\s*` + "[`'\"]?$")
+	// A list whose header line asks to create or split into new things:
+	// "Split `util` into three packages:\n- `internal/textutil` ...".
+	nameCheckListItem = regexp.MustCompile(`^\s*(?:[-*•]|\(?[0-9a-z]{1,2}[.)])\s`)
+	// Only the list marker precedes the name: the item starts with it.
+	nameCheckListLead = regexp.MustCompile(`^\s*(?:[-*•]|\(?[0-9a-z]{1,2}[.)])\s+$`)
+	nameCheckIntoNew  = regexp.MustCompile(`(?i)\b(?:into|na|do)\b`)
+	// Words near a slash name or a bare word that make it a git ref
+	// ("create `release/1.4` from `main`", "rebase `feature/x`").
+	nameCheckGitWords = regexp.MustCompile(`(?i)\b(?:branch\w*|rebas\w*|merg\w*|checkout|check\s+out|cherry-pick\w*|git|upstream|ga[lł][eę]\w*|ga[lł][aą][zź]\w*)\b`)
 	// Words before a backticked plain word that make it a literal value
 	// ("the line `none`", "exactly `END`", "ends with `Admin`").
 	nameCheckValue = regexp.MustCompile(`(?i)\b(?:exactly|like|line|string|text|literal|word|value|label|marker|status|e\.g\.|such as|form|print\w*|return\w*|end(?:s|ing)?\s+with|start(?:s|ing)?\s+with|suffix|prefix|contain\w*|match\w*|pattern|dokładnie|np\.|lini[ai]|tekst\w*|warto[sś]\w*|napis\w*|ko[nń]cz\w*\s+si[eę]\s+na|zaczyna\w*\s+si[eę]\s+od)\b`)
@@ -94,6 +108,9 @@ func requestNameCandidates(prompt string) []nameCheckCandidate {
 		}
 		seen[c.name] = true
 		if fenced[c.name] || introducedAsNew(text, at) || (quoted && literalValue(text, at, c)) {
+			return
+		}
+		if nameCheckBuiltin(c) || nameCheckPlaceholder(c) || gitRefLike(text, at, c) {
 			return
 		}
 		if c.path && (at > 0 && text[at-1] == '*' || strings.HasPrefix(c.needles[0], "_")) {
@@ -208,7 +225,205 @@ func introducedAsNew(text string, at int) bool {
 	}
 	// "rename X to Y": Y is the new name.
 	before := currentClause(text[max(0, at-96):at])
-	return nameCheckRenameTo.MatchString(strings.TrimRight(before, " 	")) && nameCheckRenameVerb.MatchString(before)
+	trimmed := strings.TrimRight(before, " 	")
+	if nameCheckRenameTo.MatchString(trimmed) && nameCheckRenameVerb.MatchString(before) {
+		return true
+	}
+	// "change X from A to B", "set X to B", "raise X to B": B is the new value.
+	if nameCheckChangeTo.MatchString(trimmed) && nameCheckChangeVerb.MatchString(before) {
+		return true
+	}
+	return introducedByListHeader(text, at)
+}
+
+// introducedByListHeader reports whether position at is in a list item whose
+// header line (the nearest line above that is not a list item) ends with ":"
+// and asks to create something or to split/move/rename into new things:
+// "Split `util` into three packages:\n- `internal/textutil` ...".
+func introducedByListHeader(text string, at int) bool {
+	lineStart := strings.LastIndexByte(text[:at], '\n') + 1
+	if !nameCheckListLead.MatchString(text[lineStart:at]) {
+		return false
+	}
+	end := lineStart - 1
+	for end > 0 {
+		start := strings.LastIndexByte(text[:end], '\n') + 1
+		line := text[start:end]
+		if strings.TrimSpace(line) != "" && !nameCheckListItem.MatchString(line) {
+			header := strings.TrimRight(line, " \t\r")
+			if !strings.HasSuffix(header, ":") {
+				return false
+			}
+			if nameCheckCreate.MatchString(header) {
+				return true
+			}
+			return nameCheckRenameVerb.MatchString(header) && nameCheckIntoNew.MatchString(header)
+		}
+		end = start - 1
+	}
+	return false
+}
+
+// nameCheckBuiltins are language builtins and standard-library names a
+// request names without them having to appear in the workspace (`ValueError`,
+// `Promise`, `nil`). Dotted names whose first part is a standard module
+// (`os.path.join`, `JSON.parse`, `fmt.Errorf`) are skipped as well.
+var nameCheckBuiltins = func() map[string]bool {
+	m := map[string]bool{}
+	for _, s := range strings.Fields(`
+		ValueError TypeError KeyError IndexError AttributeError RuntimeError Exception BaseException
+		NotImplementedError NotImplemented StopIteration StopAsyncIteration OSError IOError EnvironmentError
+		FileNotFoundError FileExistsError PermissionError IsADirectoryError NotADirectoryError TimeoutError
+		ConnectionError ConnectionResetError ConnectionRefusedError BrokenPipeError InterruptedError
+		ZeroDivisionError ArithmeticError OverflowError FloatingPointError AssertionError ImportError
+		ModuleNotFoundError NameError UnboundLocalError LookupError UnicodeError UnicodeDecodeError
+		UnicodeEncodeError RecursionError MemoryError SystemExit KeyboardInterrupt GeneratorExit
+		SyntaxError IndentationError Warning DeprecationWarning UserWarning RuntimeWarning
+		None True False self cls int float str bytes bool dict list tuple set frozenset object
+		len range print isinstance issubclass enumerate zip sorted reversed open super property
+		staticmethod classmethod dataclass dataclasses Decimal datetime timedelta Optional Union
+		Any Callable Iterable Iterator Sequence Mapping Path pathlib
+		Error EvalError RangeError ReferenceError URIError AggregateError Promise Array Object
+		String Number Boolean Symbol BigInt Map Set WeakMap WeakSet Date RegExp JSON Math Intl
+		console process window document globalThis undefined null NaN Infinity async await
+		parseInt parseFloat setTimeout setInterval clearTimeout fetch require module exports
+		nil error string rune byte uint uint8 uint16 uint32 uint64 int8 int16 int32 int64
+		float32 float64 complex64 complex128 uintptr iota append cap make new panic recover
+		close copy delete
+		Throwable IllegalArgumentException IllegalStateException NullPointerException
+		RuntimeException IOException ArgumentException ArgumentNullException
+		InvalidOperationException NotImplementedException NotSupportedException
+	`) {
+		m[s] = true
+	}
+	return m
+}()
+
+var nameCheckStdModules = func() map[string]bool {
+	m := map[string]bool{}
+	for _, s := range strings.Fields(`
+		os sys re json math datetime typing collections itertools functools subprocess shutil
+		pathlib logging unittest asyncio hashlib base64 uuid
+		fmt strings strconv errors bufio filepath ioutil regexp slices utf8
+		JSON Math Object Array Promise Number Date console process Reflect Intl Buffer
+	`) {
+		m[s] = true
+	}
+	return m
+}()
+
+func nameCheckBuiltin(c nameCheckCandidate) bool {
+	if c.path || strings.HasPrefix(c.name, "-") || len(c.needles) == 0 {
+		return false
+	}
+	if len(c.needles) == 1 {
+		return nameCheckBuiltins[c.needles[0]]
+	}
+	return nameCheckStdModules[c.needles[0]] && !strings.Contains(c.name, "/")
+}
+
+// nameCheckPlaceholder reports whether a colon name is an output-format
+// placeholder (`path:line`, `file:line:col`, `key:value`), not a name.
+func nameCheckPlaceholder(c nameCheckCandidate) bool {
+	if c.path || !strings.Contains(c.name, ":") || strings.Contains(c.name, "::") {
+		return false
+	}
+	for _, p := range c.needles {
+		for _, r := range p {
+			if r < 'a' || r > 'z' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// gitRefLike reports whether a candidate is used as a git branch or ref:
+// a slash name without a file extension, or a bare word such as `main`, in
+// a sentence about branches, merges or rebases.
+func gitRefLike(text string, at int, c nameCheckCandidate) bool {
+	if c.path || strings.HasPrefix(c.name, "-") {
+		return false
+	}
+	bare := false
+	switch c.name {
+	case "main", "master", "develop", "development", "trunk", "HEAD", "origin", "upstream":
+		bare = true
+	}
+	if !strings.Contains(c.name, "/") && !bare {
+		return false
+	}
+	start := max(0, at-120)
+	end := min(len(text), at+len(c.name)+80)
+	return nameCheckGitWords.MatchString(text[start:end])
+}
+
+// gitRefNames returns the short names of the branches, remote branches and
+// tags of the git repository at root (nil when there is none). Read-only and
+// bounded: loose refs under .git/refs plus packed-refs.
+func gitRefNames(root string) map[string]bool {
+	gitDir := filepath.Join(root, ".git")
+	info, err := os.Stat(gitDir)
+	if err != nil {
+		return nil
+	}
+	if !info.IsDir() {
+		data, rerr := os.ReadFile(gitDir)
+		if rerr != nil {
+			return nil
+		}
+		line := strings.TrimSpace(string(data))
+		if !strings.HasPrefix(line, "gitdir:") {
+			return nil
+		}
+		gitDir = strings.TrimSpace(strings.TrimPrefix(line, "gitdir:"))
+		if !filepath.IsAbs(gitDir) {
+			gitDir = filepath.Join(root, gitDir)
+		}
+		if common, cerr := os.ReadFile(filepath.Join(gitDir, "commondir")); cerr == nil {
+			c := strings.TrimSpace(string(common))
+			if !filepath.IsAbs(c) {
+				c = filepath.Join(gitDir, c)
+			}
+			gitDir = c
+		}
+	}
+	refs := map[string]bool{}
+	addRef := func(full string) {
+		full = strings.TrimSpace(full)
+		for _, prefix := range []string{"refs/heads/", "refs/tags/", "refs/remotes/"} {
+			if short, ok := strings.CutPrefix(full, prefix); ok && short != "" {
+				refs[short] = true
+				if prefix == "refs/remotes/" {
+					if _, branch, ok := strings.Cut(short, "/"); ok {
+						refs[branch] = true
+					}
+				}
+			}
+		}
+	}
+	count := 0
+	refsDir := filepath.Join(gitDir, "refs")
+	_ = filepath.WalkDir(refsDir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || count > 5000 {
+			return fs.SkipAll
+		}
+		if !d.IsDir() {
+			count++
+			if rel, rerr := filepath.Rel(gitDir, p); rerr == nil {
+				addRef(filepath.ToSlash(rel))
+			}
+		}
+		return nil
+	})
+	if data, err := os.ReadFile(filepath.Join(gitDir, "packed-refs")); err == nil && len(data) < 4<<20 {
+		for _, line := range strings.Split(string(data), "\n") {
+			if _, ref, ok := strings.Cut(line, " "); ok && !strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "^") {
+				addRef(ref)
+			}
+		}
+	}
+	return refs
 }
 
 // currentClause keeps only the clause the text ends in: "add X and change
@@ -457,7 +672,7 @@ func boundedEditDistance(a, b string, limit int) int {
 // nameCheckNote is the request-tail text for the missing names.
 func nameCheckNote(missing []string, similar map[string][]string) string {
 	var b strings.Builder
-	b.WriteString("[name check] These names from the request were not found anywhere in the workspace:")
+	b.WriteString("[name check] Not found in the workspace by a quick scan:")
 	for _, m := range missing {
 		b.WriteString(" `" + m + "`")
 		if s := similar[m]; len(s) > 0 {
@@ -465,11 +680,11 @@ func nameCheckNote(missing []string, similar map[string][]string) string {
 		}
 		b.WriteString(";")
 	}
-	b.WriteString(" Confirm with a search before relying on this. Where the request treats such a name as existing " +
-		"(change, set, raise, lower, fix, use it), it is missing: do not add, define, wire up or rename anything to make it exist, " +
-		"and do not apply that part to a similar-looking name instead. Do every other part of the request, then say in the " +
-		"final answer exactly which name was not found (and which similar one exists, if any) and ask how to proceed. " +
-		"Names the user asks you to create are not affected.")
+	b.WriteString(" This is a hint, not a rule: check with a search. If the request uses it as a new value or something " +
+		"to create (a new setting value, a new branch or file, a standard-library name), just use or create it. " +
+		"If the request treats it as an existing part of the code to change or use (a function, key, flag, file) and it " +
+		"really is missing, do not invent it and do not apply that part to a similar-looking name: do the rest of the " +
+		"request, then say in the final answer which name was not found (and the similar one, if any) and ask how to proceed.")
 	return b.String()
 }
 
@@ -485,6 +700,16 @@ func (l *Loop) attachNameCheck(ctx context.Context, prompt string) {
 		kept := cands[:0]
 		for _, c := range cands {
 			if _, isTool := l.registry.Get(c.name); !isTool {
+				kept = append(kept, c)
+			}
+		}
+		cands = kept
+	}
+	// Existing git branches and tags are names too.
+	if refs := gitRefNames(l.baseDir); len(refs) > 0 {
+		kept := cands[:0]
+		for _, c := range cands {
+			if !refs[c.name] {
 				kept = append(kept, c)
 			}
 		}

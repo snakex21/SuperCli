@@ -47,6 +47,26 @@ func TestNameCheckCandidates(t *testing.T) {
 		{"Never edit any *_test.go file; region `UNKNOWN` counts, written like `-17.05`. Call the JSON API.", nil},
 		{"Extract it into a single helper function named formatMoney(value).", nil},
 		{"Write the answers to ANSWER.json:\n```\n{\"first_5xx\": 1}\n```\n- first_5xx: the first error.", nil},
+		// audit-130 (ho3) false hints: language builtins, change targets,
+		// output-format placeholders, git refs and list items under a
+		// "split into new packages:" header.
+		{"(a) `Stock.add()` and `Stock.reserve()` must raise `ValueError` when the quantity is zero or negative.",
+			[]string{"Stock.add", "Stock.reserve"}},
+		{"Throw a `TypeError` from parse(); use `JSON.parse` and `os.path.join`, return `None`.", nil},
+		{"In `scripts/Deploy-App.ps1` change the region from `westeurope` to `polandcentral` (only the `$Region` assignment).",
+			[]string{"scripts/Deploy-App.ps1", "westeurope", "Region"}},
+		{"Set `log_level` to `verbose_debug`; zmień `MAX_ITEMS` na `MAX_ITEMS_V2`. Raise `pool_size` to `pool_max`.",
+			[]string{"log_level", "MAX_ITEMS", "pool_size"}},
+		{"Write the result to `callsites.txt`: one `path:line` per call, or `file:line:col`.", nil},
+		{"Please integrate `feature/volume-discounts` with the current `main` on a NEW branch `release/1.4`: create it from `main` and merge.", nil},
+		{"I'm on `feature/report`, which is behind `main`. Before I rebase it onto `main` myself, tell me.", nil},
+		{"Split the package `gateway/internal/util` into three packages and delete it:\n- `internal/textutil` (package textutil): `Slugify`;\n- `internal/clock`: `FormatAgo`.",
+			[]string{"gateway/internal/util", "Slugify", "FormatAgo"}},
+		// Still checked: names the request treats as existing.
+		{"Change the default of the `TILER_WORKER_COUNT` environment variable from 4 to 8.", []string{"TILER_WORKER_COUNT"}},
+		{"Make `normalize_unit_name` in pantry/units.py also accept plurals; in config/flags.production.json turn `dark_mode` off.",
+			[]string{"normalize_unit_name", "dark_mode", "pantry/units.py", "config/flags.production.json"}},
+		{"Fix the bug in `parse_headers` on the `main` page of the docs.", []string{"parse_headers", "main"}},
 	}
 	for _, c := range cases {
 		if got := candidateNames(c.prompt); !reflect.DeepEqual(got, c.want) {
@@ -97,7 +117,8 @@ func TestNameCheckFindsMissingAndSimilarNames(t *testing.T) {
 		t.Fatalf("similar settings.yaml = %q", got)
 	}
 	note := nameCheckNote(missing, similar)
-	for _, s := range []string{"`limits.burst`", "`settings.yaml` (similar existing: settings.yml)", "do not add, define, wire up", "ask how to proceed"} {
+	for _, s := range []string{"`limits.burst`", "`settings.yaml` (similar existing: settings.yml)", "Not found in the workspace",
+		"new value or something to create", "just use or create it", "do not invent it", "ask how to proceed"} {
 		if !strings.Contains(note, s) {
 			t.Fatalf("note lacks %q:\n%s", s, note)
 		}
@@ -114,6 +135,60 @@ func TestNameCheckIdentifierBoundary(t *testing.T) {
 	got := similarIdentifiers("parse_header", map[string]struct{}{"parse_headers": {}, "parse": {}, "ParseHeader": {}, "render_footer": {}})
 	if !reflect.DeepEqual(got, []string{"ParseHeader", "parse_headers"}) {
 		t.Fatalf("similar = %q", got)
+	}
+}
+
+// The git branches and tags of the workspace repository count as existing
+// names (ho3-git-* prompts name `feature/report`, `main`, ...).
+func TestNameCheckGitRefsAreNames(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"app.py":                             "x = 1\n",
+		".git/HEAD":                          "ref: refs/heads/main\n",
+		".git/refs/heads/main":               "0000000000000000000000000000000000000000\n",
+		".git/refs/heads/feature/report":     "0000000000000000000000000000000000000000\n",
+		".git/refs/remotes/origin/hotfix_42": "0000000000000000000000000000000000000000\n",
+		".git/packed-refs":                   "# pack-refs with: peeled\n1111111111111111111111111111111111111111 refs/tags/v1.2.0\n",
+	})
+	refs := gitRefNames(root)
+	for _, want := range []string{"main", "feature/report", "origin/hotfix_42", "hotfix_42", "v1.2.0"} {
+		if !refs[want] {
+			t.Fatalf("ref %q not found in %v", want, refs)
+		}
+	}
+	prompt := "Show what `hotfix_42` changes compared with `stale_branch_x`."
+	l := &Loop{nameCheck: true, baseDir: root}
+	l.Messages = []llm.Message{{Role: llm.RoleUser, Content: prompt}}
+	l.attachNameCheck(context.Background(), prompt)
+	got := l.Messages[0].TextOnly().Content
+	_, note, _ := strings.Cut(got, "[name check]")
+	if strings.Contains(note, "`hotfix_42`") || !strings.Contains(note, "`stale_branch_x`") {
+		t.Fatalf("user turn = %q", got)
+	}
+}
+
+// The ho3 prompts that produced false hints in audit-130, run against their
+// fixtures: none of them may produce a note any more.
+func TestNameCheckHo3FalseHintsGone(t *testing.T) {
+	cases := []struct{ fixture, prompt string }{
+		{"agent-ho3-multiturn-undo-rename", "(a) `Stock.add()` and `Stock.reserve()` must raise `ValueError` when the quantity is zero or negative.\n" +
+			"(b) Rename the `StockItem` field `qty_on_hand` to `on_hand` everywhere in the package and the tests (including the JSON key in `inventory/api.py`)."},
+		{"agent-ho3-win-crlf-bom", "1. In `config/app.ini` change the server port from 8080 to 8443.\n" +
+			"2. In `scripts/Deploy-App.ps1` change the region from `westeurope` to `polandcentral` (only the `$Region` assignment)."},
+		{"agent-ho3-large-repo-callsites", "Write the result to `callsites.txt` in the repo root: one `path:line` per call (POSIX slashes)."},
+	}
+	for _, c := range cases {
+		root := filepath.Join("..", "..", "test", "go", "eval", "fixtures", c.fixture)
+		if _, err := os.Stat(root); err != nil {
+			t.Fatalf("fixture %s: %v", c.fixture, err)
+		}
+		cands := requestNameCandidates(c.prompt)
+		scan := scanWorkspaceForNames(context.Background(), root, cands)
+		if !scan.complete {
+			t.Fatalf("%s: scan incomplete", c.fixture)
+		}
+		if missing, _ := missingNames(cands, scan); len(missing) > 0 {
+			t.Errorf("%s: false hint for %q", c.fixture, missing)
+		}
 	}
 }
 
