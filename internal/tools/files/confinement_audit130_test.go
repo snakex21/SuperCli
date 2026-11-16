@@ -521,11 +521,10 @@ func TestAudit130HardlinkEditFilesBreaksLink(t *testing.T) {
 }
 
 // TestAudit130HardlinkInPlaceWritersMustNotModifyOutside: write_file
-// (fileops.WriteFileContext, internal/tools/fileops/fileops_fs.go:75) and
-// patch_file (fileops.PatchFileContext, internal/tools/fileops/patch_file.go:214)
-// use os.WriteFile on the existing path, which writes through the hard link.
+// (fileops.WriteFileContext) and patch_file (fileops.PatchFileContext) replace
+// an existing file through fileops.ReplaceFileContents (temp file + rename),
+// which breaks the hard link instead of writing through it.
 func TestAudit130HardlinkInPlaceWritersMustNotModifyOutside(t *testing.T) {
-	audit130KnownFailing(t, "write_file and patch_file write in place (os.WriteFile) and modify a hard-linked file outside the workspace; they must write via temp file + rename like edit_files")
 	for _, c := range []audit130HardlinkCase{
 		{name: "write_file", want: "PWNED", call: func(ws string) audit130Call {
 			return audit130Call{name: "write_file", tool: NewWriteFile(ws).Spec(), args: map[string]any{"path": "hard.txt", "content": "PWNED"}}

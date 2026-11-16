@@ -72,7 +72,7 @@ func WriteFileContext(ctx context.Context, path, content string) (WriteResult, e
 	if err := ctx.Err(); err != nil {
 		return WriteResult{}, err
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := ReplaceFileContents(path, []byte(content), 0o644); err != nil {
 		return WriteResult{}, FileErr(err, path)
 	}
 	return WriteResult{Created: !existed, Bytes: len(content)}, nil
