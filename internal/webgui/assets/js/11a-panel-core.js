@@ -6,11 +6,54 @@ var overlay = $("#panel-overlay"), panelContent = $("#panel-content");
 var currentSection = "settings";
 var sections = {}; // name -> render function
 
+/* The panel is a modal dialog (role=dialog aria-modal in index.html): opening
+   moves focus into it, Tab cycles inside it, and closing hands focus back to
+   whatever opened it. */
+var panelDialog = overlay.querySelector(".panel"), panelOpener = null;
 function openPanel(section) {
+  var opening = overlay.hidden;
+  if (opening) {
+    var active = document.activeElement;
+    panelOpener = active && active !== document.body && !overlay.contains(active) ? active : null;
+  }
   overlay.hidden = false;
   showSection(section || currentSection);
+  if (opening) {
+    var start = $("#panel-nav button.active") || panelDialog;
+    start.focus({ preventScroll: true });
+  }
 }
-function closePanel() { overlay.hidden = true; }
+function closePanel() {
+  if (overlay.hidden) return;
+  var hadFocus = overlay.contains(document.activeElement) || document.activeElement === document.body;
+  overlay.hidden = true;
+  var opener = panelOpener;
+  panelOpener = null;
+  if (!hadFocus) return;
+  if (opener && opener.isConnected && opener.getClientRects().length && !opener.disabled) opener.focus({ preventScroll: true });
+  else if (typeof promptEl !== "undefined" && promptEl) promptEl.focus({ preventScroll: true });
+}
+function panelFocusables() {
+  return Array.prototype.filter.call(panelDialog.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])'
+  ), function (node) { return node.getClientRects().length > 0; });
+}
+overlay.addEventListener("keydown", function (e) {
+  if (e.key !== "Tab" || e.defaultPrevented) return;
+  var items = panelFocusables();
+  if (!items.length) { e.preventDefault(); panelDialog.focus(); return; }
+  var first = items[0], last = items[items.length - 1], active = document.activeElement;
+  if (e.shiftKey && (active === first || active === panelDialog)) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+});
+// Escape in a text field inside the panel cancels that edit only (TUI parity:
+// the first Esc cancels the edit, the next one closes the panel). Field
+// handlers that revert their value run first; focus then stays in the dialog.
+function panelTextField(node) {
+  if (!node || !overlay.contains(node)) return false;
+  if (node.isContentEditable || node.tagName === "TEXTAREA") return true;
+  return node.tagName === "INPUT" && !/^(checkbox|radio|button|submit|reset|range|color|file|image)$/i.test(node.type);
+}
 $("#open-panel").addEventListener("click", function () { openPanel(); });
 $("#panel-close").addEventListener("click", closePanel);
 overlay.addEventListener("click", function (e) { if (e.target === overlay) closePanel(); });

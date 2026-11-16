@@ -93,12 +93,10 @@ func TestAudit130SettingsChangePersistAndCancel(t *testing.T) {
 	}
 }
 
-// Escape in a settings text field should only cancel that edit (as the TUI
-// does: the first Esc cancels the edit, a second Esc closes /settings). In
-// the GUI the field's handler reverts the value and the document handler
-// then also closes the whole control panel on the same key press.
+// Escape in a settings text field only cancels that edit (as the TUI does:
+// the first Esc cancels the edit, a second Esc closes /settings). Focus stays
+// inside the dialog, so the next Escape closes the panel.
 func TestAudit130SettingsEscapeInFieldKeepsPanelOpen(t *testing.T) {
-	audit130KnownFailing(t, "Escape in a settings field cancels the edit and also closes the whole control panel")
 	app := audit130StartApp(t, 1280, 900)
 	app.setLanguage("pl")
 	var ok bool
@@ -106,21 +104,39 @@ func TestAudit130SettingsEscapeInFieldKeepsPanelOpen(t *testing.T) {
 	if !ok {
 		t.Fatal("settings did not render")
 	}
+	original := audit130ConfigKnob(app, "max_retries")
 	var got struct {
-		Value  string `json:"value"`
-		Hidden bool   `json:"hidden"`
+		Value        string `json:"value"`
+		Hidden       bool   `json:"hidden"`
+		FocusInside  bool   `json:"focusInside"`
+		HiddenSecond bool   `json:"hiddenSecond"`
 	}
-	app.eval(`(async()=>{const i=`+audit130MaxRetriesInput+`;i.focus();i.value='9';i.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));await new Promise(r=>setTimeout(r,200));return {value:i.value,hidden:document.querySelector('#panel-overlay').hidden};})()`, &got)
+	app.eval(`(async()=>{const sleep=ms=>new Promise(r=>setTimeout(r,ms));const ov=document.querySelector('#panel-overlay');const i=`+audit130MaxRetriesInput+`;i.focus();i.value='9';i.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));await sleep(200);
+ const r={value:i.value,hidden:ov.hidden,focusInside:ov.contains(document.activeElement)};
+ document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));await sleep(100);
+ r.hiddenSecond=ov.hidden;return r;})()`, &got)
+	t.Logf("escape in field: %+v (stored %q)", got, original)
 	if got.Hidden {
 		t.Fatalf("one Escape in the field closed the control panel (field value reverted to %q)", got.Value)
 	}
+	if got.Value != original {
+		t.Errorf("Escape did not cancel the edit: field shows %q, stored value %q", got.Value, original)
+	}
+	if after := audit130ConfigKnob(app, "max_retries"); after != original {
+		t.Errorf("cancelled edit was saved: max_retries %q -> %q", original, after)
+	}
+	if !got.FocusInside {
+		t.Error("focus left the control panel after Escape in a field")
+	}
+	if !got.HiddenSecond {
+		t.Error("a second Escape outside the field did not close the control panel")
+	}
 }
 
-// The control panel overlay covers the app like a modal, but it is not
-// exposed as one: no role=dialog/aria-modal, and opening it leaves keyboard
-// focus on the gear button behind the overlay (Tab walks the hidden page).
+// The control panel overlay covers the app like a modal and is exposed as
+// one: role=dialog aria-modal labelled by its title, focus moves into it on
+// open, Tab wraps inside it, and closing returns focus to the opener.
 func TestAudit130SettingsPanelFocusOnOpenAndClose(t *testing.T) {
-	audit130KnownFailing(t, "control panel is not a dialog: no role=dialog/aria-modal and focus is not moved into it on open")
 	app := audit130StartApp(t, 1280, 900)
 	app.setLanguage("pl")
 	var got struct {
@@ -128,11 +144,19 @@ func TestAudit130SettingsPanelFocusOnOpenAndClose(t *testing.T) {
 		Modal       string `json:"modal"`
 		FocusOpen   string `json:"focusOpen"`
 		FocusClosed string `json:"focusClosed"`
+		Label       string `json:"label"`
+		TabWrap     string `json:"tabWrap"`
+		ShiftWrap   string `json:"shiftWrap"`
 	}
 	app.eval(`(async()=>{const sleep=ms=>new Promise(r=>setTimeout(r,ms));const f=()=>{const a=document.activeElement;return a?a.tagName+'#'+a.id:'null';};
  const opener=document.querySelector('#open-panel');opener.focus();opener.click();await sleep(400);
  const ov=document.querySelector('#panel-overlay'),panel=ov.querySelector('.panel');
  const r={role:(panel.getAttribute('role')||ov.getAttribute('role')||''),modal:(panel.getAttribute('aria-modal')||ov.getAttribute('aria-modal')||''),focusOpen:f()+(ov.contains(document.activeElement)?' (inside)':' (outside)')};
+ const lb=document.getElementById(panel.getAttribute('aria-labelledby')||'');r.label=lb&&panel.contains(lb)?lb.textContent.trim():'';
+ const items=[...panel.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href]')].filter(e=>e.getClientRects().length);
+ const first=items[0],last=items[items.length-1];
+ last.focus();last.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));r.tabWrap=document.activeElement===first?'first':f();
+ first.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true,cancelable:true}));r.shiftWrap=document.activeElement===last?'last':f();
  document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await sleep(100);
  r.focusClosed=f();return r;})()`, &got)
 	t.Logf("panel a11y: %+v", got)
@@ -143,8 +167,14 @@ func TestAudit130SettingsPanelFocusOnOpenAndClose(t *testing.T) {
 	if got.Role != "dialog" || got.Modal != "true" {
 		failures = append(failures, "panel lacks role=dialog aria-modal=true: role="+got.Role+" aria-modal="+got.Modal)
 	}
-	if got.FocusClosed == "BODY#" || got.FocusClosed == "null" {
-		failures = append(failures, "focus dropped to "+got.FocusClosed+" after Escape closed the panel")
+	if got.Label == "" {
+		failures = append(failures, "panel has no aria-labelledby title inside it")
+	}
+	if got.TabWrap != "first" || got.ShiftWrap != "last" {
+		failures = append(failures, "Tab does not wrap inside the panel: Tab from last -> "+got.TabWrap+", Shift+Tab from first -> "+got.ShiftWrap)
+	}
+	if got.FocusClosed != "BUTTON#open-panel" {
+		failures = append(failures, "focus went to "+got.FocusClosed+" after Escape closed the panel, want the opener BUTTON#open-panel")
 	}
 	if len(failures) > 0 {
 		t.Fatalf("%s", audit130Join(failures))

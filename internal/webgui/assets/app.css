@@ -1486,6 +1486,8 @@ button[data-sec="about"].has-update::after {
   display: flex; align-items: center; justify-content: center;
 }
 .overlay[hidden] { display: none; }
+/* The dialog container takes focus only as a fallback target (tabindex=-1). */
+.panel:focus { outline: none; }
 .panel {
   width: min(1760px, calc(var(--app-viewport-width) - clamp(32px, 7vw, 160px)));
   height: min(1000px, calc(var(--app-viewport-height) - clamp(32px, 8vh, 112px)));
