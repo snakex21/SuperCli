@@ -156,6 +156,25 @@ func hasLocalWebRequestWork(prompt string, download bool) bool {
 // A known file URL needs only download. Pages, extensionless endpoints and
 // URLs still to be found expose the reader too, regardless of the provider.
 // Availability does not force a fetch or choose a URL for the model.
+// webReferenceForPrompt reports whether the prompt points at the public web
+// (a URL or a web/online/internet/site word, see hasPublicWebSource) or asks
+// for news or the latest facts, and whether it contains an http(s) URL.
+func webReferenceForPrompt(prompt string) (web, hasURL bool) {
+	p := unquotedActionPrompt(strings.ToLower(prompt))
+	hasURL = strings.Contains(p, "http://") || strings.Contains(p, "https://")
+	if hasURL || hasPublicWebSource(p) {
+		return true, hasURL
+	}
+	for _, word := range strings.FieldsFunc(p, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
+		switch {
+		case word == "news", word == "latest", word == "google", word == "googl", strings.HasPrefix(word, "wiadomo"),
+			strings.HasPrefix(word, "najnowsz"), strings.HasPrefix(word, "newsy"):
+			return true, false
+		}
+	}
+	return false, false
+}
+
 func needsDownloadPageContract(prompt string) bool {
 	foundURL := false
 	for _, token := range strings.Fields(prompt) {

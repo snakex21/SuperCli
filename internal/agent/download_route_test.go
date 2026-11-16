@@ -82,7 +82,10 @@ func TestWebDownloadSearchContractsExpireAndKeepCachePrefix(t *testing.T) {
 		t.Fatal("search-download changed cacheable prefix")
 	}
 	contracts := requestToolContracts(requested)
-	if len(contracts) != 1 || !requestContainsToolContract(requested, "web_download", l.buildToolDefs()) || !requestContainsToolContract(requested, "web_fetch", l.buildToolDefs()) {
+	// web_lookup is not thin core (1.0.31): a search-download carries the
+	// search, page-reader and download contracts in the request tail.
+	if len(contracts) != 3 || !requestContainsToolContract(requested, "web_download", l.buildToolDefs()) || !requestContainsToolContract(requested, "web_fetch", l.buildToolDefs()) ||
+		!requestContainsToolContract(requested, "web_lookup", l.buildToolDefs()) {
 		t.Fatalf("contracts=%v", contracts)
 	}
 	if tokens+estimateRequestTokens(nil, l.buildToolDefs()) != estimateRequestTokens(requested, l.buildToolDefs()) {
@@ -91,8 +94,8 @@ func TestWebDownloadSearchContractsExpireAndKeepCachePrefix(t *testing.T) {
 	t.Logf("search-download contracts add %d estimated message tokens", tokens-ordinaryTokens)
 	l.prepareRunRoute(context.Background(), "Pobierz https://example.com/direct.gif")
 	direct, directTokens := l.prepareProviderMessages(true)
-	if len(requestToolContracts(direct)) != 1 || l.downloadPageForRun || directTokens != tokens || !containsNativeContract(l.buildToolDefs(), "web_fetch") {
-		t.Fatal("direct asset duplicated the already native page-reader contract")
+	if len(requestToolContracts(direct)) != 1 || l.downloadPageForRun || directTokens >= tokens || containsNativeContract(l.buildToolDefs(), "web_fetch") {
+		t.Fatal("direct asset download paid for page-reader or search contracts")
 	}
 	l.prepareRunRoute(context.Background(), "cześć")
 	if l.downloadForRun || l.downloadPageForRun || l.requestedToolContext() != "" || len(l.registry.DiscoveredNames()) != 0 {

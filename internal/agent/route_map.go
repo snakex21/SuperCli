@@ -30,7 +30,11 @@ var chatRouteTools = []string{"web_lookup", "tool_search", "recall"}
 // ordinary files.
 var thinCoreTools = []string{
 	"tool_search",
-	"web_lookup",
+	// web_lookup is not core (1.0.31): on the coordinator route it was 9 of
+	// ~4300 calls in the eval transcripts, while its schema and the native
+	// web_fetch contract it pulled in cost ~450 tokens of every request.
+	// It stays one tool_search away in the catalog (web_fetch is a direct
+	// invoke_tool line), and the chat route keeps it as a full schema.
 	"invoke_tool",
 	"read_output",
 	"patch_file",

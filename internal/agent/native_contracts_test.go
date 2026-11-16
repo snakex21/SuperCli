@@ -14,13 +14,13 @@ import (
 func nativeFixture(t *testing.T) *Loop {
 	t.Helper()
 	reg := tools.NewRegistry()
-	reg.MustRegister(tools.Tool{Name: "web_lookup", Description: "Core fixture discovery", ReadOnly: true,
+	reg.MustRegister(tools.Tool{Name: "search_code", Description: "Core fixture discovery", ReadOnly: true,
 		NextTools: []string{"inspect_record", "inspect_details"}, Schema: `{"type":"object","properties":{"query":{"type":"string"}}}`,
 		Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 			return tools.Result{Text: "Fixture discovery"}, nil
 		},
 	})
-	reg.MarkAlwaysOn("web_lookup")
+	reg.MarkAlwaysOn("search_code")
 	for _, name := range []string{"inspect_record", "inspect_details", "apply_record", "dormant_effect"} {
 		reg.MustRegister(tools.Tool{Name: name, Description: "Fixture contract " + name, ReadOnly: strings.HasPrefix(name, "inspect_"),
 			Schema: `{"type":"object","properties":{"key":{"type":"string"}},"required":["key"]}`,

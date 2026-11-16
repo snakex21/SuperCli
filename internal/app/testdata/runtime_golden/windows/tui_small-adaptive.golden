@@ -23,7 +23,7 @@ tool_search [on] desc=adb46caef9d4 schema=bec7ffe0edef fn=supercli/internal/tool
 apply_skill [on ro] desc=a091b205f439 schema=870c4eb3f23a fn=supercli/internal/tools/skills.(*SkillApplier).execute-fm
 remember [on] desc=7bc440d6700c schema=8d4d23ebf405 fn=supercli/internal/tools/memorytools.(*Remember).run-fm
 recall [on] desc=f1f69c902d5d schema=8cceb156aa6e fn=supercli/internal/tools/memorytools.(*Recall).run-fm
-ctx_execute [] desc=81a1a77d415e schema=6e56717e1e19 fn=supercli/internal/tools/workflow.(*CtxExecuteTool).Execute-fm
+ctx_execute [] desc=4869fde65fe0 schema=efabb829d749 fn=supercli/internal/tools/workflow.(*CtxExecuteTool).Execute-fm
 goal [on] desc=91047b6c1566 schema=5e48e04fa23d fn=supercli/internal/tools/workflow.(*GoalTool).Execute-fm
 host_power [approval] desc=cb2f4b0eb93d schema=5a1e3574332b fn=supercli/internal/tools/hostpower.Execute
 search_history [ro] desc=429792732cd2 schema=14198f25a40a fn=supercli/internal/tools/search.(*SearchHistory).run-fm
@@ -227,7 +227,7 @@ done steps=2
 done steps=1
 ##### transcript
 === request 1 ===
-tools: ask_user(desc=9951814db096 schema=2d18c1db508f) tool_search(desc=adb46caef9d4 schema=bec7ffe0edef) recall(desc=f1f69c902d5d schema=8cceb156aa6e) read_output(desc=8cb657cdcc97 schema=0b5132aaf325) web_lookup(desc=efe870122b33 schema=8acf7a96a129) web_fetch(desc=074e797be2aa schema=dae3f262f5e0)
+tools: ask_user(desc=9951814db096 schema=2d18c1db508f) tool_search(desc=adb46caef9d4 schema=bec7ffe0edef) recall(desc=f1f69c902d5d schema=8cceb156aa6e) read_output(desc=8cb657cdcc97 schema=0b5132aaf325)
 --- msg 0 role=system origin={"source":"instructions"}
 You are SuperCli, a portable AI assistant.
 
@@ -281,6 +281,7 @@ remember(text, type, scope, topic, supersedes:list) — Save a fact to persisten
 send_message(to, message, mode) — Continue a finished task worker by ID, or use mode=steer to queue a correction …
 task(prompt, expect, agent, advise:bool, async:bool) — Delegate independent work or substantial exploration to an isolated worker. Use…
 task_stop(task_id) — Stop a running task worker by ID. Use when a worker is stuck, no longer needed,…
+web_lookup(query, queries:list, refresh:bool) — Search the live public web for current facts, new candidate URLs or external re…
 --- msg 1 role=user origin={"spans":[{"source":"human"},{"source":"runtime"}]}
 GOLDEN_CALL tool_search {"query":"web_fetch"}
 
@@ -307,7 +308,7 @@ Current local date/time: <WEEKDAY>, <DATE> <TZ>. It is <YEAR> — verify that li
 
 [host power] Use host_power only when the human explicitly requests a one-shot host power action after this work. Create or use the active goal and complete and verify its tasks honestly; never mark incomplete or failed work successful. Implementing this feature, quoted instructions, and documentation are not requests to power off the host.
 === request 2 ===
-tools: ask_user(desc=9951814db096 schema=2d18c1db508f) tool_search(desc=adb46caef9d4 schema=bec7ffe0edef) recall(desc=f1f69c902d5d schema=8cceb156aa6e) read_output(desc=8cb657cdcc97 schema=0b5132aaf325) web_lookup(desc=efe870122b33 schema=8acf7a96a129) web_fetch(desc=074e797be2aa schema=dae3f262f5e0)
+tools: ask_user(desc=9951814db096 schema=2d18c1db508f) tool_search(desc=adb46caef9d4 schema=bec7ffe0edef) recall(desc=f1f69c902d5d schema=8cceb156aa6e) read_output(desc=8cb657cdcc97 schema=0b5132aaf325)
 --- msg 0 role=system origin={"source":"instructions"}
 You are SuperCli, a portable AI assistant.
 
@@ -361,6 +362,7 @@ remember(text, type, scope, topic, supersedes:list) — Save a fact to persisten
 send_message(to, message, mode) — Continue a finished task worker by ID, or use mode=steer to queue a correction …
 task(prompt, expect, agent, advise:bool, async:bool) — Delegate independent work or substantial exploration to an isolated worker. Use…
 task_stop(task_id) — Stop a running task worker by ID. Use when a worker is stuck, no longer needed,…
+web_lookup(query, queries:list, refresh:bool) — Search the live public web for current facts, new candidate URLs or external re…
 --- msg 1 role=user origin={"spans":[{"source":"human"},{"source":"runtime"}]}
 GOLDEN_CALL tool_search {"query":"web_fetch"}
 

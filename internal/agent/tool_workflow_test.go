@@ -15,11 +15,11 @@ import (
 func workflowFixture(t *testing.T, dispatcher bool) *Loop {
 	t.Helper()
 	l := requestedContextFixture(t, dispatcher)
-	l.registry.MustRegister(tools.Tool{Name: "web_lookup", Description: "Search this fixture", ReadOnly: true, Schema: `{"type":"object","properties":{"query":{"type":"string"}},"required":["query"],"additionalProperties":false}`,
+	l.registry.MustRegister(tools.Tool{Name: "search_code", Description: "Search this fixture", ReadOnly: true, Schema: `{"type":"object","properties":{"query":{"type":"string"}},"required":["query"],"additionalProperties":false}`,
 		NextTools: []string{"inspect_asset", "save_asset", "missing_tool"}, Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 			return tools.Result{Text: "Found https://example.com/asset.bin"}, nil
 		}})
-	l.registry.MarkAlwaysOn("web_lookup")
+	l.registry.MarkAlwaysOn("search_code")
 	l.registry.MustRegister(tools.Tool{Name: "inspect_asset", Description: "Inspect selected asset metadata", ReadOnly: true, Schema: `{"type":"object","properties":{"url":{"type":"string"}},"required":["url"],"additionalProperties":false}`,
 		NextTools: []string{"save_asset"}, Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 			return tools.Result{Text: "Asset metadata"}, nil
@@ -42,7 +42,7 @@ func TestWorkflowContractsFollowSuccessfulToolsAndExpire(t *testing.T) {
 	if l.requestedToolContext() != "" {
 		t.Fatal("workflow advertised before execution")
 	}
-	calls := []llm.ToolCall{{Name: "web_lookup"}}
+	calls := []llm.ToolCall{{Name: "search_code"}}
 	l.learnWorkflowTools(calls, []callOutcome{{failed: true}})
 	if len(l.workflowTools) != 0 {
 		t.Fatal("failed search enabled contracts")
@@ -95,7 +95,7 @@ func TestWorkflowNativeFallbackAndRegistryReplacement(t *testing.T) {
 	l := workflowFixture(t, false)
 	l.prepareRunRoute(context.Background(), "choose something")
 	initial := l.buildToolDefs()
-	l.learnWorkflowTools([]llm.ToolCall{{Name: "web_lookup"}}, []callOutcome{{}})
+	l.learnWorkflowTools([]llm.ToolCall{{Name: "search_code"}}, []callOutcome{{}})
 	defs := l.buildToolDefs()
 	if len(defs) != len(initial)+1 || !containsNativeContract(initial, "inspect_asset") || !containsNativeContract(defs, "save_asset") {
 		t.Fatalf("native definitions before=%d after=%d", len(initial), len(defs))
@@ -134,7 +134,7 @@ func TestWorkflowCapabilityDoesNotAuthorizeDownloads(t *testing.T) {
 func TestWorkflowRunCompletesWithoutDiscoveryOrSearchLoop(t *testing.T) {
 	l := workflowFixture(t, true)
 	p := &stubProvider{name: "workflow", scripts: [][]llm.Delta{
-		{{ToolCall: &llm.ToolCall{ID: "find", Name: "web_lookup", Arguments: `{"query":"an asset"}`}, FinishReason: "tool_calls"}},
+		{{ToolCall: &llm.ToolCall{ID: "find", Name: "search_code", Arguments: `{"query":"an asset"}`}, FinishReason: "tool_calls"}},
 		{{ToolCall: &llm.ToolCall{ID: "inspect", Name: invokeToolName, Arguments: `{"tool":"inspect_asset","args":{"url":"https://example.com/asset.bin"}}`}, FinishReason: "tool_calls"}},
 		{{ToolCall: &llm.ToolCall{ID: "save", Name: invokeToolName, Arguments: `{"tool":"save_asset","args":{"url":"https://example.com/asset.bin","path":"assets/second.bin"}}`}, FinishReason: "tool_calls"}},
 		{{Content: "Saved.", FinishReason: "stop"}},
@@ -167,16 +167,16 @@ func TestWorkflowRunCompletesWithoutDiscoveryOrSearchLoop(t *testing.T) {
 func TestWorkflowFailedActualCallDoesNotLearnTools(t *testing.T) {
 	l := workflowFixture(t, true)
 	reg := tools.NewRegistry()
-	reg.MustRegister(tools.Tool{Name: "web_lookup", Description: "failed search", NextTools: []string{"save_asset"}, Schema: `{"type":"object"}`,
+	reg.MustRegister(tools.Tool{Name: "search_code", Description: "failed search", NextTools: []string{"save_asset"}, Schema: `{"type":"object"}`,
 		Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
 			return tools.Result{Err: errors.New("offline")}, nil
 		}})
 	save, _ := l.registry.Get("save_asset")
 	reg.MustRegister(save)
-	reg.MarkAlwaysOn("web_lookup")
+	reg.MarkAlwaysOn("search_code")
 	l.SetRegistry(reg)
 	l.provider = &stubProvider{name: "failure", scripts: [][]llm.Delta{
-		{{ToolCall: &llm.ToolCall{ID: "find", Name: "web_lookup", Arguments: `{}`}, FinishReason: "tool_calls"}}, {{Content: "Failed.", FinishReason: "stop"}},
+		{{ToolCall: &llm.ToolCall{ID: "find", Name: "search_code", Arguments: `{}`}, FinishReason: "tool_calls"}}, {{Content: "Failed.", FinishReason: "stop"}},
 	}}
 	drainEvents(t, mustRun(t, l, "another one please"))
 	if len(l.workflowTools) != 0 {

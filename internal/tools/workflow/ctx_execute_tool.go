@@ -46,19 +46,22 @@ func NewCtxExecuteTool(runner *ctxexec.Runner, home string) *CtxExecuteTool {
 func (c *CtxExecuteTool) Spec() Tool {
 	return Tool{
 		Name:        "ctx_execute",
-		Description: "Run one sandbox command (builds/tests/checks); returns bounded JSON {stdout, stderr, exit_code, truncated_*, duration_ms, error}. Not for DOCX (use read_docx/edit_docx). Servers/watchers: use process_session.",
-		Schema: fmt.Sprintf(`{
+		Description: "Run one sandbox command (build/test/check); returns JSON {stdout, stderr, exit_code, truncated_*, duration_ms, error}. Not for DOCX; servers/watchers: process_session.",
+		// timeout_ms has no schema maximum: the runner rejects values beyond
+		// the time.Duration range (ctxexec.MaxTimeoutMS), and the 19-digit
+		// bound cost tokens on every request.
+		Schema: `{
 			"type": "object",
 			"properties": {
 				"command": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 32, "description": "argv, not shell text, e.g. [\"git\",\"status\"]; PATH binaries only (prefer search_code over rg). Windows built-ins: [\"cmd\",\"/c\",...]."},
-				"workdir": {"type": "string", "description": "Home/workspace-relative working dir; default: home root."},
-				"timeout_ms": {"type": "integer", "minimum": 0, "maximum": %d, "default": 0, "description": "0 = no limit."},
+				"workdir": {"type": "string", "description": "Relative to home; default home root."},
+				"timeout_ms": {"type": "integer", "minimum": 0, "default": 0, "description": "0 = no limit."},
 				"max_stdout_kb": {"type": "integer", "minimum": 1, "default": 16, "description": "KB cap (max 64), keeps tail."},
 				"max_stderr_kb": {"type": "integer", "minimum": 1, "default": 4, "description": "KB cap (max 64), keeps tail."},
 				"env_extra": {"type": "array", "items": {"type": "string"}, "description": "KEY=VALUE, rarely needed."}
 			},
 			"required": ["command"]
-		}`, ctxexec.MaxTimeoutMS),
+		}`,
 		Fn: c.Execute,
 	}
 }

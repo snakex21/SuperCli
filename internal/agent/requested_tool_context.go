@@ -40,7 +40,9 @@ func (l *Loop) requestedToolDefinitions() []llm.ToolDef {
 	}{
 		{l.screenshotForRun, "send_screenshot"},
 		{l.downloadForRun, "web_download"},
-		{l.downloadPageForRun, "web_fetch"},
+		// A direct-asset download needs neither the page reader nor search.
+		{l.downloadPageForRun || (l.webURLForRun && !l.downloadForRun), "web_fetch"},
+		{l.webForRun && (!l.downloadForRun || l.downloadPageForRun), "web_lookup"},
 		{l.headlessForRun, "headless_control"},
 		{l.headlessForRun || l.screenshotForRun, "process_session"},
 	} {

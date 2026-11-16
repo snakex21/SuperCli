@@ -177,6 +177,12 @@ type Loop struct {
 	headlessForRun     bool
 	downloadForRun     bool
 	downloadPageForRun bool
+	// webForRun: the prompt names a public web source (a URL, "online",
+	// "internet", a site) or asks for news/latest facts. web_lookup is not in
+	// the thin core, so such a turn carries its contract in the request tail
+	// (and web_fetch for a URL) instead of needing a tool_search round.
+	webForRun    bool
+	webURLForRun bool
 
 	// Optional legacy reasoning replay (SUPERCLI_KEEP_THINKING, default off).
 	// Assistant reasoning is stripped before entering Messages, while the

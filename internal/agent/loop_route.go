@@ -18,6 +18,7 @@ func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 	l.headlessForRun = containsHeadlessReference(prompt)
 	l.downloadForRun = l.downloadRequestForPrompt(prompt).download
 	l.downloadPageForRun = l.downloadForRun && needsDownloadPageContract(prompt)
+	l.webForRun, l.webURLForRun = webReferenceForPrompt(prompt)
 	webOnly := isSelfContainedWebRequest(prompt)
 	if !webOnly && l.downloadForRun && !hasLocalWebRequestWork(unquotedActionPrompt(strings.ToLower(prompt)), true) {
 		webOnly = l.previousDownloadWasWeb()

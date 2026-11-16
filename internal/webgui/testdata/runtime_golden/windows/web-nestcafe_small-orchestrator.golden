@@ -23,7 +23,7 @@ move [on] desc=658efd3bf187 schema=6170c6a15ed2 fn=supercli/internal/tools/codei
 copy [on] desc=53ee38a718d3 schema=119af3dec318 fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
 trash [on approval] desc=4e4f53808106 schema=e8dd5819a9d0 fn=supercli/internal/checkpoint.(*Turn).Wrap.func2
 search_code [on ro] desc=37742248d322 schema=4fe96f18a70b fn=supercli/internal/tools/search.(*SearchCode).run-fm
-ctx_execute [on] desc=81a1a77d415e schema=6e56717e1e19 fn=supercli/internal/checkpoint.(*Turn).Wrap.func2
+ctx_execute [on] desc=4869fde65fe0 schema=efabb829d749 fn=supercli/internal/checkpoint.(*Turn).Wrap.func2
 scratchpad [on] desc=2c791388f9fd schema=8d24949d1787 fn=supercli/internal/tools/scratchpad.(*Scratchpad).run-fm
 write_file [] desc=4b2e40110fd4 schema=b8dab809301a fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
 read_pdf [] desc=ec05225a6bdd schema=7acc663b8a6c fn=supercli/internal/tools/office.(*ReadPdfTool).Execute-fm
