@@ -164,7 +164,12 @@ function showApprovalCard(q) {
   setRunState("pending", t("question.waiting"));
 
   var buttons = [deny, approve].concat(similar ? [similar] : []);
+  var followAfterAnswer = false;
+  // Disabling the focused button drops focus to <body>; keep it on the card
+  // while the answer posts, then hand it on (see restoreFocus).
   function answer(kind) {
+    var hadFocus = panel.contains(document.activeElement);
+    if (hadFocus) panel.focus({ preventScroll: true });
     buttons.forEach(function (b) { b.disabled = true; });
     error.textContent = "";
     var body = { id: q.id, selected: [], custom: "", cancelled: false };
@@ -185,11 +190,25 @@ function showApprovalCard(q) {
       panel.appendChild(i18nEl("div", "approval-receipt",
         kind === "deny" ? "approval.receipt.denied" : kind === "similar" ? "approval.receipt.similar" : "approval.receipt.approved"));
       setRunState("running", t(activeQuestionOverlay ? "question.waiting" : "composer.working"));
+      if (hadFocus || document.activeElement === document.body) restoreFocus();
+      if (followAfterAnswer) smartScroll(true);
     }).catch(function (e) {
       error.textContent = e.message;
       buttons.forEach(function (b) { b.disabled = false; });
+      if (hadFocus) deny.focus();
       if (row && row.classList.contains("running")) markRow(a.tool, "pending");
     });
+  }
+  // After an answer the keyboard user continues where they were: the next
+  // pending card's safe choice, else the composer. A touch device keeps focus
+  // on the answered card so the on-screen keyboard does not pop up.
+  function restoreFocus() {
+    var next = activeQuestionOverlay && activeQuestionOverlay.isConnected &&
+      activeQuestionOverlay.querySelector(".approval-deny:not([disabled]), input, button:not([disabled])");
+    if (next) { next.focus(); return; }
+    var coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+    if (!coarse && typeof promptEl !== "undefined" && promptEl && !promptEl.disabled) promptEl.focus({ preventScroll: true });
+    else panel.focus({ preventScroll: true });
   }
   deny.addEventListener("click", function () { answer("deny"); });
   approve.addEventListener("click", function () { answer("approve"); });
@@ -202,5 +221,20 @@ function showApprovalCard(q) {
     else if (key === "a" && similar) { e.preventDefault(); answer("similar"); }
   });
   // Focus the safe choice first; Tab reaches approve, Enter/Space activates.
-  setTimeout(function () { deny.focus(); }, 0);
+  // A card taller than the transcript (a phone) would open scrolled to its
+  // buttons with the title under the top bar: what is being approved must be
+  // readable first, so its top is aligned with the transcript top instead.
+  setTimeout(function () {
+    if (typeof flushSmartScroll === "function") flushSmartScroll();
+    var scroller = typeof stage !== "undefined" && stage && stage.contains(panel) ? stage : null;
+    var hidden = scroller ? scroller.getBoundingClientRect().top + 8 - panel.getBoundingClientRect().top : 0;
+    if (hidden > 0) {
+      scroller.scrollTop = Math.max(0, scroller.scrollTop - hidden);
+      // Hold this position until the answer; output behind the card is
+      // paused anyway, and answering follows the tail again.
+      if (typeof transcriptFollowTail !== "undefined") transcriptFollowTail = nearBottom();
+      followAfterAnswer = true;
+      deny.focus({ preventScroll: true });
+    } else deny.focus();
+  }, 0);
 }

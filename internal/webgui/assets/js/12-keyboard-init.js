@@ -14,7 +14,16 @@ function comboOf(e) {
 }
 document.addEventListener("keydown", function (e) {
   if (e.key === "Escape") {
-    if (!overlay.hidden) { closePanel(); return; }
+    if (!overlay.hidden) {
+      if (panelTextField(e.target)) {
+        e.preventDefault();
+        if (document.activeElement === e.target) e.target.blur();
+        panelDialog.focus({ preventScroll: true });
+        return;
+      }
+      closePanel();
+      return;
+    }
     if (!$("#reasoning-menu").hidden) { toggleReasoningMenu(false); $("#reasoning-btn").focus(); return; }
     if (!palette.hidden) { togglePalette(false); return; }
     if (sitePreviewController) { closeSitePreview(); return; }

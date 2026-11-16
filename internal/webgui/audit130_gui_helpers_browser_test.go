@@ -20,15 +20,6 @@ import (
 	"supercli/internal/testbrowser"
 )
 
-// audit130KnownFailing keeps tests that expose real product bugs out of the
-// default run; SUPERCLI_AUDIT_KNOWN_FAILING=1 runs them.
-func audit130KnownFailing(t *testing.T, why string) {
-	t.Helper()
-	if os.Getenv("SUPERCLI_AUDIT_KNOWN_FAILING") != "1" {
-		t.Skip("KNOWN-FAILING audit-130: " + why)
-	}
-}
-
 type audit130App struct {
 	t       *testing.T
 	ctx     context.Context
