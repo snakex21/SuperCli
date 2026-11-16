@@ -89,7 +89,7 @@ func main() {
 	case "supercli":
 		if o.bin == "" {
 			o.bin = filepath.Join(o.workRoot, "supercli"+exeSuffix())
-			build := exec.Command("go", "build", "-o", o.bin, "./cmd/supercli")
+			build := exec.Command("go", "build", "-buildvcs=false", "-o", o.bin, "./cmd/supercli")
 			build.Stdout, build.Stderr = os.Stderr, os.Stderr
 			if err := build.Run(); err != nil {
 				fatal(fmt.Errorf("build supercli: %w", err))
