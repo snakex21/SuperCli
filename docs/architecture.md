@@ -55,6 +55,12 @@ ctx_execute, recall, list_dir). Simple flat-schema tools certified read-only
 are advertised as directly callable through the schema-stable `invoke_tool`;
 complex and mutating tools remain catalog entries activated on demand via
 `tool_search`, which returns the full schema as its result text.
+Web tools are not schema-core (1.0.31): `web_lookup` is a catalog entry, and a
+turn whose prompt names the public web (a URL, "online", "internet", a site,
+news/latest) carries the `web_lookup` contract, plus `web_fetch` for a URL,
+in the request tail, so the cached `tools` prefix stays the same. This took
+~15% off the first request of the thin profile (gpt-6-luna: 2806 -> 2392
+prompt tokens, 12 -> 10 tool schemas).
 
 **How.** `thinPartition` (loop.go) is the single source of truth for the
 core/tail split; `buildToolDefs`, the catalog preamble and the /context
