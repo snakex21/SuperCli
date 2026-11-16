@@ -1,0 +1,1 @@
+Changed the port to 8443 in config/app.ini and src/settings.json and the region to polandcentral in scripts/Deploy-App.ps1, keeping each file's encoding and CRLF/LF line endings (the .ps1 and .ini keep their UTF-8 BOM). Removed the UTF-8 BOM from data/klienci.csv (CRLF kept); the importer test passes now.

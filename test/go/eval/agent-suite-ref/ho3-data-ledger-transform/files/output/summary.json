@@ -1,0 +1,58 @@
+{
+  "customers": [
+    {
+      "klient": "Apteka \"Pod Orłem\"",
+      "transakcje": 7,
+      "suma_gr": 11548730,
+      "zwroty_gr": 3998
+    },
+    {
+      "klient": "Zielony Gaj",
+      "transakcje": 6,
+      "suma_gr": 9654304,
+      "zwroty_gr": 5000
+    },
+    {
+      "klient": "Hurtownia Łąka sp. z o.o.",
+      "transakcje": 7,
+      "suma_gr": 7231890,
+      "zwroty_gr": 0
+    },
+    {
+      "klient": "ZIELONY GAJ",
+      "transakcje": 5,
+      "suma_gr": 6749219,
+      "zwroty_gr": 0
+    },
+    {
+      "klient": "Bąk Tomasz",
+      "transakcje": 3,
+      "suma_gr": 4397261,
+      "zwroty_gr": 0
+    },
+    {
+      "klient": "Kowalski, Jan",
+      "transakcje": 5,
+      "suma_gr": 4308091,
+      "zwroty_gr": 0
+    },
+    {
+      "klient": "Ćma i Syn",
+      "transakcje": 2,
+      "suma_gr": 2350056,
+      "zwroty_gr": 0
+    },
+    {
+      "klient": "Źródło S.A.",
+      "transakcje": 5,
+      "suma_gr": 76923,
+      "zwroty_gr": 1999
+    }
+  ],
+  "razem_gr": 46316474,
+  "pominiete": {
+    "anulowane": 9,
+    "oczekujace": 5,
+    "duplikaty": 6
+  }
+}

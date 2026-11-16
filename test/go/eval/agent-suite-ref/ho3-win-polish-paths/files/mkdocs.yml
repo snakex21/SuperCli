@@ -1,0 +1,9 @@
+site_name: Dokumentacja spółki
+docs_dir: docs
+nav:
+  - Start: index.md
+  - Raporty:
+      - "Sprawozdanie roczne": "Raporty roczne/Sprawozdanie 2024 – wersja końcowa.md"
+      - "Podsumowanie 2023": "Archiwum/Lata ubiegłe/2023 – podsumowanie.md"
+  - Faktury: "Faktury/FV 2024-03 – Kraków.md"
+  - "Polityka prywatności": "Polityka prywatności.md"

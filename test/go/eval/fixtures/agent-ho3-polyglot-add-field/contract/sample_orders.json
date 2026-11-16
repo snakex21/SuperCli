@@ -1,0 +1,23 @@
+[
+  {
+    "ID": "o-100",
+    "SKU": "KAW-0001",
+    "Quantity": 3,
+    "PriceCents": 2599,
+    "Currency": "PLN"
+  },
+  {
+    "ID": "o-101",
+    "SKU": "HER-0420",
+    "Quantity": 1,
+    "PriceCents": 899,
+    "Currency": "EUR"
+  },
+  {
+    "ID": "o-102",
+    "SKU": "CUK-0007",
+    "Quantity": 12,
+    "PriceCents": 150,
+    "Currency": ""
+  }
+]

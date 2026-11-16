@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OrderEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "sku",
+    "quantity",
+    "price_cents",
+    "currency"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sku": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}-[0-9]{4}$"
+    },
+    "quantity": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "price_cents": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    }
+  }
+}

@@ -1,0 +1,1 @@
+Reverted the rename: `StockItem.qty_on_hand`, the `qty_on_hand` JSON key in `inventory/api.py`, `inventory/reports.py` and the tests are back to the original names. Kept the ValueError checks in `add()`/`reserve()` and the new `Stock.release()`. Tests pass.

@@ -1,0 +1,1 @@
+Generated output/summary.json (8 customers, razem_gr=46316474; skipped: {'anulowane': 9, 'oczekujace': 5, 'duplikaty': 6}) and output/miesiecznie.csv (21 rows) following SPEC.md: first occurrence of each id only, ZAKSIĘGOWANA rows only, Polish amounts parsed (space / no-break space thousands, decimal comma), EUR converted per month with round-half-up to grosze.

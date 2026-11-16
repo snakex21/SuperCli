@@ -1,0 +1,61 @@
+id;data;klient;kwota;waluta;status;opis
+T-0001;13.01.2026;Hurtownia Łąka sp. z o.o.;559,59;PLN;ANULOWANA;"Usługa ""premium"""
+T-0002;13.01.2026; Bąk Tomasz ;4 718,77;EUR;ZAKSIĘGOWANA;Dostawa nr 2
+T-0003;04.01.2026;"  Apteka ""Pod Orłem"" ";10 611,86;EUR;OCZEKUJĄCA;
+T-0004;24.01.2026;Hurtownia Łąka sp. z o.o.;10 456,88;EUR;ZAKSIĘGOWANA;"Zwrot; reklamacja"
+T-0005;04.01.2026;Zielony Gaj;1 284,82;PLN;ZAKSIĘGOWANA;Faktura T-0005
+T-0006;16.01.2026; Kowalski, Jan;6 927,82;PLN;ZAKSIĘGOWANA;"Zwrot; reklamacja"
+T-0007;26.01.2026;"Apteka ""Pod Orłem""";756,29;EUR;ZAKSIĘGOWANA;Faktura T-0007
+T-0008;28.01.2026;Źródło S.A.;484,15;PLN;ZAKSIĘGOWANA;Dostawa nr 8
+T-0009;26.01.2026;Bąk Tomasz;361,78;PLN;ANULOWANA;Faktura T-0009
+T-0010;03.01.2026;"Apteka ""Pod Orłem""";24 505,39;EUR;ZAKSIĘGOWANA;Faktura T-0010
+T-0011;23.01.2026;Hurtownia Łąka sp. z o.o.;325,16;EUR;ANULOWANA;
+T-0012;04.01.2026;Hurtownia Łąka sp. z o.o.;265,23;PLN;ZAKSIĘGOWANA;"Zwrot; reklamacja"
+T-0013;19.01.2026;Kowalski, Jan;10 953,66;PLN;ZAKSIĘGOWANA;"Zwrot; reklamacja"
+T-0014;26.01.2026;  Kowalski, Jan ;23 542,90;PLN;OCZEKUJĄCA;Faktura T-0014
+T-0015;07.01.2026;Ćma i Syn;22 943,50;PLN;ZAKSIĘGOWANA;"Zwrot; reklamacja"
+T-0016;21.01.2026;Bąk Tomasz;5 345,92;EUR;ANULOWANA;
+T-0017;11.02.2026;Zielony Gaj;23 745,44;PLN;ZAKSIĘGOWANA;"Usługa ""premium"""
+T-0018;03.02.2026;Zielony Gaj;11 075,29;PLN;ZAKSIĘGOWANA;"Usługa ""premium"""
+T-0019;03.02.2026;Bąk Tomasz;235,64;EUR;ZAKSIĘGOWANA;
+T-0020;21.02.2026;Ćma i Syn;557,06;PLN;ZAKSIĘGOWANA;Dostawa nr 20
+T-0012;04.01.2026;Hurtownia Łąka sp. z o.o.;265,23;PLN;ANULOWANA;"Zwrot; reklamacja"
+T-0021;03.02.2026;"Apteka ""Pod Orłem""";-19,99;PLN;ZAKSIĘGOWANA;"Zwrot; reklamacja"
+T-0022;06.02.2026;ZIELONY GAJ;3 452,67;EUR;ZAKSIĘGOWANA;"Usługa ""premium"""
+T-0023;16.02.2026;Zielony Gaj;16 322,96;PLN;ZAKSIĘGOWANA;
+T-0024;07.02.2026;"Apteka ""Pod Orłem""";346,12;PLN;ZAKSIĘGOWANA;"Zwrot; reklamacja"
+T-0025;27.02.2026;  Źródło S.A.  ;234,69;PLN;ZAKSIĘGOWANA;
+T-0026;05.02.2026;ZIELONY GAJ;18 908,61;PLN;ZAKSIĘGOWANA;"Zwrot; reklamacja"
+T-0027;02.02.2026;Źródło S.A.;-19,99;PLN;ZAKSIĘGOWANA;
+T-0028;22.02.2026;Źródło S.A.;1,12;PLN;ZAKSIĘGOWANA;
+T-0029;28.02.2026;Ćma i Syn;283,73;PLN;ANULOWANA;Dostawa nr 29
+T-0016;21.01.2026;Bąk Tomasz;5 345,92;EUR;ANULOWANA;
+T-0030;15.02.2026;Hurtownia Łąka sp. z o.o.;768,87;EUR;ZAKSIĘGOWANA;Dostawa nr 30
+T-0031;09.02.2026;ZIELONY GAJ;7 869,99;PLN;ZAKSIĘGOWANA;"Zwrot; reklamacja"
+T-0032;25.02.2026;ZIELONY GAJ;20 365,23;PLN;ZAKSIĘGOWANA;Faktura T-0032
+T-0033;11.02.2026;Kowalski, Jan;370,09;PLN;ZAKSIĘGOWANA;"Usługa ""premium"""
+T-0034;12.02.2026;ZIELONY GAJ;5 715,94;PLN;ZAKSIĘGOWANA;"Usługa ""premium"""
+T-0035;22.02.2026;"Apteka ""Pod Orłem""";-19,99;PLN;ZAKSIĘGOWANA;"Zwrot; reklamacja"
+T-0036;22.03.2026;"Apteka ""Pod Orłem""";-300,00;PLN;ANULOWANA;Faktura T-0036
+T-0037;02.03.2026;Zielony Gaj;119,09;PLN;ANULOWANA;
+T-0026;05.02.2026;ZIELONY GAJ;18 908,61;PLN;ZAKSIĘGOWANA;"Zwrot; reklamacja"
+T-0038;09.03.2026; Bąk Tomasz ;5 349,04;EUR;ZAKSIĘGOWANA;Faktura T-0038
+T-0027;02.02.2026;Źródło S.A.;-19,99;PLN;ANULOWANA;
+T-0039;10.03.2026;  Hurtownia Łąka sp. z o.o.;947,66;PLN;ZAKSIĘGOWANA;"Usługa ""premium"""
+T-0040;05.03.2026;"  Apteka ""Pod Orłem"" ";15 738,07;PLN;ANULOWANA;
+T-0041;02.03.2026;"Apteka ""Pod Orłem""";116,53;PLN;ZAKSIĘGOWANA;"Usługa ""premium"""
+T-0042;03.03.2026;"Apteka ""Pod Orłem""";7 323,56;PLN;ZAKSIĘGOWANA;Dostawa nr 42
+T-0043;22.03.2026;Hurtownia Łąka sp. z o.o.;7 325,91;PLN;ZAKSIĘGOWANA;Faktura T-0043
+T-0044;24.03.2026;Hurtownia Łąka sp. z o.o.;13 017,95;PLN;ZAKSIĘGOWANA;Faktura T-0044
+T-0045;21.03.2026; Zielony Gaj;10 339,35;EUR;ZAKSIĘGOWANA;Faktura T-0045
+T-0046;17.03.2026;Hurtownia Łąka sp. z o.o.;680,11;EUR;ZAKSIĘGOWANA;Dostawa nr 46
+T-0047;26.03.2026; Ćma i Syn  ;23 093,80;PLN;ANULOWANA;"Usługa ""premium"""
+T-0048;28.03.2026;Kowalski, Jan;834,66;PLN;ZAKSIĘGOWANA;Faktura T-0048
+T-0049;13.03.2026;Hurtownia Łąka sp. z o.o.;12 134,06;EUR;OCZEKUJĄCA;
+T-0050;04.03.2026;  Zielony Gaj;-300,00;EUR;OCZEKUJĄCA;Faktura T-0050
+T-0024;07.02.2026;"Apteka ""Pod Orłem""";346,12;PLN;ANULOWANA;"Zwrot; reklamacja"
+T-0051;09.03.2026; Kowalski, Jan ;23 994,68;PLN;ZAKSIĘGOWANA;Faktura T-0051
+T-0052;02.03.2026;Zielony Gaj;-50,00;PLN;ZAKSIĘGOWANA;Dostawa nr 52
+T-0013;19.01.2026;  Kowalski, Jan  ;10 953,66;PLN;ZAKSIĘGOWANA;"Zwrot; reklamacja"
+T-0053;08.03.2026;Źródło S.A.;69,26;PLN;ZAKSIĘGOWANA;Faktura T-0053
+T-0054;09.03.2026;Bąk Tomasz;20 194,22;EUR;OCZEKUJĄCA;"Usługa ""premium"""

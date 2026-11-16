@@ -1,0 +1,2 @@
+cache_ttl = "2h"
+rebuild_every = "30m"
