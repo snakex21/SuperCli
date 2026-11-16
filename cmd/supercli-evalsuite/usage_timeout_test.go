@@ -136,8 +136,8 @@ func TestFirstCallFromSessionsDBIsTheFirstModelCall(t *testing.T) {
 	dataDir := t.TempDir()
 	now := time.Now()
 	writeUsageRows(t, dataDir,
-		session.UsageRecord{Model: "gpt-test", Input: 9000, CachedInput: 0, Output: 40, DurationMS: 1500, TTFTMS: 700, HasTiming: true, Source: "model", CreatedAt: now},
-		session.UsageRecord{Model: "gpt-test", Input: 9500, CachedInput: 8800, Output: 60, DurationMS: 900, TTFTMS: 300, HasTiming: true, Source: "model", CreatedAt: now.Add(time.Second)},
+		session.UsageRecord{Model: "gpt-test", Input: 9000, CachedInput: 0, Output: 40, DurationMS: 1500, TTFTMS: 700, HasTiming: true, Source: "main", CreatedAt: now},
+		session.UsageRecord{Model: "gpt-test", Input: 9500, CachedInput: 8800, Output: 60, DurationMS: 900, TTFTMS: 300, HasTiming: true, Source: "main", CreatedAt: now.Add(time.Second)},
 	)
 	fc := firstCallFromSessionsDB(filepath.Join(dataDir, "sessions.db"))
 	if fc == nil || fc["input"] != 9000 || fc["cached"] != 0 || fc["ttftMs"] != int64(700) || fc["durationMs"] != int64(1500) {

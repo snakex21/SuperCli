@@ -111,7 +111,7 @@ func usageFromSessionsDB(dbPath string) *agenteval.RunMetrics {
 	for _, table := range []string{"billing_usage", "session_usage"} {
 		var calls, modelCalls, in, out, cached, reasoning int
 		var durationMs int64
-		row := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(source = 'model'), 0), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0),
+		row := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(source IN ('main', 'model')), 0), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0),
 			COALESCE(SUM(cached_input_tokens), 0), COALESCE(SUM(reasoning_tokens), 0), COALESCE(SUM(duration_ms), 0) FROM ` + table)
 		if row.Scan(&calls, &modelCalls, &in, &out, &cached, &reasoning, &durationMs) != nil || calls == 0 {
 			continue
@@ -142,7 +142,7 @@ func firstCallFromSessionsDB(dbPath string) map[string]any {
 	var hasTiming int
 	var model string
 	row := db.QueryRow(`SELECT input_tokens, cached_input_tokens, output_tokens, ttft_ms, duration_ms, has_timing, model
-		FROM billing_usage WHERE source = 'model' ORDER BY created_at, id LIMIT 1`)
+		FROM billing_usage WHERE source IN ('main', 'model') ORDER BY created_at, id LIMIT 1`)
 	if row.Scan(&in, &cached, &out, &ttft, &dur, &hasTiming, &model) != nil {
 		return nil
 	}
