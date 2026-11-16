@@ -1,15 +1,15 @@
 package llm
 
-// Audit 130: provider error text must not carry the configured API key.
+// Audit 130: provider error text and the API key.
 //
-// Reproduced end to end with the release binary (batch, --debug,
-// --trace-jsonl) against a mock OpenAI endpoint that echoes the bearer token
-// in a 401 / 500 body: the key is printed verbatim on stderr
-// ("Error: http 401: {...Incorrect API key provided: <key>...}" and
-// "[notice] connection to the model dropped (http 500: ... Authorization:
-// Bearer <key> ...)"). The isolated data dir (logs, tool_errors.log,
-// sessions.db, supercli.db) stayed clean. Responsible code:
-// HTTPResponseError.Error (net_retry.go) formats the raw response body.
+// The audit reproduced that a provider error body which echoes the bearer
+// token (some gateways do: "Incorrect API key provided: <key>") is shown
+// verbatim (HTTPResponseError.Error formats the raw response body). The
+// project owner rejected redacting keys in errors, sessions.db or caches:
+// provider errors are surfaced verbatim so the user sees exactly what the
+// provider said. These tests document that behaviour and keep the one
+// structural guarantee that is wanted: the key travels only in the
+// Authorization header, never in the request URL.
 
 import (
 	"context"
@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -25,7 +24,7 @@ import (
 
 const sec130FakeKey = "sk-test-AUDIT130-SECRET-0123456789"
 
-func sec130ProviderError(t *testing.T, status int) error {
+func sec130ProviderError(t *testing.T, wire a130Wire, status int) error {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
@@ -35,7 +34,15 @@ func sec130ProviderError(t *testing.T, status int) error {
 			strings.TrimPrefix(auth, "Bearer "), auth)
 	}))
 	t.Cleanup(srv.Close)
-	p, err := NewOpenAI(OpenAIConfig{BaseURL: srv.URL + "/v1", APIKey: sec130FakeKey, Model: "mock-model", Timeout: 5 * time.Second})
+	var (
+		p   Provider
+		err error
+	)
+	if wire == wireChat {
+		p, err = NewOpenAI(OpenAIConfig{BaseURL: srv.URL + "/v1", APIKey: sec130FakeKey, Model: "mock-model", Timeout: 5 * time.Second})
+	} else {
+		p, err = NewResponses(ResponsesConfig{BaseURL: srv.URL + "/v1", APIKey: sec130FakeKey, Model: "mock-model", Timeout: 5 * time.Second})
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,13 +60,24 @@ func sec130ProviderError(t *testing.T, status int) error {
 	return errors.New("no error returned")
 }
 
-func TestAudit130ProviderErrorDoesNotEchoAPIKey(t *testing.T) {
-	if os.Getenv("SUPERCLI_AUDIT_KNOWN_FAILING") != "1" {
-		t.Skip("KNOWN-FAILING audit-130: provider error bodies that echo the API key are surfaced verbatim (HTTPResponseError.Error)")
-	}
-	err := sec130ProviderError(t, http.StatusUnauthorized)
-	if strings.Contains(err.Error(), sec130FakeKey) {
-		t.Errorf("401 error text contains the configured API key: %.120s...", err.Error())
+// Chosen behaviour: a permanent provider error is surfaced verbatim and
+// typed (status kept for routing). Nothing is redacted — including a key the
+// provider itself echoed back.
+func TestAudit130ProviderErrorIsSurfacedVerbatim(t *testing.T) {
+	for _, wire := range a130Wires {
+		t.Run(string(wire), func(t *testing.T) {
+			err := sec130ProviderError(t, wire, http.StatusUnauthorized)
+			var responseErr *HTTPResponseError
+			if !errors.As(err, &responseErr) || responseErr.Status != http.StatusUnauthorized {
+				t.Fatalf("401 not typed: %T %v", err, err)
+			}
+			if !strings.HasPrefix(err.Error(), "http 401: ") || !strings.Contains(err.Error(), "Incorrect API key provided: "+sec130FakeKey) {
+				t.Fatalf("provider error not surfaced verbatim: %.200s", err.Error())
+			}
+			if ClassifyProviderError(err) != RetryPermanent {
+				t.Fatalf("401 must not be retried: %s", ClassifyProviderError(err))
+			}
+		})
 	}
 }
 
