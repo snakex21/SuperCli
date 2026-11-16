@@ -70,6 +70,7 @@ func (m Model) startPrompt(text string) (tea.Model, tea.Cmd) {
 	m.chat.addUser("> " + visible)
 	m.markTranscriptPresent()
 	m.busy = true
+	m.clearRetryState()
 	m.submittingDraft = text
 	if m.drafts != nil {
 		m.drafts.Update(DraftSnapshot{SessionID: m.sessionID, Text: text, Attachments: selected})

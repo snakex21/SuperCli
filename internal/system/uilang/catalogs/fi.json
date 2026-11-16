@@ -1071,5 +1071,8 @@
   "approval.risk.destructive": "Destructive",
   "approval.risk.external_side_effect": "External effect",
   "approval.badge.reversible": "Reversible",
-  "approval.badge.irreversible": "Cannot be undone"
+  "approval.badge.irreversible": "Cannot be undone",
+  "project.stopRun": "Pysäytä käynnissä oleva ajo ennen projektin tai sen kansion vaihtamista.",
+  "tui.diff.summary": "Tiedostomuutoksia istunnossa: %d",
+  "tui.diff.more_lines": "… (piilotettuja rivejä: %d)"
 }

@@ -1071,5 +1071,8 @@
   "approval.risk.destructive": "Destructive",
   "approval.risk.external_side_effect": "External effect",
   "approval.badge.reversible": "Reversible",
-  "approval.badge.irreversible": "Cannot be undone"
+  "approval.badge.irreversible": "Cannot be undone",
+  "project.stopRun": "Stopp den nåværende kjøringen før du bytter eller endrer prosjekter.",
+  "tui.diff.summary": "Filendringer i økten: %d",
+  "tui.diff.more_lines": "… (skjulte linjer: %d)"
 }

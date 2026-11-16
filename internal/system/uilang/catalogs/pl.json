@@ -1071,5 +1071,8 @@
   "approval.risk.destructive": "Nieodwracalne usunięcie",
   "approval.risk.external_side_effect": "Skutek zewnętrzny",
   "approval.badge.reversible": "Odwracalne",
-  "approval.badge.irreversible": "Nie da się cofnąć"
+  "approval.badge.irreversible": "Nie da się cofnąć",
+  "project.stopRun": "Zatrzymaj bieżące zadanie przed przełączeniem lub zmianą projektu.",
+  "tui.diff.summary": "Zmiany plików w sesji: %d",
+  "tui.diff.more_lines": "… (ukryte wiersze: %d)"
 }

@@ -171,7 +171,6 @@ func TestAudit130DiffLargeChangeIsBoundedAndFast(t *testing.T) {
 
 // The truncation marker must say how many lines were hidden.
 func TestAudit130DiffTruncationCountIsAccurate(t *testing.T) {
-	audit130KnownFailing(t, "fileops truncateLines always reports '(20 more lines)'")
 	var b strings.Builder
 	for i := 0; i < 5000; i++ {
 		fmt.Fprintf(&b, "l%d\n", i)
@@ -179,29 +178,35 @@ func TestAudit130DiffTruncationCountIsAccurate(t *testing.T) {
 	tr := fileops.NewTracker(200)
 	tr.Record("big.txt", "write", "", strings.TrimSuffix(b.String(), "\n"))
 	text := audit130Transcript(audit130RunSlash(t, audit130DiffModel(t, "", tr), "/diff"))
-	if !strings.Contains(text, "4980 more") {
-		i := strings.Index(text, "more lines")
-		t.Fatalf("hidden-line count wrong; marker near: %q", text[max(0, i-30):min(len(text), i+12)])
+	// The model is Polish, so the marker is the localized one.
+	if want := fmt.Sprintf(textFor("pl", "tui.diff.more_lines"), 4980); !strings.Contains(text, want) {
+		t.Fatalf("hidden-line marker %q (5000 lines, 20 shown) missing:\n%s", want, text)
 	}
 }
 
 // In a Polish UI the /diff summary header should not be English.
 func TestAudit130DiffHeaderLocalized(t *testing.T) {
-	audit130KnownFailing(t, "/diff summary header is hard-coded English ('file change(s) in session', 'more lines')")
+	var b strings.Builder
+	for i := 0; i < 30; i++ {
+		fmt.Fprintf(&b, "l%d\n", i)
+	}
 	tr := fileops.NewTracker(200)
 	tr.Record("a.txt", "edit", "x", "y")
+	tr.Record("b.txt", "write", "", b.String()) // long enough to be truncated
 	text := audit130Transcript(audit130RunSlash(t, audit130DiffModel(t, "", tr), "/diff"))
 	for _, english := range []string{"file change(s) in session", "more lines"} {
 		if strings.Contains(text, english) {
 			t.Fatalf("English chrome %q in pl /diff:\n%s", english, text)
 		}
 	}
+	if want := fmt.Sprintf(textFor("pl", "tui.diff.summary"), 2); !strings.Contains(text, want) {
+		t.Fatalf("localized summary %q missing:\n%s", want, text)
+	}
 }
 
-// The /diff summary is written as Markdown italics ("_[...]_") but shown as
-// plain text, so the user sees literal underscores and a double space.
+// The /diff summary used to be written as Markdown italics ("_[...]_") but
+// shown as plain text, so the user saw literal underscores and a double space.
 func TestAudit130DiffHeaderHasNoRawMarkup(t *testing.T) {
-	audit130KnownFailing(t, "/diff header shows raw Markdown '_[ ... ]_' and a double space before the line stats")
 	tr := fileops.NewTracker(200)
 	tr.Record("a.txt", "edit", "x", "y")
 	m := audit130RunSlash(t, audit130DiffModel(t, "", tr), "/diff")

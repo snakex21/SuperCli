@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,13 +20,6 @@ import (
 	core "supercli/internal/tools/core"
 	"supercli/internal/tools/interactive"
 )
-
-func audit130KnownFailing(t *testing.T, why string) {
-	t.Helper()
-	if os.Getenv("SUPERCLI_AUDIT_KNOWN_FAILING") != "1" {
-		t.Skip("KNOWN-FAILING audit-130: " + why)
-	}
-}
 
 type audit130Clock struct {
 	mu  sync.Mutex

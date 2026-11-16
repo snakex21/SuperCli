@@ -1,6 +1,7 @@
 package fileops
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -81,8 +82,28 @@ func TestDiffOutput_TruncatesLongContent(t *testing.T) {
 	}
 	tr.Record("/big.txt", "write", "", strings.Join(lines, "\n"))
 	out := tr.DiffOutput()
-	if !strings.Contains(out, "more lines") {
-		t.Errorf("expected truncation indicator: %q", out)
+	if !strings.Contains(out, "... (30 more lines)") {
+		t.Errorf("expected exact truncation indicator (50 lines, 20 shown): %q", out)
+	}
+}
+
+func TestDiffOutputText_LocalizedChromeAndPlainHeader(t *testing.T) {
+	tr := NewTracker(10)
+	tr.Record("/big.txt", "write", "", strings.Repeat("x\n", 24)+"x") // 25 lines
+	out := tr.DiffOutputText(DiffText{
+		Summary:   func(n int) string { return fmt.Sprintf("zmiany: %d", n) },
+		MoreLines: func(n int) string { return fmt.Sprintf("… jeszcze %d", n) },
+	})
+	if !strings.HasPrefix(out, "zmiany: 1 [+25]\n\n") {
+		t.Errorf("summary header = %q", strings.SplitN(out, "\n", 2)[0])
+	}
+	if !strings.Contains(out, "+ … jeszcze 5\n") {
+		t.Errorf("localized truncation marker missing: %q", out)
+	}
+	for _, raw := range []string{"_[", "]_", "|  ["} {
+		if strings.Contains(out, raw) {
+			t.Errorf("raw markup %q in output: %q", raw, out)
+		}
 	}
 }
 

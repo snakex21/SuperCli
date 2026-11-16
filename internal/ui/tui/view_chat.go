@@ -82,6 +82,22 @@ func (c *chat) addSystem(text string) {
 	c.invalidateTranscriptSearch()
 }
 
+// replaceSystemAt rewrites the system row at index i when it is still the
+// last transcript row. The slice is reallocated (copy-on-write) because
+// copied models and the completed-prefix snapshot may share the old array.
+func (c *chat) replaceSystemAt(i int, text string) bool {
+	if i < 0 || i != len(c.msgs)-1 || c.msgs[i].role != roleSystem {
+		return false
+	}
+	msgs := make([]msg, len(c.msgs))
+	copy(msgs, c.msgs)
+	msgs[i].text = text
+	c.msgs = msgs
+	c.completedDirty = true
+	c.invalidateTranscriptSearch()
+	return true
+}
+
 // lastAssistant returns the most recent completed assistant
 // message ("" when none). The streaming current text counts
 // once it is non-empty, so Ctrl+Y mid-stream copies what is

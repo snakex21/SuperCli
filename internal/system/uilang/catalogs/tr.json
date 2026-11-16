@@ -1071,5 +1071,8 @@
   "approval.risk.destructive": "Destructive",
   "approval.risk.external_side_effect": "External effect",
   "approval.badge.reversible": "Reversible",
-  "approval.badge.irreversible": "Cannot be undone"
+  "approval.badge.irreversible": "Cannot be undone",
+  "project.stopRun": "Projeleri değiştirmeden veya düzenlemeden önce devam eden işlemi durdurun.",
+  "tui.diff.summary": "Oturumdaki dosya değişiklikleri: %d",
+  "tui.diff.more_lines": "… (gizli satırlar: %d)"
 }

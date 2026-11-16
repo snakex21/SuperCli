@@ -1071,5 +1071,8 @@
   "approval.risk.destructive": "Destructive",
   "approval.risk.external_side_effect": "External effect",
   "approval.badge.reversible": "Reversible",
-  "approval.badge.irreversible": "Cannot be undone"
+  "approval.badge.irreversible": "Cannot be undone",
+  "project.stopRun": "Pirms projektu pārslēgšanas vai mainīšanas apturiet pašreizējo izpildi.",
+  "tui.diff.summary": "Failu izmaiņas sesijā: %d",
+  "tui.diff.more_lines": "… (paslēptās rindas: %d)"
 }

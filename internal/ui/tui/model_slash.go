@@ -118,8 +118,10 @@ func (m Model) dispatchSlashCommand(cmd SlashCommand) (tea.Model, tea.Cmd) {
 		}
 	}
 	m.appendLine(m.marker.Running())
-	m.refreshTranscript()
+	// busy adds the working row to the chrome; flip it before the refit so
+	// the viewport leaves room for it (else the frame is one row too tall).
 	m.busy = true
+	m.refreshTranscript()
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel.Arm(cancelRun, cancel)
 	return m, func() tea.Msg {

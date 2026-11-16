@@ -1071,5 +1071,8 @@
   "approval.risk.destructive": "Destructive",
   "approval.risk.external_side_effect": "External effect",
   "approval.badge.reversible": "Reversible",
-  "approval.badge.irreversible": "Cannot be undone"
+  "approval.badge.irreversible": "Cannot be undone",
+  "project.stopRun": "Arrêtez l'exécution en cours avant de changer de projet.",
+  "tui.diff.summary": "Modifications de fichiers dans la session : %d",
+  "tui.diff.more_lines": "… (lignes masquées : %d)"
 }

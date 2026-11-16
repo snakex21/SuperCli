@@ -16,6 +16,9 @@ import (
 )
 
 func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
+	if endsRetryWait(ev) {
+		m.clearRetryState()
+	}
 	switch e := ev.(type) {
 	case agent.MessageEvent:
 		first := m.current == "" || m.reasoningOpen
@@ -198,8 +201,20 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 	case agent.NoticeEvent:
 		// Provider status (e.g. rate-limit retry wait) — show it so
 		// the user knows the run is waiting, not hung.
-		line := fmt.Sprintf("[%s]", m.localizeNotice(e.Text))
-		m.appendLine(line)
+		localized := m.localizeNotice(e.Text)
+		line := fmt.Sprintf("[%s]", localized)
+		if !isRetryNotice(e.Text) {
+			m.appendLine(line)
+			return m, m.waitForNextEvent()
+		}
+		// One outage = one live transcript row: a retry notice that
+		// follows the previous one directly replaces it in place, and
+		// the busy row shows the current retry state.
+		m.retryStatus = localized
+		if m.retryRow == 0 || !m.chat.replaceSystemAt(m.retryRow-1, line) {
+			m.appendLine(line)
+			m.retryRow = len(m.chat.msgs)
+		}
 		m.markTranscriptPresent()
 		return m, m.waitForNextEvent()
 	}
@@ -238,6 +253,21 @@ func (m *Model) flushCurrent() {
 }
 
 // appendLine adds a system-level message to the canonical chat.
+// endsRetryWait reports whether the main run produced output again (or
+// ended), which closes the current retry/backoff outage.
+func endsRetryWait(ev agent.Event) bool {
+	switch ev.(type) {
+	case agent.MessageEvent, agent.ReasoningEvent, agent.ToolCallEvent, agent.ToolResultEvent, agent.DoneEvent, agent.ErrorEvent:
+		return true
+	}
+	return false
+}
+
+func (m *Model) clearRetryState() {
+	m.retryStatus = ""
+	m.retryRow = 0
+}
+
 func (m *Model) appendLine(line string) {
 	m.chat.addSystem(line)
 	m.markTranscriptPresent()

@@ -195,7 +195,6 @@ func TestAudit130TUIKeysExistInCatalogs(t *testing.T) {
 	sort.Strings(missing)
 	t.Logf("%d literal catalog keys referenced from TUI code", len(seen))
 	if len(missing) > 0 {
-		audit130KnownFailing(t, "TUI references catalog keys that only exist in webgui locales (project.stopRun)")
 		t.Fatalf("keys used by the TUI but missing from catalogs:\n%s", strings.Join(missing, "\n"))
 	}
 }
@@ -215,7 +214,6 @@ func TestAudit130PolishTUIStringsTranslated(t *testing.T) {
 	}
 	sort.Strings(same)
 	if len(same) > 0 {
-		audit130KnownFailing(t, "some pl TUI strings are identical to English")
 		t.Fatalf("%d pl TUI sentences identical to en:\n%s", len(same), strings.Join(same, "\n"))
 	}
 }
@@ -249,10 +247,9 @@ func itoa(n int) string {
 	return string(b)
 }
 
-// "/projects <name>" while a background worker runs shows the status key
-// raw because project.stopRun exists only in the web GUI locales.
+// "/projects <name>" while a background worker runs must show the localized
+// project.stopRun text, never the raw key.
 func TestAudit130ProjectsDuringWorkerShowsRawKey(t *testing.T) {
-	audit130KnownFailing(t, "status shows raw catalog key 'project.stopRun'")
 	for _, lang := range []string{"pl", "en"} {
 		dir := t.TempDir()
 		m := New(Options{Home: dir, DataDir: dir, Language: lang})
@@ -263,6 +260,9 @@ func TestAudit130ProjectsDuringWorkerShowsRawKey(t *testing.T) {
 		m = out.(Model)
 		if m.statusOverride == "project.stopRun" || strings.Contains(ansi.Strip(m.View()), "project.stopRun") {
 			t.Fatalf("%s: raw key shown to the user: status=%q", lang, m.statusOverride)
+		}
+		if want := textFor(lang, "project.stopRun"); m.statusOverride != want {
+			t.Fatalf("%s: status = %q, want %q", lang, m.statusOverride, want)
 		}
 	}
 }

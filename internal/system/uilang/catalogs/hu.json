@@ -1071,5 +1071,8 @@
   "approval.risk.destructive": "Destructive",
   "approval.risk.external_side_effect": "External effect",
   "approval.badge.reversible": "Reversible",
-  "approval.badge.irreversible": "Cannot be undone"
+  "approval.badge.irreversible": "Cannot be undone",
+  "project.stopRun": "Állítsa le az aktuális futtatást, mielőtt projektet váltana vagy módosítana.",
+  "tui.diff.summary": "Fájlmódosítások a munkamenetben: %d",
+  "tui.diff.more_lines": "… (rejtett sorok: %d)"
 }

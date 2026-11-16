@@ -1071,5 +1071,8 @@
   "approval.risk.destructive": "Destructive",
   "approval.risk.external_side_effect": "External effect",
   "approval.badge.reversible": "Reversible",
-  "approval.badge.irreversible": "Cannot be undone"
+  "approval.badge.irreversible": "Cannot be undone",
+  "project.stopRun": "Opriți rularea curentă înainte de a comuta sau a schimba proiecte.",
+  "tui.diff.summary": "Modificări de fișiere în sesiune: %d",
+  "tui.diff.more_lines": "… (linii ascunse: %d)"
 }

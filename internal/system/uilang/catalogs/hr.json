@@ -1071,5 +1071,8 @@
   "approval.risk.destructive": "Destructive",
   "approval.risk.external_side_effect": "External effect",
   "approval.badge.reversible": "Reversible",
-  "approval.badge.irreversible": "Cannot be undone"
+  "approval.badge.irreversible": "Cannot be undone",
+  "project.stopRun": "Zaustavite trenutni rad prije prebacivanja ili promjene projekata.",
+  "tui.diff.summary": "Promjene datoteka u sesiji: %d",
+  "tui.diff.more_lines": "… (skrivenih redaka: %d)"
 }
