@@ -137,6 +137,7 @@ func (l *Loop) runStep(
 			// before rejection. Only the uncommon retry reprices that same
 			// slice; a later registry revision cannot change this request.
 			toolRequest.tokens = estimateRequestTokens(nil, toolRequest.defs)
+			l.noteDiscardedUsage(usage)
 			text, toolCalls, usage, err = l.completeOnce(llm.WithCallReason(callCtx, llm.ReasonContextRetry), toolRequest, out)
 			_, truncatedToolCalls = err.(*truncatedToolResponseError)
 		}
@@ -144,16 +145,23 @@ func (l *Loop) runStep(
 	// A tool call whose arguments degenerated into whitespace was cancelled
 	// before it ran: ask for it again (bounded per Run) instead of ending.
 	for err != nil && l.retryRunawayToolCall(ctx, err, out) {
+		l.noteDiscardedUsage(usage)
 		text, toolCalls, usage, err = l.completeOnce(llm.WithCallReason(callCtx, llm.ReasonTransportRetry), toolRequest, out)
 		_, truncatedToolCalls = err.(*truncatedToolResponseError)
 	}
 	// Still too large after the regular prune/compaction: one emergency
 	// prune of every older tool result, then one retry.
 	if err != nil && isContextStillTooLarge(err) && ctx.Err() == nil && l.emergencyPrune(ctx, out) > 0 {
+		l.noteDiscardedUsage(usage)
 		text, toolCalls, usage, err = l.completeOnce(llm.WithCallReason(callCtx, llm.ReasonContextRetry), toolRequest, out)
 		_, truncatedToolCalls = err.(*truncatedToolResponseError)
 	}
-	usageErr := l.recordStepUsage(ctx, totalUsage, usage)
+	// Retried attempts of this step were billed too: count them first, then
+	// the final attempt (whose numbers the status line shows).
+	usageErr := l.recordDiscardedUsage(ctx, totalUsage)
+	if recordErr := l.recordStepUsage(ctx, totalUsage, usage); usageErr == nil {
+		usageErr = recordErr
+	}
 	if err != nil && !truncatedToolCalls && isContextStillTooLarge(err) {
 		// Never end on an empty reply: say what was done and why it stopped.
 		out <- MessageEvent{Text: l.contextOverflowAnswer(err)}
@@ -259,8 +267,15 @@ func (l *Loop) runStep(
 		assistant.Parts = append(assistant.Parts, llm.ContentPart{Type: llm.PartTypeText, Text: text})
 	}
 	for _, tc := range toolCalls {
+		args := historySafeToolArguments(tc.Arguments)
+		if truncatedToolCalls {
+			// The call is rejected, never executed: keep a short stub instead
+			// of the (often huge, degenerate) raw arguments, so they are not
+			// replayed to the model on every later request or stored.
+			args = rejectedToolArgumentsStub(tc.Arguments)
+		}
 		assistant.ToolCalls = append(assistant.ToolCalls, llm.ToolCall{
-			ID: tc.ID, Name: tc.Name, Arguments: historySafeToolArguments(tc.Arguments),
+			ID: tc.ID, Name: tc.Name, Arguments: args,
 		})
 	}
 	l.persist(ctx, assistant)
@@ -432,7 +447,7 @@ func (l *Loop) runStep(
 		// valid JSON. Persist one result per ID without running repair/Execute,
 		// so the next request retains a complete assistant/tool exchange.
 		for _, tc := range toolCalls {
-			out <- ToolCallEvent{ID: tc.ID, Name: tc.Name, Args: tc.Arguments}
+			out <- ToolCallEvent{ID: tc.ID, Name: tc.Name, Args: rejectedToolArgumentsStub(tc.Arguments)}
 			out <- ToolResultEvent{ID: tc.ID, Err: fmt.Errorf("%s", truncatedToolCallMessage)}
 			result := llm.Message{Role: llm.RoleTool, ToolCallID: tc.ID, Name: tc.Name, Content: truncatedToolCallMessage}
 			l.Messages = append(l.Messages, result)

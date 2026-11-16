@@ -24,7 +24,13 @@ func toolStreamFragments(arguments string, width int) []string {
 }
 
 func toolStreamArguments(repetitions int) string {
-	raw, _ := json.Marshal(map[string]any{"path": "src/zażółć.go", "old": "old value", "new": strings.Repeat("new value: zażółć, 日本語, C:\\src\\file\n", repetitions)})
+	// Numbered lines: an exact repetition of one line would (rightly) trip
+	// the degenerate-arguments guard of the streaming transports.
+	var b strings.Builder
+	for i := 0; i < repetitions; i++ {
+		fmt.Fprintf(&b, "new value %d: zażółć, 日本語, C:\\src\\file\n", i)
+	}
+	raw, _ := json.Marshal(map[string]any{"path": "src/zażółć.go", "old": "old value", "new": b.String()})
 	return string(raw)
 }
 

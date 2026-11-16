@@ -1,11 +1,11 @@
 package llm
 
 import (
-	"errors"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"

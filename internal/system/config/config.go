@@ -12,13 +12,18 @@
 //	SUPERCLI_LLM_MODEL     - model name; default "gpt-4o-mini"
 //	SUPERCLI_LLM_TEMPERATURE - float; UNSET means the parameter is not sent
 //	                         at all and the server's own default applies
-//	SUPERCLI_LLM_MAX_TOKENS  - int; 0 = provider default
+//	SUPERCLI_LLM_MAX_TOKENS  - int output cap (max_tokens / max_output_tokens) on
+//	                         both OpenAI wires; 0 = SuperCli default (32000,
+//	                         64000 for reasoning families) for cloud endpoints,
+//	                         nothing for local servers; -1 = never send a cap
 //	SUPERCLI_LLM_STREAM    - "1" or "true" to force streaming (default true)
 //	SUPERCLI_LLM_TIMEOUT   - idle/inactivity timeout in seconds (no data
 //	                         from the server, also bounds time-to-first-token);
 //	                         default 300. NOT a whole-request cap, so slow but
 //	                         alive streams are not cut off.
 //	SUPERCLI_LLM_CONNECT_TIMEOUT - TCP connect (dial) timeout in seconds; default 30
+//	SUPERCLI_LLM_TOOL_STREAM_TIMEOUT - wall-time cap in seconds on streaming one
+//	                         call's tool-call arguments; default 600, 0 disables
 //	SUPERCLI_DEBUG         - "1" or "true" for verbose logging
 //
 // Flags (--key, --model, ...) override the env values. main.go

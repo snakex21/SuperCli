@@ -108,6 +108,26 @@ type Usage struct {
 	// chain-of-thought (OpenAI completion_tokens_details.reasoning_tokens;
 	// LM Studio reports it for reasoning models). Zero when not reported.
 	Reasoning int
+
+	// Estimated marks usage the provider never reported: a stream that was
+	// aborted (dropped, stalled, stopped by the runaway guard, cancelled)
+	// before its usage frame. Input is the local request estimate, Output is
+	// estimated from the streamed bytes (non-whitespace bytes / 3, the same
+	// calibration as the prompt estimator), so cost accounting still counts
+	// what the provider most likely billed.
+	Estimated bool
+}
+
+// estimatedAbortUsage builds the Estimated usage of an aborted stream.
+func estimatedAbortUsage(inputTokens, outputNonWhitespace int) *Usage {
+	out := (outputNonWhitespace + 2) / 3
+	return &Usage{Input: inputTokens, Output: out, Total: inputTokens + out, Estimated: true}
+}
+
+// estimateRequestInputTokens is the local prompt estimate of one request.
+func estimateRequestInputTokens(msgs []Message, tools []ToolDef) int {
+	b := EstimateRequestBreakdown(msgs, tools)
+	return b.System + b.User + b.Assistant + b.Tool + b.Other
 }
 
 // Validate returns nil if the delta is structurally sound.

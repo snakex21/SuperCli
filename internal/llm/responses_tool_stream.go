@@ -148,6 +148,13 @@ func (s *responsesToolStream) add(ev codexEvent) error {
 			return err
 		}
 	}
+	// Arguments that arrived in one piece (no deltas) get the same
+	// size/degeneration guard as streamed ones.
+	if call.full != nil && call.arguments.Len() == 0 {
+		if err := checkFullToolArguments(call.name, *call.full); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -191,4 +198,23 @@ func (s *responsesToolStream) calls() []ToolCall {
 		calls = append(calls, ToolCall{ID: call.id, Name: call.name, Arguments: args})
 	}
 	return calls
+}
+
+// progress names the call an arguments delta belongs to and its current
+// argument size, for the tool-stream progress notices and wall-time cap.
+func (s *responsesToolStream) progress(ev codexEvent) (string, int) {
+	var call *responsesToolCall
+	if ev.ItemID != "" {
+		call = s.byItemID[ev.ItemID]
+	}
+	if call == nil && ev.OutputIndex != nil {
+		call = s.byIndex[*ev.OutputIndex]
+	}
+	if call == nil && len(s.ordered) > 0 {
+		call = s.ordered[len(s.ordered)-1]
+	}
+	if call == nil {
+		return "", 0
+	}
+	return call.name, call.arguments.Len()
 }

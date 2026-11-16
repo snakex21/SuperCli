@@ -236,7 +236,7 @@ func handler(kind string) http.HandlerFunc {
 		}
 		if degen {
 			rec.Reply = *flagMode
-			rec.Ended, rec.ArgsBytes, rec.TokensSent = streamDegen(r, cw, kind, tool)
+			rec.Ended, rec.ArgsBytes, rec.TokensSent = streamDegen(r, cw, kind, tool, requestedCap(raw))
 		} else {
 			rec.Reply = "done"
 			rec.Ended = streamDone(cw, kind)
@@ -293,9 +293,23 @@ func streamDone(cw *countingWriter, kind string) string {
 	return "done"
 }
 
-// streamDegen streams the degenerate tool call at -tps until the cap, a stall,
-// or the client going away. Returns (ended, argsBytes, tokens).
-func streamDegen(r *http.Request, cw *countingWriter, kind, tool string) (string, int64, int64) {
+// requestedCap is the output cap the client asked for (max_tokens /
+// max_completion_tokens / max_output_tokens), 0 when none. Like a real
+// provider, the mock ends the stream at min(-cap, requested).
+func requestedCap(raw map[string]json.RawMessage) int {
+	for _, k := range []string{"max_tokens", "max_completion_tokens", "max_output_tokens"} {
+		var n int
+		if v, ok := raw[k]; ok && json.Unmarshal(v, &n) == nil && n > 0 {
+			return n
+		}
+	}
+	return 0
+}
+
+// streamDegen streams the degenerate tool call at -tps until the cap (the
+// smaller of -cap and the requested output cap), a stall, or the client going
+// away. Returns (ended, argsBytes, tokens).
+func streamDegen(r *http.Request, cw *countingWriter, kind, tool string, requested int) (string, int64, int64) {
 	ctx := r.Context()
 	if kind == "chat" {
 		if sseChat(cw, map[string]any{"id": "c", "object": "chat.completion.chunk", "model": "mock", "choices": []any{map[string]any{"index": 0, "delta": map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": "call_1", "type": "function", "function": map[string]any{"name": tool, "arguments": ""}}}}, "finish_reason": nil}}}) != nil {
@@ -312,7 +326,11 @@ func streamDegen(r *http.Request, cw *countingWriter, kind, tool string) (string
 	g := newGen(*flagMode)
 	var args strings.Builder
 	var argBytes int64
-	capBytes := int64(*flagCap) * 4
+	capTokens := *flagCap
+	if requested > 0 && requested < capTokens {
+		capTokens = requested
+	}
+	capBytes := int64(capTokens) * 4
 	bps := *flagTPS * 4
 	start := time.Now()
 	tick := time.NewTicker(10 * time.Millisecond)

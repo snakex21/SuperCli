@@ -239,7 +239,8 @@ func TestStandardResponsesCanonicalProviderPrimaryAndImageFallback(t *testing.T)
 				}
 				return canonicalResponsesCompletedResponse(req), nil
 			})
-			p, err := NewResponses(ResponsesConfig{BaseURL: "https://fixture.invalid/v1", Model: "fixture", HTTPClient: &http.Client{Transport: transport}})
+			// Wire-parity fixture: opt out of the default output cap (output_cap.go).
+			p, err := NewResponses(ResponsesConfig{BaseURL: "https://fixture.invalid/v1", Model: "fixture", MaxTokens: -1, HTTPClient: &http.Client{Transport: transport}})
 			if err != nil {
 				t.Fatal(err)
 			}

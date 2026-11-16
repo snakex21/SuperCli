@@ -314,6 +314,7 @@ func (l *Loop) completeWithStreamRetry(ctx context.Context, toolRequest prepared
 		if ctx.Err() != nil {
 			return text, calls, usage, ctx.Err()
 		}
+		l.noteDiscardedUsage(usage)
 		text, calls, usage, err = l.completeOnce(llm.WithCallReason(ctx, llm.ReasonTransportRetry), toolRequest, out)
 	}
 	return text, calls, usage, err

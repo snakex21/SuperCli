@@ -440,8 +440,13 @@ type Loop struct {
 	// ever allowing an empty post-tool response to masquerade as Done.
 	emptyReplyNudges int
 	// runawayRetries counts per-Run re-requests after a tool call whose
-	// arguments degenerated into whitespace (loop_runaway_retry.go).
+	// arguments degenerated (whitespace, repeating block, size or time cap;
+	// loop_runaway_retry.go).
 	runawayRetries int
+	// discardedUsage accumulates the usage of model calls of the current
+	// step that were retried (dropped stream, runaway call, context retry),
+	// so their tokens are still counted (loop_usage.go).
+	discardedUsage *llm.Usage
 	// completion is the per-Run completion-check state; completionCheck
 	// is LoopConfig.CompletionCheck.
 	completion      completionCheckState

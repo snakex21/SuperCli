@@ -89,3 +89,33 @@ func (l *Loop) updateUsage(ctx context.Context, in, out int, interrupted bool) e
 	}
 	return l.writer.UpdateUsage(in, out)
 }
+
+// noteDiscardedUsage keeps the usage of a model call that is about to be
+// retried (its result is discarded, its tokens were billed).
+func (l *Loop) noteDiscardedUsage(usage *llm.Usage) {
+	if usage == nil {
+		return
+	}
+	if l.discardedUsage == nil {
+		l.discardedUsage = &llm.Usage{}
+	}
+	d := l.discardedUsage
+	d.Input += usage.Input
+	d.Output += usage.Output
+	d.Total += usage.Total
+	d.CachedInput += usage.CachedInput
+	d.HasCachedInput = d.HasCachedInput || usage.HasCachedInput
+	d.CacheWrite += usage.CacheWrite
+	d.Reasoning += usage.Reasoning
+	d.Estimated = d.Estimated || usage.Estimated
+}
+
+// recordDiscardedUsage books the discarded attempts of the current step.
+func (l *Loop) recordDiscardedUsage(ctx context.Context, totalUsage *Usage) error {
+	d := l.discardedUsage
+	l.discardedUsage = nil
+	if d == nil {
+		return nil
+	}
+	return l.recordStepUsage(ctx, totalUsage, d)
+}

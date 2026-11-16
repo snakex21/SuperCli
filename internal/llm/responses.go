@@ -22,6 +22,10 @@ type ResponsesConfig struct {
 	ConnectTimeout time.Duration
 	HTTPClient     *http.Client
 	Capabilities   *CapabilityRegistry
+	// MaxTokens caps generated tokens (max_output_tokens), like
+	// OpenAIConfig.MaxTokens. Zero sends DefaultMaxOutputTokens (or the
+	// reasoning default) to cloud endpoints; negative sends none.
+	MaxTokens int
 }
 
 // ResponsesProvider adapts SuperCli messages and tool calls to the standard
@@ -60,6 +64,7 @@ func NewResponses(cfg ResponsesConfig) (*ResponsesProvider, error) {
 		HTTPClient:           cfg.HTTPClient,
 		Capabilities:         cfg.Capabilities,
 		StandardResponsesAPI: true,
+		MaxOutputTokens:      cfg.MaxTokens,
 		PromptCacheKey:       responsesPromptCacheKey(CleanAPIKey(cfg.APIKey), baseURL, cfg.Model),
 	})
 	if err != nil {
