@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 // The provider layer emits retry/limiter notices as fixed English wire text
@@ -19,6 +20,18 @@ var localizedNotices = []struct {
 	{regexp.MustCompile(`^Model connection unavailable — waiting (\S+) before retry (\S+)\.$`), "tui.notice.connection_wait"},
 	{regexp.MustCompile(`^(.+): request limit (\d+)/min reached — waiting (\S+)$`), "tui.notice.request_limit"},
 	{regexp.MustCompile(`^model "(.+)" does not support tool calling on this endpoint; continuing without tools \(answers only\) — pick a function-calling model for agent work$`), "tui.notice.tools_unsupported"},
+}
+
+// isRetryNotice reports whether a provider notice announces a retry or
+// backoff wait (the first four localizedNotices patterns, plus any other
+// wire text that says it is retrying).
+func isRetryNotice(text string) bool {
+	for _, n := range localizedNotices[:4] {
+		if n.re.MatchString(text) {
+			return true
+		}
+	}
+	return strings.Contains(text, "retrying in ")
 }
 
 func (m Model) localizeNotice(text string) string {

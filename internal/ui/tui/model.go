@@ -179,6 +179,14 @@ type Model struct {
 	statusSuccess  bool
 	statusRevision uint64
 
+	// retryStatus is the localized provider retry/backoff notice shown on
+	// the busy row instead of the generic working label while the run waits
+	// out an outage. retryRow is 1 + the index of the transcript row that
+	// carries the same notice, so repeated notices of one outage update that
+	// single row instead of appending a new one (0 = no live retry row).
+	retryStatus string
+	retryRow    int
+
 	// extCh is the channel the loop emits non-Run events on
 	// (F12 ConsultEvent). nil = no external sink.
 	extCh <-chan agent.Event

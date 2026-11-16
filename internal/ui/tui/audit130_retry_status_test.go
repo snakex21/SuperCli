@@ -79,7 +79,6 @@ func TestAudit130RetryNoticesLocalizedInTranscript(t *testing.T) {
 // The live status row (under the rule) should say the run is waiting on a
 // retry, and stop saying so once tokens stream again.
 func TestAudit130RetryStateInStatusLineAndCleared(t *testing.T) {
-	audit130KnownFailing(t, "retry/backoff is only appended to the transcript; the status line keeps showing the generic working label")
 	m := audit130BusyModel(t, "en", 120, 30)
 	m = audit130Event(m, agent.NoticeEvent{Text: audit130RetryNotices[0].wire})
 	status := strings.Join(audit130StatusRows(m.View()), "\n")
@@ -93,8 +92,8 @@ func TestAudit130RetryStateInStatusLineAndCleared(t *testing.T) {
 	}
 }
 
-// Each retry adds a permanent transcript row; with max_retries = -1 (∞) a
-// long outage floods the conversation. Measure it.
+// Repeated retry notices of one outage are coalesced into one live
+// transcript row, so max_retries = -1 (∞) cannot flood the conversation.
 func TestAudit130RetryNoticesAccumulateInTranscript(t *testing.T) {
 	m := audit130BusyModel(t, "en", 120, 30)
 	before := len(m.chat.msgs)
@@ -109,7 +108,6 @@ func TestAudit130RetryNoticesAccumulateInTranscript(t *testing.T) {
 		t.Fatalf("answer missing after retries:\n%s", text)
 	}
 	if added > 1 {
-		audit130KnownFailing(t, "every retry notice is a new transcript row (20 notices -> many rows), no coalescing")
 		t.Fatalf("20 identical retry notices produced %d transcript rows; expected them to be coalesced into one live row", added)
 	}
 }
@@ -125,5 +123,25 @@ func TestAudit130RetryNoticePaintedByFlushTick(t *testing.T) {
 	m = out.(Model)
 	if view := ansi.Strip(m.View()); !strings.Contains(view, "ponawianie za 2s") {
 		t.Fatalf("retry notice not painted during the backoff wait:\n%s", view)
+	}
+}
+
+// A later outage (after the stream resumed) gets its own row; the earlier
+// outage row is kept as history.
+func TestAudit130RetryNewOutageStartsNewRow(t *testing.T) {
+	m := audit130BusyModel(t, "en", 120, 30)
+	before := len(m.chat.msgs)
+	m = audit130Event(m, agent.NoticeEvent{Text: audit130RetryNotices[0].wire})
+	m = audit130Event(m, agent.NoticeEvent{Text: audit130RetryNotices[1].wire})
+	if got := len(m.chat.msgs) - before; got != 1 {
+		t.Fatalf("one outage produced %d rows", got)
+	}
+	if last := m.chat.msgs[len(m.chat.msgs)-1].text; !strings.Contains(last, "HTTP 503") {
+		t.Fatalf("live retry row not updated to the latest notice: %q", last)
+	}
+	m = audit130Event(m, agent.MessageEvent{Text: "partial"})
+	m = audit130Event(m, agent.NoticeEvent{Text: audit130RetryNotices[3].wire})
+	if got := len(m.chat.msgs) - before; got != 2 {
+		t.Fatalf("second outage should add a second row, got %d rows", got)
 	}
 }

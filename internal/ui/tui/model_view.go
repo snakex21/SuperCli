@@ -56,6 +56,9 @@ func (m Model) View() string {
 	// 4. Status bar
 	if m.busy {
 		line := m.spinner.View() + " " + m.palette.InputHint.Render(m.tr("tui.model_view.2a7749f651"))
+		if m.retryStatus != "" {
+			line = m.spinner.View() + " " + m.palette.StatusPending.Render(m.retryStatus)
+		}
 		if m.toolProgress != "" {
 			line += " " + m.palette.InputHint.Render("· "+m.toolProgress)
 		}
