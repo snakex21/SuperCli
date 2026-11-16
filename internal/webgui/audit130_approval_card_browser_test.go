@@ -116,11 +116,10 @@ const audit130ApprovalProbe = `(async()=>{
  return {failures:fail};
 })()`
 
-// After the card is answered its buttons are removed. Keyboard focus should
-// return to the composer so the user can keep typing; it must not be lost on
-// <body> (keyboard users then have to Tab through the whole header again).
+// After the card is answered its buttons are removed. Keyboard focus returns
+// to the composer so the user can keep typing; it is never lost on <body>
+// (keyboard users would then have to Tab through the whole header again).
 func TestAudit130ApprovalCardFocusReturnsToComposer(t *testing.T) {
-	audit130KnownFailing(t, "GUI approval card drops keyboard focus to <body> after an answer instead of returning it to the composer")
 	app := audit130StartApp(t, 1280, 900)
 	app.setLanguage("pl")
 	failures := []string{}
@@ -140,10 +139,10 @@ func TestAudit130ApprovalCardFocusReturnsToComposer(t *testing.T) {
 	}
 }
 
-// On a phone-sized window the card opens scrolled to its bottom (smartScroll),
-// so its title (what is being approved) can be hidden under the header.
+// On a phone-sized window the card is taller than the transcript; it opens
+// with its title (what is being approved) visible, not scrolled to its
+// buttons with the title under the header.
 func TestAudit130ApprovalCardTitleVisibleWhenOpenedOnPhone(t *testing.T) {
-	audit130KnownFailing(t, "on a 360x800 window the approval card opens with its title scrolled under the top bar")
 	app := audit130StartApp(t, 360, 800)
 	app.setLanguage("pl")
 	audit130ShowCard(app, "audit-title-360", true)
