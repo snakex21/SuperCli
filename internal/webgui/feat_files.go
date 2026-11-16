@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"supercli/internal/tools/fileops"
 	"supercli/internal/tools/sandbox"
 )
 
@@ -90,7 +91,9 @@ func (s *Server) handleFileWrite(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	if err := os.WriteFile(abs, []byte(req.Content), 0o644); err != nil {
+	// Temp file + rename: a hard link to a file outside the workspace is
+	// broken instead of written through (same rule as write_file).
+	if err := fileops.ReplaceFileContents(abs, []byte(req.Content), 0o644); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
