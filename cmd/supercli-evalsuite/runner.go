@@ -65,6 +65,9 @@ func superCLIRunner(o options) agenteval.AgentRunner {
 			"messages":      tr.Messages,
 			"transcript":    filepath.ToSlash(filepath.Join("transcripts", base+".md")),
 		}
+		if fc := firstCallFromSessionsDB(filepath.Join(in.DataDir, "sessions.db")); fc != nil {
+			extra["firstCall"] = fc
+		}
 		if len(tr.OutsideRefs) > 0 {
 			extra["outsidePathRefs"] = tr.OutsideRefs
 		}
@@ -119,6 +122,35 @@ func usageFromSessionsDB(dbPath string) *agenteval.RunMetrics {
 		return m
 	}
 	return nil
+}
+
+// firstCallFromSessionsDB returns the size and latency of the run's first
+// model request (the one carrying the full system prompt and tool catalog):
+// input and cached input tokens as the provider reported them, time to first
+// token and total duration. Nil when the store has no timed model call.
+func firstCallFromSessionsDB(dbPath string) map[string]any {
+	if _, err := os.Stat(dbPath); err != nil {
+		return nil
+	}
+	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(dbPath)+"?mode=ro")
+	if err != nil {
+		return nil
+	}
+	defer db.Close()
+	var in, cached, out int
+	var ttft, dur int64
+	var hasTiming int
+	var model string
+	row := db.QueryRow(`SELECT input_tokens, cached_input_tokens, output_tokens, ttft_ms, duration_ms, has_timing, model
+		FROM billing_usage WHERE source = 'model' ORDER BY created_at, id LIMIT 1`)
+	if row.Scan(&in, &cached, &out, &ttft, &dur, &hasTiming, &model) != nil {
+		return nil
+	}
+	fc := map[string]any{"input": in, "cached": cached, "output": out, "durationMs": dur, "model": model}
+	if hasTiming != 0 {
+		fc["ttftMs"] = ttft
+	}
+	return fc
 }
 
 // prepareWorkspace writes the isolated agent config and turns the

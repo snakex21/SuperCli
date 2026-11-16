@@ -46,6 +46,13 @@ type requestRecord struct {
 	Status  int    `json:"status"`
 	BodyLen int    `json:"bodyLen"`
 	Body    string `json:"body"`
+	// Timing from forwarding the request upstream: first response byte,
+	// first model output delta, whole response. Usage is the last usage
+	// object the response reported (exact prompt/cached token counts).
+	FirstByteMs  float64         `json:"firstByteMs,omitempty"`
+	FirstDeltaMs float64         `json:"firstDeltaMs,omitempty"`
+	TotalMs      float64         `json:"totalMs,omitempty"`
+	Usage        json.RawMessage `json:"usage,omitempty"`
 }
 
 func main() {
@@ -104,6 +111,7 @@ func main() {
 		req.Header.Set("Host", up.Host)
 		req.Header.Set("Accept-Encoding", "identity") // keep the body inspectable end-to-end
 
+		sent := time.Now()
 		resp, err := client.Do(req)
 		if err != nil {
 			record(requestRecord{Time: time.Now().UTC().Format(time.RFC3339Nano), Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Status: 0, BodyLen: len(body), Body: string(body)})
@@ -120,10 +128,12 @@ func main() {
 		w.WriteHeader(resp.StatusCode)
 
 		// Stream the response back in chunks so SSE arrives live.
+		timing := newStreamTiming(sent)
 		buf := make([]byte, 32*1024)
 		for {
 			n, readErr := resp.Body.Read(buf)
 			if n > 0 {
+				timing.observe(buf[:n], time.Now())
 				if _, err := w.Write(buf[:n]); err != nil {
 					break
 				}
@@ -136,7 +146,9 @@ func main() {
 			}
 		}
 
-		record(requestRecord{Time: time.Now().UTC().Format(time.RFC3339Nano), Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Status: resp.StatusCode, BodyLen: len(body), Body: string(body)})
+		timing.finish(time.Now())
+		record(requestRecord{Time: time.Now().UTC().Format(time.RFC3339Nano), Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Status: resp.StatusCode, BodyLen: len(body), Body: string(body),
+			FirstByteMs: ms(timing.firstByte), FirstDeltaMs: ms(timing.firstDelta), TotalMs: ms(time.Since(sent)), Usage: timing.usage})
 	})
 
 	fmt.Printf("wireprobe: listening on %s -> %s, log %s\n", *listen, up.String(), resolvedLogPath)
