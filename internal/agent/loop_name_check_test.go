@@ -119,7 +119,7 @@ func TestNameCheckFindsMissingAndSimilarNames(t *testing.T) {
 	}
 	note := nameCheckNote(missing, similar)
 	for _, s := range []string{"`limits.burst`", "`settings.yaml` (similar existing: settings.yml)", "Not found in the workspace",
-		"new value or something to create", "just use or create it", "do not invent it", "ask how to proceed"} {
+		"new value or asks to create it, just use or create it", "do not add or define it", "similar-looking name", "ask how to proceed"} {
 		if !strings.Contains(note, s) {
 			t.Fatalf("note lacks %q:\n%s", s, note)
 		}

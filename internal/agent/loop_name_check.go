@@ -683,11 +683,12 @@ func nameCheckNote(missing []string, similar map[string][]string) string {
 		}
 		b.WriteString(";")
 	}
-	b.WriteString(" This is a hint, not a rule: check with a search. If the request uses it as a new value or something " +
-		"to create (a new setting value, a new branch or file, a standard-library name), just use or create it. " +
-		"If the request treats it as an existing part of the code to change or use (a function, key, flag, file) and it " +
-		"really is missing, do not invent it and do not apply that part to a similar-looking name: do the rest of the " +
-		"request, then say in the final answer which name was not found (and the similar one, if any) and ask how to proceed.")
+	b.WriteString(" If the request uses such a name as a new value or asks to create it, just use or create it. " +
+		"Otherwise, where the request treats it as something that already exists (a setting, environment variable, " +
+		"function, file or flag to change, fix or use): confirm with a search; if it is missing, do not add or define it " +
+		"and do not apply that part to a similar-looking name (such as one with a slightly different spelling) instead. " +
+		"Do every other part of the request, then say in the final answer which name was not found (and the similar " +
+		"one, if any) and ask how to proceed.")
 	return b.String()
 }
 
