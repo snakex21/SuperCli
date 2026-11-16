@@ -20,16 +20,6 @@ import (
 	"time"
 )
 
-// a130KnownFailing skips a test that reproduces a confirmed defect unless
-// SUPERCLI_AUDIT_KNOWN_FAILING=1, so the default suite stays green while the
-// reproduction stays in the tree.
-func a130KnownFailing(t *testing.T, issue string) {
-	t.Helper()
-	if os.Getenv("SUPERCLI_AUDIT_KNOWN_FAILING") != "1" {
-		t.Skip("KNOWN-FAILING audit-130: " + issue)
-	}
-}
-
 func a130Soak(t *testing.T) {
 	t.Helper()
 	if os.Getenv("SUPERCLI_AUDIT_SOAK") != "1" {

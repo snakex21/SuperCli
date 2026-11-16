@@ -16,7 +16,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -25,13 +24,6 @@ import (
 	"supercli/internal/llm"
 	"supercli/internal/tools"
 )
-
-func a130AgentKnownFailing(t *testing.T, issue string) {
-	t.Helper()
-	if os.Getenv("SUPERCLI_AUDIT_KNOWN_FAILING") != "1" {
-		t.Skip("KNOWN-FAILING audit-130: " + issue)
-	}
-}
 
 type a130AgentMock struct {
 	srv      *httptest.Server
