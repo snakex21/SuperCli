@@ -37,13 +37,6 @@ const (
 	audit130SecretFile = "secret.txt"
 )
 
-func audit130KnownFailing(t *testing.T, issue string) {
-	t.Helper()
-	if os.Getenv("SUPERCLI_AUDIT_KNOWN_FAILING") != "1" {
-		t.Skip("KNOWN-FAILING audit-130: " + issue)
-	}
-}
-
 type audit130Env struct {
 	root, ws, out string
 	// keepOutside skips the per-call outside reset (hard links would be
@@ -337,13 +330,11 @@ func TestAudit130EditFilesIncludeGlobEscape(t *testing.T) {
 	}
 }
 
-// TestAudit130ReservedDeviceNamesAccepted records that ResolveSafe accepts
-// DOS device names. On Windows 10 "<ws>\CON" opens the console and
-// "<ws>\COM1" a serial port, not a file in the workspace. Not a confinement
-// escape for writes (data goes to a device), but a read of CON/CONIN$ blocks
-// the tool call. We only check the resolver; we never open these names.
-func TestAudit130ReservedDeviceNamesAccepted(t *testing.T) {
-	audit130KnownFailing(t, "sandbox.ResolveSafe accepts reserved DOS device names (CON, NUL, COM1, sub\\AUX.txt); file tools then open the device instead of a workspace file")
+// TestAudit130ReservedDeviceNamesRefused: ResolveSafe refuses DOS device
+// names. On Windows 10 "<ws>\CON" opens the console and "<ws>\COM1" a serial
+// port, not a file in the workspace; a read of CON/CONIN$ would block the
+// tool call. We only check the resolver; we never open these names.
+func TestAudit130ReservedDeviceNamesRefused(t *testing.T) {
 	env := newAudit130Env(t)
 	for _, name := range []string{"CON", "NUL", "COM1", "LPT1", "AUX", `sub\CON.txt`, "CONIN$", "nul.txt"} {
 		if _, err := sandbox.ResolveSafe(env.ws, name); err == nil {

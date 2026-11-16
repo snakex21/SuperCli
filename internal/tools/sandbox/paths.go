@@ -152,6 +152,12 @@ func resolvePath(home, rel string, enforceHome bool) (string, error) {
 	} else {
 		abs = filepath.Join(absHome, rel)
 	}
+	// Reserved DOS device names (CON, NUL, COM1, sub/aux.txt, ...) open a
+	// device instead of a file on Windows; refuse them before anything is
+	// resolved or opened.
+	if err := rejectDeviceNames(absHome, abs); err != nil {
+		return "", err
+	}
 	// Symlink resolution. Walk up the path until we
 	// find an existing directory; resolve symlinks at
 	// that level; then re-append the rest.
