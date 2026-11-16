@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // audit-130: GUI settings (control panel, the TUI /settings parity surface)
@@ -38,7 +39,14 @@ func TestAudit130SettingsChangePersistAndCancel(t *testing.T) {
 	before := audit130ConfigKnob(app, "max_retries")
 	// Change: type 7 and press Enter.
 	app.eval(`(async()=>{const i=`+audit130MaxRetriesInput+`;i.focus();i.value='7';i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));await new Promise(r=>setTimeout(r,400));return true;})()`, nil)
-	if got := audit130ConfigKnob(app, "max_retries"); got != "7" {
+	// The save is asynchronous; poll instead of trusting one fixed delay
+	// (a slow CI runner missed the 400 ms window).
+	got := audit130ConfigKnob(app, "max_retries")
+	for deadline := time.Now().Add(10 * time.Second); got != "7" && time.Now().Before(deadline); {
+		time.Sleep(100 * time.Millisecond)
+		got = audit130ConfigKnob(app, "max_retries")
+	}
+	if got != "7" {
 		t.Fatalf("max_retries after Enter = %q (before %q), want 7", got, before)
 	}
 	var persisted string
