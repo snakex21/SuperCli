@@ -1072,5 +1072,7 @@
   "approval.risk.external_side_effect": "External effect",
   "approval.badge.reversible": "Reversible",
   "approval.badge.irreversible": "Cannot be undone",
-  "project.stopRun": "Detén la ejecución actual antes de cambiar de proyecto."
+  "project.stopRun": "Detén la ejecución actual antes de cambiar de proyecto.",
+  "tui.diff.summary": "Cambios de archivos en la sesión: %d",
+  "tui.diff.more_lines": "… (líneas ocultas: %d)"
 }

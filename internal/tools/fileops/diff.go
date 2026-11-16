@@ -78,9 +78,44 @@ func (t *Tracker) Count() int {
 	return len(t.changes)
 }
 
-// DiffOutput generates a unified diff for /diff display.
-// Returns empty string if no changes recorded.
+// DiffText supplies the user-visible chrome of DiffOutputText so callers
+// can localize it. Nil fields fall back to the English defaults.
+type DiffText struct {
+	// Summary is the session header, e.g. "2 file change(s) in session".
+	// The total line stats (" [+4 -3]") are appended after it.
+	Summary func(changes int) string
+	// MoreLines marks a side cut after diffPreviewLines lines, e.g.
+	// "... (4980 more lines)"; hidden is the exact number not shown.
+	MoreLines func(hidden int) string
+}
+
+// diffPreviewLines is how many lines of each side /diff shows per change.
+const diffPreviewLines = 20
+
+func (d DiffText) summary(changes int) string {
+	if d.Summary != nil {
+		return d.Summary(changes)
+	}
+	return fmt.Sprintf("%d file change(s) in session", changes)
+}
+
+func (d DiffText) moreLines(hidden int) string {
+	if d.MoreLines != nil {
+		return d.MoreLines(hidden)
+	}
+	return fmt.Sprintf("... (%d more lines)", hidden)
+}
+
+// DiffOutput generates a unified diff for /diff display with English
+// chrome. Returns empty string if no changes recorded.
 func (t *Tracker) DiffOutput() string {
+	return t.DiffOutputText(DiffText{})
+}
+
+// DiffOutputText is DiffOutput with caller-supplied (localized) chrome.
+// The result is plain text (no Markdown): a summary line with the total
+// line stats, a blank line, then one block per change.
+func (t *Tracker) DiffOutputText(text DiffText) string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if len(t.changes) == 0 {
@@ -97,9 +132,9 @@ func (t *Tracker) DiffOutput() string {
 			b.WriteString("\n")
 		}
 		b.WriteString(header + "\n")
-		// Show first 20 lines of each side.
-		oldLines := strings.Split(truncateLines(c.Old, 20), "\n")
-		newLines := strings.Split(truncateLines(c.New, 20), "\n")
+		// Show the first diffPreviewLines lines of each side.
+		oldLines := strings.Split(truncateLines(c.Old, diffPreviewLines, text.moreLines), "\n")
+		newLines := strings.Split(truncateLines(c.New, diffPreviewLines, text.moreLines), "\n")
 		for _, l := range oldLines {
 			b.WriteString("- " + l + "\n")
 		}
@@ -107,8 +142,7 @@ func (t *Tracker) DiffOutput() string {
 			b.WriteString("+ " + l + "\n")
 		}
 	}
-	return fmt.Sprintf("_[%d file change(s) in session | %s]_\n\n%s",
-		len(t.changes), lineStats(totalAdd, totalDel), b.String())
+	return text.summary(len(t.changes)) + lineStats(totalAdd, totalDel) + "\n\n" + b.String()
 }
 
 // lineStats formats an added/removed line counter, omitting zero sides:
@@ -134,12 +168,13 @@ func countLines(text string) int {
 	return strings.Count(text, "\n") + 1
 }
 
-// truncateLines returns at most n lines from text.
-func truncateLines(text string, n int) string {
+// truncateLines returns at most n lines from text, followed by a marker
+// (built by more) that carries the exact number of hidden lines.
+func truncateLines(text string, n int, more func(hidden int) string) string {
 	lines := strings.Split(text, "\n")
 	if len(lines) > n {
-		lines = lines[:n]
-		lines = append(lines, fmt.Sprintf("... (%d more lines)", len(lines)))
+		hidden := len(lines) - n
+		lines = append(lines[:n:n], more(hidden))
 	}
 	return strings.Join(lines, "\n")
 }

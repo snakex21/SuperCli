@@ -1072,5 +1072,7 @@
   "approval.risk.external_side_effect": "External effect",
   "approval.badge.reversible": "Reversible",
   "approval.badge.irreversible": "Cannot be undone",
-  "project.stopRun": "Зупиніть поточне виконання, перш ніж перемикатися між проєктами або змінювати їх."
+  "project.stopRun": "Зупиніть поточне виконання, перш ніж перемикатися між проєктами або змінювати їх.",
+  "tui.diff.summary": "Змін файлів у сеансі: %d",
+  "tui.diff.more_lines": "… (приховано рядків: %d)"
 }

@@ -1072,5 +1072,7 @@
   "approval.risk.external_side_effect": "External effect",
   "approval.badge.reversible": "Reversible",
   "approval.badge.irreversible": "Cannot be undone",
-  "project.stopRun": "Před přepnutím nebo změnou projektů zastavte aktuální běh."
+  "project.stopRun": "Před přepnutím nebo změnou projektů zastavte aktuální běh.",
+  "tui.diff.summary": "Změny souborů v relaci: %d",
+  "tui.diff.more_lines": "… (skryté řádky: %d)"
 }

@@ -1072,5 +1072,7 @@
   "approval.risk.external_side_effect": "External effect",
   "approval.badge.reversible": "Reversible",
   "approval.badge.irreversible": "Cannot be undone",
-  "project.stopRun": "Остановите текущий запуск перед переключением или изменением проектов."
+  "project.stopRun": "Остановите текущий запуск перед переключением или изменением проектов.",
+  "tui.diff.summary": "Изменений файлов в сеансе: %d",
+  "tui.diff.more_lines": "… (скрыто строк: %d)"
 }

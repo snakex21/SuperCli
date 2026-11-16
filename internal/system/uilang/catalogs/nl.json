@@ -1072,5 +1072,7 @@
   "approval.risk.external_side_effect": "External effect",
   "approval.badge.reversible": "Reversible",
   "approval.badge.irreversible": "Cannot be undone",
-  "project.stopRun": "Stop de huidige run voordat u van project wisselt of wijzigt."
+  "project.stopRun": "Stop de huidige run voordat u van project wisselt of wijzigt.",
+  "tui.diff.summary": "Bestandswijzigingen in sessie: %d",
+  "tui.diff.more_lines": "… (verborgen regels: %d)"
 }

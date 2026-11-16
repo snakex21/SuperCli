@@ -1072,5 +1072,7 @@
   "approval.risk.external_side_effect": "External effect",
   "approval.badge.reversible": "Reversible",
   "approval.badge.irreversible": "Cannot be undone",
-  "project.stopRun": "Pred prepnutím alebo zmenou projektov zastavte aktuálny chod."
+  "project.stopRun": "Pred prepnutím alebo zmenou projektov zastavte aktuálny chod.",
+  "tui.diff.summary": "Zmeny súborov v relácii: %d",
+  "tui.diff.more_lines": "… (skryté riadky: %d)"
 }

@@ -1072,5 +1072,7 @@
   "approval.risk.external_side_effect": "External effect",
   "approval.badge.reversible": "Reversible",
   "approval.badge.irreversible": "Cannot be undone",
-  "project.stopRun": "Stoppa den pågående körningen innan du byter projekt eller projektmapp."
+  "project.stopRun": "Stoppa den pågående körningen innan du byter projekt eller projektmapp.",
+  "tui.diff.summary": "Filändringar i sessionen: %d",
+  "tui.diff.more_lines": "… (dolda rader: %d)"
 }

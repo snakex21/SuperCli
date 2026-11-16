@@ -1072,5 +1072,7 @@
   "approval.risk.external_side_effect": "External effect",
   "approval.badge.reversible": "Reversible",
   "approval.badge.irreversible": "Cannot be undone",
-  "project.stopRun": "Stoppen Sie den aktuellen Lauf, bevor Sie Projekte wechseln oder ändern."
+  "project.stopRun": "Stoppen Sie den aktuellen Lauf, bevor Sie Projekte wechseln oder ändern.",
+  "tui.diff.summary": "Dateiänderungen in der Sitzung: %d",
+  "tui.diff.more_lines": "… (ausgeblendete Zeilen: %d)"
 }

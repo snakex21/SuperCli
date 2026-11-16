@@ -14,6 +14,7 @@ import (
 	"supercli/internal/llm/shuffler"
 	"supercli/internal/system/config"
 	"supercli/internal/system/doctor"
+	"supercli/internal/tools/fileops"
 	"supercli/internal/ui/export"
 )
 
@@ -264,7 +265,11 @@ func (m Model) handleSlashDiff(_ SlashCommand) (tea.Model, tea.Cmd) {
 		if tracker == nil || tracker.Count() == 0 {
 			return slashResultMsg{Body: dm.Diff(m.tr("tui.slash.807564bac8"))}
 		}
-		return slashResultMsg{Body: dm.Diff(tracker.DiffOutput())}
+		summary, more := m.tr("tui.diff.summary"), m.tr("tui.diff.more_lines")
+		return slashResultMsg{Body: dm.Diff(tracker.DiffOutputText(fileops.DiffText{
+			Summary:   func(n int) string { return fmt.Sprintf(summary, n) },
+			MoreLines: func(n int) string { return fmt.Sprintf(more, n) },
+		}))}
 	}
 }
 

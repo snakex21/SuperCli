@@ -1072,5 +1072,7 @@
   "approval.risk.external_side_effect": "External effect",
   "approval.badge.reversible": "Reversible",
   "approval.badge.irreversible": "Cannot be undone",
-  "project.stopRun": "Спрете текущото изпълнение, преди да превключите или промените проекти."
+  "project.stopRun": "Спрете текущото изпълнение, преди да превключите или промените проекти.",
+  "tui.diff.summary": "Промени на файлове в сесията: %d",
+  "tui.diff.more_lines": "… (скрити редове: %d)"
 }
