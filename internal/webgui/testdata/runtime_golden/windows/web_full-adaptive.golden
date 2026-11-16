@@ -256,7 +256,7 @@ Golden user preset: reply in English.
 --- msg 1 role=user origin={"spans":[{"source":"human"},{"source":"runtime"}]}
 GOLDEN_CALL tool_search {"query":"web_fetch"}
 
-[name check] Not found in the workspace by a quick scan: `GOLDEN_CALL`; This is a hint, not a rule: check with a search. If the request uses it as a new value or something to create (a new setting value, a new branch or file, a standard-library name), just use or create it. If the request treats it as an existing part of the code to change or use (a function, key, flag, file) and it really is missing, do not invent it and do not apply that part to a similar-looking name: do the rest of the request, then say in the final answer which name was not found (and the similar one, if any) and ask how to proceed.
+[name check] Not found in the workspace by a quick scan: `GOLDEN_CALL`; If the request uses such a name as a new value or asks to create it, just use or create it. Otherwise, where the request treats it as something that already exists (a setting, environment variable, function, file or flag to change, fix or use): confirm with a search; if it is missing, do not add or define it and do not apply that part to a similar-looking name (such as one with a slightly different spelling) instead. Do every other part of the request, then say in the final answer which name was not found (and the similar one, if any) and ask how to proceed.
 --- msg 2 role=system origin={"source":"runtime"}
 Active workspace (all file and shell tools are sandboxed here): <HOME>
 
@@ -314,7 +314,7 @@ Golden user preset: reply in English.
 --- msg 1 role=user origin={"spans":[{"source":"human"},{"source":"runtime"}]}
 GOLDEN_CALL tool_search {"query":"web_fetch"}
 
-[name check] Not found in the workspace by a quick scan: `GOLDEN_CALL`; This is a hint, not a rule: check with a search. If the request uses it as a new value or something to create (a new setting value, a new branch or file, a standard-library name), just use or create it. If the request treats it as an existing part of the code to change or use (a function, key, flag, file) and it really is missing, do not invent it and do not apply that part to a similar-looking name: do the rest of the request, then say in the final answer which name was not found (and the similar one, if any) and ask how to proceed.
+[name check] Not found in the workspace by a quick scan: `GOLDEN_CALL`; If the request uses such a name as a new value or asks to create it, just use or create it. Otherwise, where the request treats it as something that already exists (a setting, environment variable, function, file or flag to change, fix or use): confirm with a search; if it is missing, do not add or define it and do not apply that part to a similar-looking name (such as one with a slightly different spelling) instead. Do every other part of the request, then say in the final answer which name was not found (and the similar one, if any) and ask how to proceed.
 --- msg 2 role=system origin={"source":"runtime"}
 Active workspace (all file and shell tools are sandboxed here): <HOME>
 
@@ -337,7 +337,7 @@ Golden user preset: reply in English.
 --- msg 1 role=user origin={"spans":[{"source":"human"},{"source":"runtime"}]}
 GOLDEN_CALL tool_search {"query":"web_fetch"}
 
-[name check] Not found in the workspace by a quick scan: `GOLDEN_CALL`; This is a hint, not a rule: check with a search. If the request uses it as a new value or something to create (a new setting value, a new branch or file, a standard-library name), just use or create it. If the request treats it as an existing part of the code to change or use (a function, key, flag, file) and it really is missing, do not invent it and do not apply that part to a similar-looking name: do the rest of the request, then say in the final answer which name was not found (and the similar one, if any) and ask how to proceed.
+[name check] Not found in the workspace by a quick scan: `GOLDEN_CALL`; If the request uses such a name as a new value or asks to create it, just use or create it. Otherwise, where the request treats it as something that already exists (a setting, environment variable, function, file or flag to change, fix or use): confirm with a search; if it is missing, do not add or define it and do not apply that part to a similar-looking name (such as one with a slightly different spelling) instead. Do every other part of the request, then say in the final answer which name was not found (and the similar one, if any) and ask how to proceed.
 --- msg 2 role=assistant origin={"source":"model"}
 [part 0 text source=]
 done after tool
