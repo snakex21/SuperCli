@@ -28,8 +28,10 @@ type OpenAIConfig struct {
 	APIKey string
 	// Model is the model id, e.g. "gpt-4o-mini". Required.
 	Model string
-	// MaxTokens caps generated tokens. Zero leaves the provider default.
-	// This is the OpenAI-compatible chat-completions `max_tokens` field.
+	// MaxTokens caps generated tokens (the chat-completions `max_tokens` /
+	// `max_completion_tokens` field). Zero sends DefaultMaxOutputTokens (or
+	// the reasoning default) to cloud endpoints and nothing to local servers;
+	// a negative value never sends a cap.
 	MaxTokens int
 	// Timeout bounds both the wait for HTTP response headers and the maximum
 	// idle gap between SSE bytes. It is not a whole-request deadline, so a
@@ -270,7 +272,17 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		p.noteToolsUnsupported()
 		tools, catalogNoTools = nil, true
 	}
-	reqBody, err := buildOpenAIRequestWithReasoningKey(reqModel, p.reasoningKey(), msgs, tools, visionAttempt, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens, p.sampling, ctx)
+	// Output cap: the configured MaxTokens (SUPERCLI_LLM_MAX_TOKENS), else a
+	// default for cloud endpoints so a degenerate stream cannot run to the
+	// model maximum (see output_cap.go). A rejected default is learned.
+	maxTokens, defaultCap := p.cfg.MaxTokens, false
+	if maxTokens < 0 {
+		maxTokens = 0 // explicit opt-out: never send a cap
+	} else if maxTokens == 0 && defaultOutputCapApplies(p.cfg.BaseURL, p.cfg.CapabilityModel) {
+		maxTokens = defaultOutputCap(p.cfg.BaseURL, reqModel, isOpenAIReasoningFamily(reqModel))
+		defaultCap = maxTokens > 0
+	}
+	reqBody, err := buildOpenAIRequestWithReasoningKey(reqModel, p.reasoningKey(), msgs, tools, visionAttempt, p.cachePrompt, reasoningFormat, maxTokens, p.sampling, ctx)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
@@ -316,6 +328,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		visionRetried := false
 		zenRemapped := false
 		toolsDropped := false
+		capRetried := false
 		for {
 			if err := WaitRequestSlot(ctx, p.cfg.BaseURL, func(text string) {
 				select {
@@ -346,7 +359,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			if err != nil {
 				cancel()
 				select {
-				case out <- Delta{Err: fmt.Errorf("http: %w", err)}:
+				case out <- Delta{Err: wrapStreamError("http", err)}:
 				case <-ctx.Done():
 				}
 				return
@@ -363,6 +376,20 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 			resp.Body.Close()
 			cancel()
+			// The endpoint rejected the DEFAULT output cap (too large for this
+			// model, or no such parameter): retry once with the limit it
+			// named, or without the field, and remember it. A configured
+			// MaxTokens is never touched.
+			if defaultCap && !capRetried {
+				if next, ok := learnOutputCapRejection(p.cfg.BaseURL, reqModel, maxTokens, resp.StatusCode, body); ok {
+					rebuilt, buildErr := buildOpenAIRequestWithReasoningKey(reqModel, p.reasoningKey(), msgs, tools, visionAttempt && !visionRetried, p.cachePrompt, reasoningFormat, next, p.sampling, ctx)
+					if buildErr == nil {
+						maxTokens, defaultCap, capRetried = next, next > 0, true
+						reqBody = p.omitToolsEffortIfRejected(rebuilt, tools, reasoningFormat)
+						continue
+					}
+				}
+			}
 			if len(tools) > 0 && !effortRetried && IsReasoningToolsCombinationError(resp.StatusCode, body) {
 				if patched, patchedOK := patchOpenAIReasoning(reqBody, "", reasoningFormat); patchedOK {
 					p.noteToolsEffortRejected()
@@ -386,7 +413,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			// The model cannot call functions: retry once without the tools
 			// field, explain it, and remember it for later requests.
 			if len(tools) > 0 && !toolsDropped && isToolsUnsupportedError(resp.StatusCode, body) {
-				rebuilt, buildErr := buildOpenAIRequestWithReasoningKey(reqModel, p.reasoningKey(), msgs, nil, visionAttempt && !visionRetried, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens, p.sampling, ctx)
+				rebuilt, buildErr := buildOpenAIRequestWithReasoningKey(reqModel, p.reasoningKey(), msgs, nil, visionAttempt && !visionRetried, p.cachePrompt, reasoningFormat, maxTokens, p.sampling, ctx)
 				if buildErr == nil {
 					p.noteToolsUnsupported()
 					tools = nil
@@ -409,7 +436,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 				if noteImageRejection(p.caps, p.capabilityModel(), resp.StatusCode, body) {
 					p.imageRejected.Store(true)
 				}
-				reqBody, err = buildOpenAIRequestWithReasoningKey(reqModel, p.reasoningKey(), msgs, tools, false, p.cachePrompt, reasoningFormat, p.cfg.MaxTokens, p.sampling, ctx)
+				reqBody, err = buildOpenAIRequestWithReasoningKey(reqModel, p.reasoningKey(), msgs, tools, false, p.cachePrompt, reasoningFormat, maxTokens, p.sampling, ctx)
 				if err == nil {
 					reqBody = p.omitToolsEffortIfRejected(reqBody, tools, reasoningFormat)
 					visionRetried = true
@@ -487,6 +514,10 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		// appear stuck on "working".
 		toolAcc := make(map[int]*streamedToolCall)
 		var lastUsage *Usage
+		// streamedNonWS counts generated bytes (content, reasoning, tool
+		// arguments) for the Estimated usage of an aborted stream.
+		streamedNonWS := 0
+		var toolWatch toolStreamWatch
 		var lastTimings *llamaTimings
 		sawResponse := false
 		sawPayload := false
@@ -598,6 +629,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 				}
 				if reasoning != "" {
 					sawPayload = true
+					streamedNonWS += nonWhitespaceLen(reasoning)
 					select {
 					case out <- Delta{Reasoning: reasoning}:
 					case <-ctx.Done():
@@ -606,6 +638,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 				}
 				if choice.Delta.Content != "" {
 					sawPayload = true
+					streamedNonWS += nonWhitespaceLen(choice.Delta.Content)
 					select {
 					case out <- Delta{Content: choice.Delta.Content}:
 					case <-ctx.Done():
@@ -633,8 +666,20 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 					}
 					prevArgs := acc.arguments.Len()
 					acc.arguments.WriteString(tc.Function.Arguments)
+					streamedNonWS += nonWhitespaceLen(tc.Function.Arguments)
 					if err := checkRunawayToolArguments(acc.Name, &acc.arguments, prevArgs); err != nil {
 						return err
+					}
+					if tc.Function.Arguments != "" {
+						notice, err := toolWatch.observe(acc.Name, acc.arguments.Len())
+						if err != nil {
+							return err
+						}
+						if notice != "" {
+							if err := emit(Delta{Notice: notice}); err != nil {
+								return err
+							}
+						}
 					}
 				}
 				if choice.FinishReason != "" && !emittedFinish {
@@ -662,8 +707,21 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 			return nil
 		})
 		if parseErr != nil {
+			// The provider billed this aborted stream but never sent its
+			// usage frame: report an estimate so cost accounting counts it.
+			if lastUsage == nil && streamedNonWS > 0 {
+				usage := estimatedAbortUsage(estimateRequestInputTokens(msgs, tools), streamedNonWS)
+				select {
+				case out <- Delta{Usage: usage}:
+				case <-ctx.Done():
+					select {
+					case out <- Delta{Usage: usage}:
+					default:
+					}
+				}
+			}
 			select {
-			case out <- Delta{Err: fmt.Errorf("sse: %w", parseErr)}:
+			case out <- Delta{Err: wrapStreamError("sse", parseErr)}:
 			case <-ctx.Done():
 			}
 		} else if !sawResponse {

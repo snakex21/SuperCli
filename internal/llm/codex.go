@@ -55,6 +55,12 @@ type CodexConfig struct {
 	// ChatGPT-only headers and static API keys cannot be refreshed through the
 	// OAuth token source.
 	StandardResponsesAPI bool
+	// MaxOutputTokens caps generated tokens on the standard Responses API
+	// (max_output_tokens; SUPERCLI_LLM_MAX_TOKENS). Zero sends a default
+	// cap to cloud endpoints (see output_cap.go); negative sends none. Ignored by the ChatGPT
+	// Codex backend, which rejects the field, and by OpenCode Zen, whose
+	// request shape sets its own.
+	MaxOutputTokens int
 	// PromptCacheKey groups related standard Responses API calls for provider-
 	// side prompt caching. It is ignored by the ChatGPT backend dialect.
 	PromptCacheKey string

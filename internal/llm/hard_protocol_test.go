@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -58,11 +59,28 @@ func TestHardProtocolOpenAIParserSurvivesFragmentedSSE(t *testing.T) {
 }
 
 func TestHardProtocolOpenAIParserRejectsOversizedFrame(t *testing.T) {
-	wire := "data: " + strings.Repeat("x", 1024*1024+1) + "\n\n"
-	done, err := parseOpenAIDataLines(strings.NewReader(wire), func(string) error { return nil })
-	if err == nil || done {
+	// A frame above 1 MiB (a large single-chunk tool call) is accepted; only
+	// a line beyond maxSSELineBytes is rejected.
+	big := "data: {\"x\":\"" + strings.Repeat("x", 1024*1024+1) + "\"}\n\ndata: [DONE]\n\n"
+	var got int
+	done, err := parseOpenAIDataLines(strings.NewReader(big), func(data string) error { got = len(data); return nil })
+	if err != nil || !done || got < 1024*1024 {
+		t.Fatalf("1 MiB+ SSE frame rejected: done=%v err=%v len=%d", done, err, got)
+	}
+	wire := io.MultiReader(strings.NewReader("data: "), io.LimitReader(hardRepeatReader('x'), maxSSELineBytes+1), strings.NewReader("\n\n"))
+	done, err = parseOpenAIDataLines(wire, func(string) error { return nil })
+	if err == nil || done || !errors.Is(err, errSSELineTooLong) {
 		t.Fatalf("oversized SSE frame accepted: done=%v err=%v", done, err)
 	}
+}
+
+type hardRepeatReader byte
+
+func (r hardRepeatReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = byte(r)
+	}
+	return len(p), nil
 }
 
 func TestHardProtocolOpenAICleanEOFClassification(t *testing.T) {

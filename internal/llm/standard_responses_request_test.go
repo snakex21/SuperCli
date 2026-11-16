@@ -107,7 +107,8 @@ func TestStandardResponsesOwnedFakeWire(t *testing.T) {
 			}
 			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader("data: {\"type\":\"response.completed\",\"response\":{}}\n\n")), Request: req}, nil
 		})
-		p, err := NewResponses(ResponsesConfig{BaseURL: base, Model: "fixture", HTTPClient: &http.Client{Transport: transport}})
+		// Wire-parity fixture: opt out of the default output cap (output_cap.go).
+		p, err := NewResponses(ResponsesConfig{BaseURL: base, Model: "fixture", MaxTokens: -1, HTTPClient: &http.Client{Transport: transport}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -299,7 +300,8 @@ func TestStandardResponsesOwnedLargePublicBodyParity(t *testing.T) {
 			}
 			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader("data: {\"type\":\"response.completed\",\"response\":{}}\n\n")), Request: req}, nil
 		})
-		p, err := NewResponses(ResponsesConfig{BaseURL: "https://fixture.invalid/v1", Model: "fixture", HTTPClient: &http.Client{Transport: transport}})
+		// Wire-parity fixture: opt out of the default output cap (output_cap.go).
+		p, err := NewResponses(ResponsesConfig{BaseURL: "https://fixture.invalid/v1", Model: "fixture", MaxTokens: -1, HTTPClient: &http.Client{Transport: transport}})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -124,7 +124,13 @@ func TestRunawayToolArgumentsStopTheStream(t *testing.T) {
 }
 
 func TestRunawayGuardAllowsRealArguments(t *testing.T) {
-	big := strings.Repeat(`line of real code with \"quotes\" and\ttabs\n`, 2000)
+	// Numbered lines: 2000 copies of one identical line would (rightly) be
+	// stopped by the repeating-block guard.
+	var lines strings.Builder
+	for i := 0; i < 2000; i++ {
+		fmt.Fprintf(&lines, `line %d of real code with \"quotes\" and\ttabs\n`, i)
+	}
+	big := lines.String()
 	var b strings.Builder
 	for i := 0; i < len(big); i += 7 {
 		end := i + 7

@@ -8,6 +8,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -226,21 +228,25 @@ func TestA130_CRLFCommentsKeepalivesUnknownEvents(t *testing.T) {
 	}
 }
 
-// 1g. Huge tool arguments streamed in 8 KiB deltas (5 MB). Chat carries no
-// full-argument echo; for the Responses wire the gateway-style stream (deltas
-// only, completed without output) is used here. The real OpenAI shape is in
-// TestA130_HugeToolArgsSingleSSELine.
+// 1g. Huge tool arguments streamed in 8 KiB deltas (5 MB of a repeating
+// 8-byte unit). Since 1.0.30 the degenerate-arguments guard stops it at the
+// 16 KiB repetition window (and the 256 KiB per-call cap would stop any
+// non-repeating payload), the call is never emitted and the client hangs up.
+// Legitimate large arguments below the cap (200 KiB of varied CSV) still
+// stream through intact on both wires.
 func TestA130_HugeToolArgs5MBChunked(t *testing.T) {
 	const total = 5 << 20
 	for _, wire := range a130Wires {
 		t.Run(string(wire), func(t *testing.T) {
+			var sent atomic.Int64
 			chunk := strings.Repeat("abcdefgh", 1024) // 8 KiB, non-whitespace
 			m := newA130Mock(t, func(w http.ResponseWriter, r *http.Request, n int) {
 				a130ToolStart(wire, w, `{"path":"big.txt","content":"`)
-				for sent := 0; sent < total; sent += len(chunk) {
-					if !a130ToolArgs(wire, w, chunk) {
+				for sent.Load() < total {
+					if !a130ToolArgs(wire, w, chunk) || r.Context().Err() != nil {
 						return
 					}
+					sent.Add(int64(len(chunk)))
 				}
 				a130ToolArgs(wire, w, `"}`)
 				if wire == wireChat {
@@ -251,32 +257,75 @@ func TestA130_HugeToolArgs5MBChunked(t *testing.T) {
 			})
 			p, _ := a130Provider(t, wire, m.URL(), 10*time.Second)
 			res := a130Run(t, context.Background(), p, 60*time.Second)
-			t.Logf("%s: err=%v calls=%d argBytes=%d elapsed=%s", wire, res.Err, len(res.Calls), res.ArgBytes, res.Elapsed)
-			if res.Err != nil || len(res.Calls) != 1 {
-				t.Fatalf("5 MB chunked args failed: err=%v calls=%d", res.Err, len(res.Calls))
+			t.Logf("%s: err=%v calls=%d serverSent=%d elapsed=%s", wire, res.Err, len(res.Calls), sent.Load(), res.Elapsed)
+			var runaway *RunawayToolCallError
+			if !errors.As(res.Err, &runaway) || runaway.Reason != RunawayRepetition || len(res.Calls) != 0 || runaway.KB > 64 {
+				t.Fatalf("5 MB repeating args not stopped early: err=%v calls=%d", res.Err, len(res.Calls))
 			}
-			var args struct{ Path, Content string }
-			if err := json.Unmarshal([]byte(res.Calls[0].Arguments), &args); err != nil || len(args.Content) < total {
-				t.Fatalf("args damaged: err=%v len=%d", err, len(args.Content))
+		})
+	}
+	var csv strings.Builder
+	for i := 0; csv.Len() < 200<<10; i++ {
+		fmt.Fprintf(&csv, "%d,2024-%02d-%02d,item-%d,%d.%02d\n", 100000+i, 1+i%12, 1+i%28, i*7, (i*7919)%10000, i%100)
+	}
+	full := a130JSON(map[string]string{"path": "big.csv", "content": csv.String()})
+	for _, wire := range a130Wires {
+		t.Run(string(wire)+"/legit-200KiB", func(t *testing.T) {
+			m := newA130Mock(t, func(w http.ResponseWriter, r *http.Request, n int) {
+				a130ToolStart(wire, w, full[:1])
+				for i := 1; i < len(full); i += 8192 {
+					a130ToolArgs(wire, w, full[i:min(i+8192, len(full))])
+				}
+				if wire == wireChat {
+					a130Write(w, chatFinishLine("tool_calls")+chatDoneLine)
+				} else {
+					a130Write(w, respCompletedLine(nil))
+				}
+			})
+			p, _ := a130Provider(t, wire, m.URL(), 10*time.Second)
+			res := a130Run(t, context.Background(), p, 30*time.Second)
+			if res.Err != nil || len(res.Calls) != 1 || res.Calls[0].Arguments != full {
+				t.Fatalf("legit 200 KiB args: err=%v calls=%d", res.Err, len(res.Calls))
 			}
 		})
 	}
 }
 
-// 1h. A tool call whose complete arguments arrive on ONE SSE line. Real
-// Responses API streams always do this (function_call_arguments.done,
-// output_item.done and response.completed each echo the full arguments);
-// many Chat Completions servers (Ollama, LM Studio, vLLM without arg
-// streaming) send the whole call in one chunk. Both line scanners are capped
-// at 1 MiB (bufio.Scanner buffer in parseOpenAIDataLines/streamCodexSSE), so
-// any call with > ~1 MiB of arguments (a large write_file) fails the whole
-// response with "bufio.Scanner: token too long" and is not retried.
+// 1h. One SSE line larger than 1 MiB. Real Responses API streams echo the
+// full tool arguments on one line (function_call_arguments.done,
+// output_item.done, response.completed); many Chat Completions servers send a
+// whole call or a long answer in one chunk. The line scanners used to be
+// capped at 1 MiB and failed the response with "bufio.Scanner: token too
+// long". Now lines are read without that cap: a 1.5 MiB text line is parsed,
+// and a 1.5 MiB single-line tool call is rejected by the 256 KiB per-call
+// argument cap (typed RunawayToolCallError, retried by the agent), not by the
+// line reader.
 func TestA130_HugeToolArgsSingleSSELine(t *testing.T) {
 	const size = 1536 << 10 // 1.5 MiB
-	content := strings.Repeat("abcdefgh", size/8)
-	full := a130JSON(map[string]string{"path": "big.txt", "content": content})
+	var text strings.Builder
+	for i := 0; text.Len() < size; i++ {
+		fmt.Fprintf(&text, "paragraph %d: the quick brown fox %d jumps over %d lazy dogs. ", i, i*31, i%97)
+	}
 	for _, wire := range a130Wires {
-		t.Run(string(wire), func(t *testing.T) {
+		t.Run(string(wire)+"/text", func(t *testing.T) {
+			m := newA130Mock(t, func(w http.ResponseWriter, r *http.Request, n int) {
+				a130TextStream(wire, w, text.String())
+				a130Finish(wire, w)
+			})
+			p, _ := a130Provider(t, wire, m.URL(), 10*time.Second)
+			res := a130Run(t, context.Background(), p, 30*time.Second)
+			if res.Err != nil || res.Content != text.String() {
+				t.Fatalf("1.5 MiB single-line text: err=%v len=%d", res.Err, len(res.Content))
+			}
+		})
+	}
+	var content strings.Builder
+	for i := 0; content.Len() < size; i++ {
+		fmt.Fprintf(&content, "row %d,%d,%d\n", i, i*i, i*7919%10007)
+	}
+	full := a130JSON(map[string]string{"path": "big.txt", "content": content.String()})
+	for _, wire := range a130Wires {
+		t.Run(string(wire)+"/tool-args", func(t *testing.T) {
 			m := newA130Mock(t, func(w http.ResponseWriter, r *http.Request, n int) {
 				a130SSEHeaders(w)
 				if wire == wireChat {
@@ -284,21 +333,21 @@ func TestA130_HugeToolArgsSingleSSELine(t *testing.T) {
 					a130Write(w, chatFinishLine("tool_calls")+chatDoneLine)
 					return
 				}
+				// Gateway shape without deltas: the full arguments only on
+				// the done / completed lines.
 				a130Write(w, respToolAddedLine("write_file"))
-				for i := 0; i < len(full); i += 8192 {
-					a130Write(w, respArgsDeltaLine(full[i:min(i+8192, len(full))]))
-				}
 				a130Write(w, respToolDoneLines("write_file", full))
 				a130Write(w, respCompletedLine([]any{map[string]any{"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "write_file", "arguments": full}}))
 			})
 			p, _ := a130Provider(t, wire, m.URL(), 10*time.Second)
 			res := a130Run(t, context.Background(), p, 30*time.Second)
-			t.Logf("%s: err=%v calls=%d argBytes=%d elapsed=%s", wire, res.Err, len(res.Calls), res.ArgBytes, res.Elapsed)
+			t.Logf("%s: err=%v calls=%d elapsed=%s", wire, res.Err, len(res.Calls), res.Elapsed)
+			var runaway *RunawayToolCallError
 			if res.Err != nil && strings.Contains(res.Err.Error(), "token too long") {
-				a130KnownFailing(t, "SSE line scanner capped at 1 MiB: a tool call with >1 MiB arguments on one SSE line (always the case on the Responses API) fails the response with 'bufio.Scanner: token too long' ("+string(wire)+")")
+				t.Fatalf("SSE line limit still applies: %v", res.Err)
 			}
-			if res.Err != nil || len(res.Calls) != 1 || len(res.Calls[0].Arguments) != len(full) {
-				t.Fatalf("1.5 MiB single-line args: err=%v calls=%d", res.Err, len(res.Calls))
+			if !errors.As(res.Err, &runaway) || runaway.Reason != RunawayTooLarge || len(res.Calls) != 0 {
+				t.Fatalf("1.5 MiB single-line args: want the 256 KiB cap error, got err=%v calls=%d", res.Err, len(res.Calls))
 			}
 		})
 	}
@@ -351,9 +400,10 @@ const a130IncidentBlock = " RENDERING_ARGS####json 1/1 (1)####{\"\\t\\t:\\t\" } 
 
 // 3. Reproduction of the 1.0.28 degenerate-args incident at wire level:
 // a tool call whose arguments degenerate into a repeating NON-whitespace
-// block. Nothing stops it; the transport accepts everything the server sends
-// (here 2 MiB, the incident streamed ~265k chars / 128k tokens for 12 min).
-func TestA130_DegenerateRepeatingBlockArgsHaveNoGuard(t *testing.T) {
+// block (the incident streamed ~265k chars / 128k tokens for 12 min). The
+// repetition guard stops it within the first 16-32 KiB with a typed
+// RunawayToolCallError; the call is never emitted.
+func TestA130_DegenerateRepeatingBlockArgsStopped(t *testing.T) {
 	const limit = 2 << 20
 	for _, wire := range a130Wires {
 		t.Run(string(wire), func(t *testing.T) {
@@ -378,8 +428,9 @@ func TestA130_DegenerateRepeatingBlockArgsHaveNoGuard(t *testing.T) {
 			p, _ := a130Provider(t, wire, m.URL(), 5*time.Second)
 			res := a130Run(t, context.Background(), p, 60*time.Second)
 			t.Logf("%s: err=%v finish=%q serverSent=%d acceptedArgBytes=%d elapsed=%s", wire, res.Err, res.Finish, sent.Load(), res.ArgBytes, res.Elapsed)
-			if res.Err == nil && res.ArgBytes >= limit {
-				a130KnownFailing(t, "no repetition guard for degenerate tool-call arguments: a repeating non-whitespace block (1.0.28 incident) is streamed until the provider's output cap ("+string(wire)+")")
+			var runaway *RunawayToolCallError
+			if !errors.As(res.Err, &runaway) || runaway.Reason != RunawayRepetition || len(res.Calls) != 0 || runaway.KB > 48 {
+				t.Fatalf("repeating block not stopped: err=%v calls=%d", res.Err, len(res.Calls))
 			}
 			if res.ArgBytes > 256<<10 {
 				t.Fatalf("accepted %d bytes of a repeating block", res.ArgBytes)
@@ -418,9 +469,9 @@ func TestA130_SilentHangAfterHeaders(t *testing.T) {
 	}
 }
 
-// 1j'. The idle-timeout error is indistinguishable from a user cancel: it
-// surfaces as "context canceled" and classifies as permanent, so it is never
-// retried although docs/configuration.md lists timeouts as retried.
+// 1j'. The idle-timeout error must not look like a user cancel: it is a
+// typed StreamIdleTimeoutError ("no data from provider for ..."), not
+// context.Canceled, and classified transient so the agent retries it.
 func TestA130_SilentHangErrorIsClearAndRetryable(t *testing.T) {
 	for _, wire := range a130Wires {
 		t.Run(string(wire), func(t *testing.T) {
@@ -434,9 +485,12 @@ func TestA130_SilentHangErrorIsClearAndRetryable(t *testing.T) {
 			clear := strings.Contains(msg, "idle") || strings.Contains(msg, "timeout") || strings.Contains(msg, "no data")
 			cls := ClassifyProviderError(res.Err)
 			t.Logf("%s: err=%q class=%s", wire, res.Err, cls)
-			if !clear || cls == RetryPermanent {
-				a130KnownFailing(t, "idle-timeout stall surfaces as '"+res.Err.Error()+"' (class "+cls.String()+"): not identifiable as a timeout and classified permanent, so never retried ("+string(wire)+")")
-				t.Fatalf("unclear/permanent idle-timeout error")
+			if !clear || cls != RetryTransient {
+				t.Fatalf("unclear/non-transient idle-timeout error %q (class %s)", res.Err, cls)
+			}
+			var idle *StreamIdleTimeoutError
+			if !errors.Is(res.Err, ErrStreamIdleTimeout) || !errors.As(res.Err, &idle) || idle.Idle != 500*time.Millisecond || errors.Is(res.Err, context.Canceled) {
+				t.Fatalf("idle timeout not typed: %T %v (canceled=%v)", res.Err, res.Err, errors.Is(res.Err, context.Canceled))
 			}
 		})
 	}
@@ -560,30 +614,138 @@ func TestA130_VeryLongSingleResponse(t *testing.T) {
 	}
 }
 
-// 3'. What output cap does SuperCli request? With the default config
-// (OpenAIConfig.MaxTokens = 0 / SUPERCLI_LLM_MAX_TOKENS unset) neither wire
-// sends max_tokens / max_completion_tokens / max_output_tokens, so a
-// degenerate stream runs to the provider's model maximum (128k tokens for
-// gpt-6-luna in the 1.0.28 incident).
+// 3'. What output cap does SuperCli request? Before 1.0.30 neither wire sent
+// max_tokens / max_completion_tokens / max_output_tokens by default, so a
+// degenerate stream ran to the model maximum (128k tokens for gpt-6-luna in
+// the 1.0.28 incident). Now a cloud endpoint gets DefaultMaxOutputTokens
+// unless SUPERCLI_LLM_MAX_TOKENS (MaxTokens) is configured; local servers get
+// nothing (their limit is the loaded context).
 func TestA130_RequestedOutputTokenCap(t *testing.T) {
-	for _, wire := range a130Wires {
-		t.Run(string(wire), func(t *testing.T) {
-			m := newA130Mock(t, func(w http.ResponseWriter, r *http.Request, _ int) { a130OK(wire, w) })
-			p, _ := a130Provider(t, wire, m.URL(), 5*time.Second)
-			if res := a130Run(t, context.Background(), p, 10*time.Second); res.Err != nil {
-				t.Fatal(res.Err)
+	capFields := func(body map[string]any) map[string]any {
+		found := map[string]any{}
+		for _, k := range []string{"max_tokens", "max_completion_tokens", "max_output_tokens"} {
+			if v, ok := body[k]; ok {
+				found[k] = v
 			}
-			body := m.Body(0)
-			found := map[string]any{}
-			for _, k := range []string{"max_tokens", "max_completion_tokens", "max_output_tokens"} {
-				if v, ok := body[k]; ok {
-					found[k] = v
-				}
-			}
-			t.Logf("%s: output cap fields in request: %v (stream=%v)", wire, found, body["stream"])
-			if len(found) != 0 {
-				t.Fatalf("default request now carries an output cap %v: update the audit-130 notes", found)
-			}
-		})
+		}
+		return found
 	}
+	for _, wire := range a130Wires {
+		field := "max_tokens"
+		if wire == wireResponses {
+			field = "max_output_tokens"
+		}
+		for _, tc := range []struct {
+			name       string
+			remote     bool
+			configured int
+			want       any
+		}{
+			{"cloud-default", true, 0, float64(DefaultMaxOutputTokens)},
+			{"cloud-configured", true, 1234, float64(1234)},
+			{"local-default", false, 0, nil},
+			{"local-configured", false, 777, float64(777)},
+		} {
+			t.Run(string(wire)+"/"+tc.name, func(t *testing.T) {
+				m := newA130Mock(t, func(w http.ResponseWriter, r *http.Request, _ int) { a130OK(wire, w) })
+				p := a130CapProvider(t, wire, m, tc.remote, "cap-model-"+tc.name, tc.configured)
+				if res := a130Run(t, context.Background(), p, 10*time.Second); res.Err != nil {
+					t.Fatal(res.Err)
+				}
+				found := capFields(m.Body(0))
+				t.Logf("%s/%s: output cap fields in request: %v", wire, tc.name, found)
+				if tc.want == nil {
+					if len(found) != 0 {
+						t.Fatalf("local default request carries an output cap %v", found)
+					}
+					return
+				}
+				if len(found) != 1 || found[field] != tc.want {
+					t.Fatalf("want %s=%v, got %v", field, tc.want, found)
+				}
+			})
+		}
+	}
+}
+
+// A provider that rejects the default cap (too large for the model, or an
+// unknown parameter) gets one retry with the limit it named or without the
+// field; the decision is remembered for the next request.
+func TestA130_DefaultOutputCapRejectionIsLearned(t *testing.T) {
+	for _, wire := range a130Wires {
+		for _, tc := range []struct {
+			name, body string
+			want       any
+		}{
+			{"too-large", `{"error":{"message":"max_tokens is too large: 32000. This model supports at most 16384 completion tokens, whereas you provided 32000.","type":"invalid_request_error","param":"max_tokens","code":"invalid_value"}}`, float64(16384)},
+			{"unsupported", `{"error":{"message":"Unsupported parameter: 'max_output_tokens' / 'max_tokens' is not supported with this model.","type":"invalid_request_error","code":"unsupported_parameter"}}`, nil},
+		} {
+			t.Run(string(wire)+"/"+tc.name, func(t *testing.T) {
+				a130WithRetries(t, 0, false)
+				m := newA130Mock(t, func(w http.ResponseWriter, r *http.Request, n int) {
+					if n == 1 {
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusBadRequest)
+						fmt.Fprint(w, tc.body)
+						return
+					}
+					a130OK(wire, w)
+				})
+				model := "learn-" + string(wire) + "-" + tc.name
+				p := a130CapProvider(t, wire, m, true, model, 0)
+				for i := 0; i < 2; i++ {
+					if res := a130Run(t, context.Background(), p, 10*time.Second); res.Err != nil || res.Content != "ok" {
+						t.Fatalf("run %d: err=%v content=%q", i, res.Err, res.Content)
+					}
+				}
+				if got := m.requests.Load(); got != 3 {
+					t.Fatalf("requests = %d, want 3 (rejected, retried, learned)", got)
+				}
+				for _, i := range []int{1, 2} {
+					body := m.Body(i)
+					var got any
+					for _, k := range []string{"max_tokens", "max_completion_tokens", "max_output_tokens"} {
+						if v, ok := body[k]; ok {
+							got = v
+						}
+					}
+					if got != tc.want {
+						t.Fatalf("request %d cap = %v, want %v", i+1, got, tc.want)
+					}
+				}
+			})
+		}
+	}
+}
+
+// a130CapProvider builds the provider against the mock either as a local
+// endpoint (127.0.0.1) or under a public-looking hostname that a custom
+// dialer routes to the mock, so the cloud defaults apply.
+func a130CapProvider(t *testing.T, wire a130Wire, m *a130Mock, remote bool, model string, maxTokens int) Provider {
+	t.Helper()
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	t.Cleanup(tr.CloseIdleConnections)
+	baseURL := m.URL()
+	if remote {
+		addr := strings.TrimPrefix(m.srv.URL, "http://")
+		dialer := &net.Dialer{Timeout: 5 * time.Second}
+		tr.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return dialer.DialContext(ctx, network, addr)
+		}
+		baseURL = "http://api.cloud-provider.example/v1"
+	}
+	client := &http.Client{Transport: tr}
+	var (
+		p   Provider
+		err error
+	)
+	if wire == wireChat {
+		p, err = NewOpenAI(OpenAIConfig{BaseURL: baseURL, APIKey: "dummy", Model: model, MaxTokens: maxTokens, Timeout: 5 * time.Second, HTTPClient: client, Capabilities: NewCapabilityRegistry()})
+	} else {
+		p, err = NewResponses(ResponsesConfig{BaseURL: baseURL, APIKey: "dummy", Model: model, MaxTokens: maxTokens, Timeout: 5 * time.Second, HTTPClient: client, Capabilities: NewCapabilityRegistry()})
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
 }

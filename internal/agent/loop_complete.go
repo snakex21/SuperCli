@@ -48,6 +48,15 @@ func (l *Loop) completeOnce(ctx context.Context, toolRequest preparedToolRequest
 	l.deactivateActiveImages()
 	hadProgress := false
 	text, calls, usage, err := l.consumeWithProgress(ctx, stream, out, &hadProgress)
+	if err != nil && usage == nil && hadProgress {
+		// The stream was accepted and produced output, then ended without a
+		// usage frame (cancelled by the user, dropped, aborted). The provider
+		// billed it anyway: count an estimate (request estimate in, streamed
+		// transcript and tool calls out) instead of nothing.
+		usage = &llm.Usage{Input: requestEstimate, Estimated: true}
+		usage.Output = llm.EstimateMessageTokens(llm.Message{Role: llm.RoleAssistant, Content: text, ToolCalls: calls})
+		usage.Total = usage.Input + usage.Output
+	}
 	if err != nil {
 		if _, truncated := err.(*truncatedToolResponseError); !truncated {
 			// Preserve the partial transcript/calls for the caller's interrupted

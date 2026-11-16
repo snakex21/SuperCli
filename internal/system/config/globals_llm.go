@@ -2,6 +2,7 @@ package config
 
 import (
 	"log"
+	"time"
 
 	"supercli/internal/llm"
 )
@@ -63,4 +64,9 @@ func ApplyLLMGlobals(t TomlConfig, envTemperature *float64) {
 	// per [[providers]] entry). Every surface — TUI, batch, web GUI and the
 	// NestCafe profile of supercli-web — reaches this call.
 	ApplyRetryGlobals(t)
+
+	// Wall-time cap on one model call's tool-call argument stream
+	// (SUPERCLI_LLM_TOOL_STREAM_TIMEOUT seconds; default 600, 0 or negative
+	// disables). Progress notices are shown every 30 s meanwhile.
+	llm.SetToolCallStreamLimit(time.Duration(getEnvInt("SUPERCLI_LLM_TOOL_STREAM_TIMEOUT", int(llm.DefaultToolCallStreamLimit/time.Second))) * time.Second)
 }

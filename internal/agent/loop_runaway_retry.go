@@ -24,13 +24,22 @@ func (l *Loop) retryRunawayToolCall(ctx context.Context, err error, out chan<- E
 		return false
 	}
 	l.runawayRetries++
+	what := "degenerated into whitespace while streaming its arguments"
+	switch runaway.Reason {
+	case llm.RunawayRepetition:
+		what = "degenerated into a repeating block while streaming its arguments"
+	case llm.RunawayTooLarge:
+		what = "exceeded the tool-call argument size limit while streaming"
+	case llm.RunawayTooSlow:
+		what = "kept streaming its arguments past the time limit"
+	}
 	msg := llm.Message{Role: llm.RoleSystem, Content: fmt.Sprintf(
-		"[runaway tool call] Your last %s call degenerated into whitespace while streaming its arguments and was cancelled before it ran; nothing was changed. "+
-			"Send the call again with complete, correct arguments; split a large edit into several smaller calls.", runaway.Tool)}
+		"[runaway tool call] Your last %s call %s and was cancelled before it ran; nothing was changed. "+
+			"Send the call again with complete, correct arguments; split a large edit into several smaller calls.", runaway.Tool, what)}
 	l.Messages = append(l.Messages, msg)
 	l.persist(ctx, msg)
 	if out != nil {
-		out <- NoticeEvent{Text: fmt.Sprintf("runaway %s call stopped (%d KB of whitespace); asking the model to send it again (%d/%d)", runaway.Tool, runaway.KB, l.runawayRetries, maxRunawayRetries)}
+		out <- NoticeEvent{Text: fmt.Sprintf("runaway %s call stopped (%s); asking the model to send it again (%d/%d)", runaway.Tool, runaway.Describe(), l.runawayRetries, maxRunawayRetries)}
 	}
 	return true
 }

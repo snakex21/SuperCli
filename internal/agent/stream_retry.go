@@ -274,6 +274,12 @@ func (l *Loop) completeWithStreamRetry(ctx context.Context, toolRequest prepared
 		}
 		outage := isShortNetworkOutage(err)
 		inStream := !outage && retryableAcceptedStreamError(err)
+		// A dropped connection or an idle stall is replayed only before ANY
+		// output reached the UI, streamed reasoning included: re-requesting
+		// after shown reasoning would display it twice.
+		if inStream && llm.IsStreamTransportFailure(err) && strings.TrimSpace(text) != "" {
+			inStream = false
+		}
 		if !outage && !inStream && !isTransientCompletionError(err) {
 			break
 		}
@@ -284,9 +290,16 @@ func (l *Loop) completeWithStreamRetry(ctx context.Context, toolRequest prepared
 		wait := streamRetryBackoff(retries, err)
 		progress := llm.RetryProgress(retries)
 		var notice string
+		var idle *llm.StreamIdleTimeoutError
 		switch {
 		case outage:
 			notice = fmt.Sprintf("Model connection unavailable — waiting %s before retry %s.", wait.Round(100*time.Millisecond), progress)
+		case errors.As(err, &idle):
+			what := "no data from provider"
+			if idle.Headers {
+				what = "no response from provider"
+			}
+			notice = fmt.Sprintf("%s for %s; retrying in %s (retry %s)", what, idle.Idle.Round(100*time.Millisecond), wait.Round(100*time.Millisecond), progress)
 		default:
 			notice = fmt.Sprintf("connection to the model dropped (%v) — retrying in %s (retry %s)", err, wait.Round(100*time.Millisecond), progress)
 		}
@@ -301,6 +314,7 @@ func (l *Loop) completeWithStreamRetry(ctx context.Context, toolRequest prepared
 		if ctx.Err() != nil {
 			return text, calls, usage, ctx.Err()
 		}
+		l.noteDiscardedUsage(usage)
 		text, calls, usage, err = l.completeOnce(llm.WithCallReason(ctx, llm.ReasonTransportRetry), toolRequest, out)
 	}
 	return text, calls, usage, err

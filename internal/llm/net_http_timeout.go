@@ -1,7 +1,6 @@
 package llm
 
 import (
-	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -42,7 +41,7 @@ func doWithResponseHeaderTimeout(client *http.Client, req *http.Request, timeout
 		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()
 		}
-		return nil, fmt.Errorf("response headers timeout after %s", timeout)
+		return nil, &StreamIdleTimeoutError{Idle: timeout, Headers: true}
 	}
 	return resp, err
 }

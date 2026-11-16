@@ -487,3 +487,14 @@ func repairToolArguments(raw string, repairValues bool) (string, bool) {
 	}
 	return "", false
 }
+
+// rejectedToolArgumentsStub replaces the arguments of a rejected (truncated
+// or degenerate) tool call in history and events with a short JSON note.
+func rejectedToolArgumentsStub(raw string) string {
+	kind := "truncated"
+	if llm.DegenerateToolArguments(raw) {
+		kind = "degenerate"
+	}
+	b, _ := json.Marshal(map[string]string{"_rejected": fmt.Sprintf("%s arguments (%d bytes) discarded", kind, len(raw))})
+	return string(b)
+}
