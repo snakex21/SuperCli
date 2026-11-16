@@ -85,6 +85,9 @@ func TestAudit130RetryStateInStatusLineAndCleared(t *testing.T) {
 	if !strings.Contains(status, "429") && !strings.Contains(strings.ToLower(status), "retry") {
 		t.Fatalf("status rows do not show the retry state:\n%s", status)
 	}
+	if strings.Contains(status, textFor("en", "tui.model_view.2a7749f651")) {
+		t.Fatalf("status rows still show the generic working label during the backoff:\n%s", status)
+	}
 	m = audit130Event(m, agent.MessageEvent{Text: "hello"})
 	status = strings.Join(audit130StatusRows(m.View()), "\n")
 	if strings.Contains(status, "429") || strings.Contains(strings.ToLower(status), "retry") {
