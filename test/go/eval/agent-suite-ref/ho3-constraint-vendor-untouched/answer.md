@@ -1,0 +1,1 @@
+The vendored slugify strips diacritics via NFD, but ł/Ł have no decomposition, so they were dropped. Fixed in src/urls.js only: a local wrapper transliterates ł/Ł to l/L before calling the vendored slugify, used by articleUrl and tagUrl. vendor/ and the tests are untouched; tests pass.

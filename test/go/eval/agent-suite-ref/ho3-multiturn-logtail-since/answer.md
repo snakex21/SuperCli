@@ -1,0 +1,1 @@
+`--since` now accepts a duration relative to `--now` (e.g. `15m`) or an RFC 3339 timestamp (with `Z` or an offset). Entries exactly at the cutoff are shown; an invalid value exits with status 2 and an error mentioning --since. `go test ./...` passes.

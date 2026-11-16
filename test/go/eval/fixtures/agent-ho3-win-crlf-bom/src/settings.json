@@ -1,0 +1,9 @@
+{
+  "name": "aplikacja-serwer",
+  "port": 8080,
+  "region": "westeurope",
+  "features": {
+    "audit": true,
+    "legacyApi": false
+  }
+}

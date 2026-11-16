@@ -1,0 +1,83 @@
+{
+ "author": [
+  "Anna Kowalska",
+  "anna.kowalska@example.com"
+ ],
+ "config": {
+  "commit.gpgsign": "false",
+  "core.autocrlf": "false",
+  "user.email": "developer@example.com",
+  "user.name": "Developer"
+ },
+ "final": "feature/report",
+ "initial_branch": "main",
+ "steps": [
+  {
+   "date": "2026-01-05T09:00:00+01:00",
+   "message": "Initial report generator",
+   "op": "commit",
+   "write": {
+    ".gitignore": "__pycache__/\n*.pyc\n",
+    "README.md": "# sales-report\n\nRenders sales totals.\n",
+    "src/__init__.py": "",
+    "src/fmt.py": "\"\"\"Number formatting.\"\"\"\n\n\ndef amount(value, currency=\"\"):\n    text = \"%.2f\" % value\n    return (text + \" \" + currency).strip()\n",
+    "src/report.py": "\"\"\"Sales report: totals per product.\"\"\"\nfrom collections import defaultdict\n\nfrom src.fmt import amount\n\n\ndef totals(rows):\n    \"\"\"rows: dicts with product, region, value -> {product: total}.\"\"\"\n    out = defaultdict(float)\n    for r in rows:\n        out[r[\"product\"]] += r[\"value\"]\n    return dict(out)\n\n\ndef render(rows):\n    lines = []\n    for product, value in sorted(totals(rows).items()):\n        lines.append(\"%-12s %12s\" % (product, amount(value)))\n    return \"\\n\".join(lines)\n",
+    "tests/__init__.py": "",
+    "tests/test_report.py": "import unittest\n\nfrom src.report import totals\n\nROWS = [{\"product\": \"kawa\", \"region\": \"PL-MA\", \"value\": 10.0},\n        {\"product\": \"kawa\", \"region\": \"PL-MZ\", \"value\": 5.5},\n        {\"product\": \"herbata\", \"region\": \"PL-MA\", \"value\": 2.0}]\n\n\nclass ReportTest(unittest.TestCase):\n    def test_totals(self):\n        self.assertEqual(totals(ROWS), {\"kawa\": 15.5, \"herbata\": 2.0})\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+   }
+  },
+  {
+   "from": "main",
+   "name": "feature/report",
+   "op": "branch"
+  },
+  {
+   "name": "feature/report",
+   "op": "checkout"
+  },
+  {
+   "date": "2026-01-08T11:00:00+01:00",
+   "message": "docs: describe report columns",
+   "op": "commit",
+   "write": {
+    "docs/report.md": "# Report columns\n\n- `product` - product name\n- `region` - ISO 3166-2 region code\n- `value` - net sales in PLN\n"
+   }
+  },
+  {
+   "date": "2026-01-09T15:30:00+01:00",
+   "message": "report: group totals by region",
+   "op": "commit",
+   "write": {
+    "src/report.py": "\"\"\"Sales report: totals per product.\"\"\"\nfrom collections import defaultdict\n\nfrom src.fmt import amount\n\n\ndef totals(rows, by=\"product\"):\n    \"\"\"rows: dicts with product, region, value -> {key: total} grouped by `by`.\"\"\"\n    out = defaultdict(float)\n    for r in rows:\n        out[r[by]] += r[\"value\"]\n    return dict(out)\n\n\ndef render(rows, by=\"product\"):\n    lines = []\n    for key, value in sorted(totals(rows, by).items()):\n        lines.append(\"%-12s %12s\" % (key, amount(value)))\n    return \"\\n\".join(lines)\n"
+   }
+  },
+  {
+   "date": "2026-01-10T10:10:00+01:00",
+   "message": "tests: cover regional grouping",
+   "op": "commit",
+   "write": {
+    "tests/test_regions.py": "import unittest\n\nfrom src.report import totals\nfrom tests.test_report import ROWS\n\n\nclass RegionTest(unittest.TestCase):\n    def test_by_region(self):\n        self.assertEqual(totals(ROWS, by=\"region\"), {\"PL-MA\": 12.0, \"PL-MZ\": 5.5})\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+   }
+  },
+  {
+   "name": "main",
+   "op": "checkout"
+  },
+  {
+   "date": "2026-01-12T09:45:00+01:00",
+   "message": "fmt: thousands separator",
+   "op": "commit",
+   "write": {
+    "src/fmt.py": "\"\"\"Number formatting.\"\"\"\n\n\ndef amount(value, currency=\"\"):\n    text = \"{:,.2f}\".format(value).replace(\",\", \" \")\n    return (text + \" \" + currency).strip()\n"
+   }
+  },
+  {
+   "date": "2026-01-14T16:20:00+01:00",
+   "message": "report: switch currency formatting to PLN",
+   "op": "commit",
+   "write": {
+    "src/report.py": "\"\"\"Sales report: totals per product.\"\"\"\nfrom collections import defaultdict\n\nfrom src.fmt import amount\n\n\ndef totals(rows):\n    \"\"\"rows: dicts with product, region, value -> {product: total}.\"\"\"\n    out = defaultdict(float)\n    for r in rows:\n        out[r[\"product\"]] += r[\"value\"]\n    return dict(out)\n\n\ndef render(rows):\n    lines = []\n    for product, value in sorted(totals(rows).items()):\n        lines.append(\"%-12s %16s\" % (product, amount(value, currency=\"PLN\")))\n    return \"\\n\".join(lines)\n"
+   }
+  }
+ ]
+}

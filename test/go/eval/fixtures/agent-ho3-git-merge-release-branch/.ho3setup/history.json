@@ -1,0 +1,71 @@
+{
+ "author": [
+  "Anna Kowalska",
+  "anna.kowalska@example.com"
+ ],
+ "config": {
+  "commit.gpgsign": "false",
+  "core.autocrlf": "false",
+  "user.email": "developer@example.com",
+  "user.name": "Developer"
+ },
+ "final": "main",
+ "initial_branch": "main",
+ "steps": [
+  {
+   "date": "2026-02-02T09:00:00+01:00",
+   "message": "Initial import of the pricing module",
+   "op": "commit",
+   "write": {
+    ".gitignore": "__pycache__/\n*.pyc\n",
+    "CHANGELOG.md": "# Changelog\n\n## Unreleased\n\n## 1.3.0\n\n- First public release of the pricing module.\n",
+    "README.md": "# pricing\n\nOrder pricing helpers. Tests: `python -m unittest discover -s tests -t .`\n",
+    "pricing/__init__.py": "",
+    "pricing/core.py": "\"\"\"Order pricing. Amounts are Decimal values in PLN.\"\"\"\nfrom decimal import ROUND_HALF_UP, Decimal\n\nCENT = Decimal(\"0.01\")\n\n\ndef money(x):\n    \"\"\"Round to grosze, half up.\"\"\"\n    return Decimal(x).quantize(CENT, rounding=ROUND_HALF_UP)\n\n\ndef order_total(lines):\n    \"\"\"Total of (unit_price, qty) lines, rounded to grosze.\"\"\"\n    total = Decimal(\"0\")\n    for unit_price, qty in lines:\n        total += Decimal(unit_price) * qty\n    return money(total)\n",
+    "tests/__init__.py": "",
+    "tests/test_core.py": "import unittest\nfrom decimal import Decimal\n\nfrom pricing.core import money, order_total\n\n\nclass CoreTest(unittest.TestCase):\n    def test_money_rounds_half_up(self):\n        self.assertEqual(money(\"2.345\"), Decimal(\"2.35\"))\n\n    def test_order_total(self):\n        self.assertEqual(order_total([(\"19.99\", 3), (\"0.50\", 4)]), Decimal(\"61.97\"))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+   }
+  },
+  {
+   "from": "main",
+   "name": "feature/volume-discounts",
+   "op": "branch"
+  },
+  {
+   "name": "feature/volume-discounts",
+   "op": "checkout"
+  },
+  {
+   "date": "2026-02-10T10:15:00+01:00",
+   "message": "pricing: add volume discount tiers",
+   "op": "commit",
+   "write": {
+    "CHANGELOG.md": "# Changelog\n\n## Unreleased\n\n- Volume discounts: 5% from 50 units, 10% from 100 units per line.\n\n## 1.3.0\n\n- First public release of the pricing module.\n",
+    "pricing/core.py": "\"\"\"Order pricing. Amounts are Decimal values in PLN.\"\"\"\nfrom decimal import ROUND_HALF_UP, Decimal\n\nCENT = Decimal(\"0.01\")\n\n# (minimum quantity on one line, discount rate), highest tier first.\nDISCOUNT_TIERS = [(100, Decimal(\"0.10\")), (50, Decimal(\"0.05\"))]\n\n\ndef money(x):\n    \"\"\"Round to grosze, half up.\"\"\"\n    return Decimal(x).quantize(CENT, rounding=ROUND_HALF_UP)\n\n\ndef discount_for(qty):\n    \"\"\"Volume discount rate for one order line.\"\"\"\n    for min_qty, rate in DISCOUNT_TIERS:\n        if qty >= min_qty:\n            return rate\n    return Decimal(\"0\")\n\n\ndef order_total(lines):\n    \"\"\"Total of (unit_price, qty) lines after volume discounts.\n\n    The discount applies to the net line amount; every line is rounded to grosze.\n    \"\"\"\n    total = Decimal(\"0\")\n    for unit_price, qty in lines:\n        net = Decimal(unit_price) * qty\n        total += money(net * (1 - discount_for(qty)))\n    return money(total)\n",
+    "tests/test_discounts.py": "import unittest\nfrom decimal import Decimal\n\nfrom pricing.core import discount_for, order_total\n\n\nclass DiscountTest(unittest.TestCase):\n    def test_tiers(self):\n        self.assertEqual(discount_for(49), Decimal(\"0\"))\n        self.assertEqual(discount_for(50), Decimal(\"0.05\"))\n        self.assertEqual(discount_for(100), Decimal(\"0.10\"))\n\n    def test_total_with_discount(self):\n        # 120 x 2.00 = 240.00 - 10% = 216.00; 10 x 1.00 = 10.00\n        self.assertEqual(order_total([(\"2.00\", 120), (\"1.00\", 10)]), Decimal(\"226.00\"))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+   }
+  },
+  {
+   "date": "2026-02-11T08:40:00+01:00",
+   "message": "docs: describe discount tiers",
+   "op": "commit",
+   "write": {
+    "README.md": "# pricing\n\nOrder pricing helpers. Tests: `python -m unittest discover -s tests -t .`\n\n## Volume discounts\n\nPer order line: 5% from 50 units, 10% from 100 units.\n"
+   }
+  },
+  {
+   "name": "main",
+   "op": "checkout"
+  },
+  {
+   "date": "2026-02-12T14:05:00+01:00",
+   "message": "pricing: add per-line VAT",
+   "op": "commit",
+   "write": {
+    "CHANGELOG.md": "# Changelog\n\n## Unreleased\n\n- `order_total` takes `vat_rate`; VAT is computed per line.\n\n## 1.3.0\n\n- First public release of the pricing module.\n",
+    "pricing/core.py": "\"\"\"Order pricing. Amounts are Decimal values in PLN.\"\"\"\nfrom decimal import ROUND_HALF_UP, Decimal\n\nCENT = Decimal(\"0.01\")\n\n\ndef money(x):\n    \"\"\"Round to grosze, half up.\"\"\"\n    return Decimal(x).quantize(CENT, rounding=ROUND_HALF_UP)\n\n\ndef order_total(lines, vat_rate=Decimal(\"0\")):\n    \"\"\"Gross total of (unit_price, qty) lines, rounded to grosze.\n\n    VAT is computed per line on the net line amount and rounded per line.\n    \"\"\"\n    total = Decimal(\"0\")\n    for unit_price, qty in lines:\n        net = money(Decimal(unit_price) * qty)\n        total += money(net * (1 + Decimal(vat_rate)))\n    return money(total)\n",
+    "tests/test_core.py": "import unittest\nfrom decimal import Decimal\n\nfrom pricing.core import money, order_total\n\n\nclass CoreTest(unittest.TestCase):\n    def test_money_rounds_half_up(self):\n        self.assertEqual(money(\"2.345\"), Decimal(\"2.35\"))\n\n    def test_order_total(self):\n        self.assertEqual(order_total([(\"19.99\", 3), (\"0.50\", 4)]), Decimal(\"61.97\"))\n\n    def test_vat_per_line(self):\n        # 3 x 3.33 = 9.99 -> 12.29 gross; 1 x 0.05 -> 0.06 gross\n        self.assertEqual(order_total([(\"3.33\", 3), (\"0.05\", 1)], vat_rate=Decimal(\"0.23\")), Decimal(\"12.35\"))\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+   }
+  }
+ ]
+}

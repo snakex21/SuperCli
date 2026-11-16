@@ -1,0 +1,7 @@
+2026-03-01T09:59:59Z INFO before window
+2026-03-01T10:00:00Z DEBUG exactly ten
+2026-03-01T10:14:59Z INFO one second early
+2026-03-01T10:15:00Z WARN exactly at cutoff
+2026-03-01T10:20:00Z DEBUG at absolute cutoff
+2026-03-01T10:25:30Z ERROR late error
+2026-03-01T10:30:00Z INFO at now

@@ -1,0 +1,1 @@
+Przyczyną był błąd w stałej `DNI_W_ROKU`: kod dzielił przez 360 dni, a zgodnie z opisem modułu (i oczekiwaniem testu) odsetki liczy się przy roku 365-dniowym. Dlatego dla 10 000 zł, 11,25% i 30 dni wychodziło 93,75 zł zamiast 92,47 zł. Zmieniłem `DNI_W_ROKU` z 360 na 365 w `odsetki/kalkulator.py`; testów nie ruszałem. Wszystkie testy przechodzą.
