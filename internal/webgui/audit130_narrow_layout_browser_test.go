@@ -75,12 +75,10 @@ const audit130NarrowProbe = `(async()=>{
  return {failures:fail};
 })()`
 
-// At phone widths phone.css hides the "think" label and the chevron while
-// app.css hides the level, and .topbar .think-btn gets min-width:0: the
-// reasoning-effort button renders as an empty ~16 px box with no visible
-// label or icon, under the 44 px touch target phone.css asks for.
+// At phone widths app.css hides the reasoning level and chevron; the
+// reasoning-effort button keeps its visible "think" label and the 44 px touch
+// target phone.css asks for (it used to be an empty ~16 px box).
 func TestAudit130NarrowReasoningButtonKeepsLabelAndTouchTarget(t *testing.T) {
-	audit130KnownFailing(t, "at <=560px the reasoning (think) button is an empty 16px box with no visible label")
 	app := audit130StartApp(t, 420, 800)
 	app.setLanguage("pl")
 	var failures []string
@@ -111,11 +109,10 @@ func TestAudit130NarrowReasoningButtonKeepsLabelAndTouchTarget(t *testing.T) {
 	}
 }
 
-// At <=560px the composer row is a 44px | 1fr | auto grid, but #run-status
-// spans columns 2/-1, so the Send button is pushed onto a third row of its
-// own and the composer costs ~48px more height on a phone.
+// At <=560px the composer row is a 44px | 1fr | auto grid: attach, run
+// status and Send share the first row (Send must not wrap onto a row of its
+// own, which cost a phone ~48px of transcript height).
 func TestAudit130NarrowComposerSendSharesRowWithAttach(t *testing.T) {
-	audit130KnownFailing(t, "at <=560px the Send button wraps onto its own composer row (run-status spans the send column)")
 	app := audit130StartApp(t, 420, 800)
 	app.setLanguage("pl")
 	var failures []string

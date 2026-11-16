@@ -55,14 +55,18 @@
   .topbar .icon-btn, .topbar .model-btn, .topbar .think-btn { min-width:44px; min-height:44px; }
   .topbar .model-btn { flex:1; min-width:0; max-width:none; padding:4px; }
   .topbar .m-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .topbar .m-prov, .topbar .think-btn > span:first-child, .topbar .chev { display:none; }
+  .topbar .m-prov, .topbar .chev { display:none; }
+  /* The reasoning button keeps its short visible label (level and chevron are
+     hidden at <=600px) and a full touch target; a long translation ellipsizes. */
+  .topbar .think-btn > span:first-child { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .composer-wrap { position:relative; flex-shrink:0; padding-bottom:env(safe-area-inset-bottom); background:var(--bg); }
   .composer .row { display:grid; grid-template-columns:44px minmax(0,1fr) auto; gap:4px; padding:4px; }
-  #run-status { grid-column:2 / -1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #run-status { grid-column:2; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   #attach-btn { grid-column:1; grid-row:1; }
   #stop-run-btn { grid-column:1; }
   #interrupt-btn { grid-column:2; min-width:0; white-space:normal; overflow-wrap:anywhere; }
-  #send-btn { grid-column:3; max-width:100%; min-width:0; overflow-wrap:anywhere; }
+  /* Send stays on the attach/status row; Stop and Interrupt take row two. */
+  #send-btn { grid-column:3; grid-row:1; max-width:100%; min-width:0; overflow-wrap:anywhere; }
   .composer button { min-width:0; max-width:100%; padding-left:8px; padding-right:8px; white-space:normal; overflow-wrap:anywhere; }
   .composer button[hidden] { display:none; }
   .composer button, .sidebar button, .sidebar-close, .side-tab, .panel button { min-height:44px; }
@@ -72,9 +76,13 @@
   .stream pre { max-width:100%; overflow:auto; }
   .sidebar { padding-bottom:env(safe-area-inset-bottom); }
   .topbar { min-width:0; }
-  .topbar .model-btn, .topbar .think-btn { min-width:0; overflow:hidden; }
+  .topbar .model-btn { min-width:0; overflow:hidden; }
+  .topbar .think-btn { overflow:hidden; justify-content:center; }
   .topbar .icon-btn, .topbar .think-btn { flex-shrink:0; }
-  .topbar .think-btn { max-width:64px; }
+  .topbar .think-btn { max-width:72px; }
+  /* Very narrow phones keep the model name readable: the reasoning button is
+     the bare 44px touch target with an ellipsized label. */
+  @media (max-width:400px) { .topbar .think-btn { max-width:44px; padding:0 4px; } }
   .sidebar, .side-list, .side-item { min-width:0; max-width:100%; }
   .side-item .s, .sidebar-head { overflow:hidden; text-overflow:ellipsis; }
   .question-overlay, .app-dialog-overlay { max-width:100%; box-sizing:border-box; }
