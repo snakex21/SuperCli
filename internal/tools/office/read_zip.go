@@ -339,15 +339,22 @@ func (t *ReadZipTool) extractAction(ctx context.Context, r *zip.Reader, pattern,
 }
 
 // rejectZipUnresolvedLinks rejects links left unresolved by the path resolver.
-// In particular, Windows mount-point junctions may appear as ModeIrregular.
 // A blank stop checks target ancestors before creating the target directory.
+//
+// An NTFS directory junction (mount point) is NOT rejected: a junction inside
+// the workspace is a deliberate grant by whoever created it (the file tools
+// and sandbox.ResolveSafe follow it in workspace coordinates), so extracting
+// into or through one is allowed. Zip-slip protection does not depend on
+// this check: entry names are still required to be local, re-joined under
+// the target and resolved by sandbox.ResolveSafe. Symlinks left unresolved
+// (dangling) and any other reparse point are still refused.
 func rejectZipUnresolvedLinks(path, stop string) error {
 	for {
 		info, err := os.Lstat(path)
 		if err != nil && !os.IsNotExist(err) {
 			return err
 		}
-		if err == nil && info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+		if err == nil && info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 && !isDirectoryJunction(path, info) {
 			return fmt.Errorf("unresolved symlink or irregular/reparse path %q", path)
 		}
 		parent := filepath.Dir(path)
