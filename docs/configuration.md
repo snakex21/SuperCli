@@ -359,8 +359,8 @@ documents, and ZIP extraction targets.
   also when its target does not exist yet. A dangling symlink is a grant too:
   `write_file` through it creates its target. A symlink whose existing target
   is outside the workspace is resolved and refused like any outside path.
-- Hard links are broken on write. `write_file`, `patch_file`, `edit_files`
-  and undo replace an existing file through a temporary file and a rename,
+- Hard links are broken on write. `write_file`, `patch_file`, `edit_files`,
+  undo and the GUI file editor replace an existing file through a temporary file and a rename,
   keeping its permissions, so a workspace file hard-linked to a file outside
   (for example a pnpm `node_modules` file linked into the global store) gets
   its own copy and the outside file never changes.
