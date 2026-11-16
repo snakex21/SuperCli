@@ -225,8 +225,11 @@ reasoning quality, is the bottleneck. The profile is frozen for the loop so the
 tool prefix never changes mid-session. `small_full_tools = true` remains the
 explicit full-schema escape hatch.
 
-`SUPERCLI_LLM_MAX_TOKENS` is carried through OpenAI-compatible and OpenCode
-transports as `max_tokens` (zero omits it). Batch streaming writes delta
+`SUPERCLI_LLM_MAX_TOKENS` is carried through OpenAI-compatible, Responses and
+OpenCode transports as `max_tokens` / `max_output_tokens`. When it is unset,
+cloud endpoints get a default cap (32000, or 64000 for reasoning models; see
+configuration.md, "Guards on what the model streams"); a negative value omits
+the field. Batch streaming writes delta
 fragments verbatim rather than adding a newline after every fragment.
 Repository preflight waits for a coordinator/project turn, so a greeting or
 general-advice turn no longer pays for repository state.

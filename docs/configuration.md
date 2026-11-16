@@ -122,6 +122,36 @@ which all read the same `config.toml` through the shared runtime):
   attempt produced no tool call and no visible answer text, so nothing was
   executed and nothing already shown is duplicated (reasoning-only progress
   is re-requested).
+- **Dropped and silent streams:** a connection that is reset or closed, or
+  ends with an unexpected EOF before anything was shown, is retried on both
+  the Chat Completions and the Responses wire. A stream that sends no data for
+  the idle timeout ends with `no data from provider for Ns (idle timeout)` and
+  is retried the same way. On the Responses wire an HTTP error keeps its status
+  and `Retry-After`, so `fallback_models` cooldowns work there too.
+
+Guards on what the model streams:
+
+- **Output cap:** when `SUPERCLI_LLM_MAX_TOKENS` is unset, cloud endpoints get
+  `max_tokens` / `max_output_tokens` = 32000 (64000 for reasoning models, whose
+  budget includes hidden reasoning). Local servers, OpenCode Zen and the
+  ChatGPT Codex backend get no default. If a provider rejects the default
+  (400/422 naming its limit), the request is repeated once with that limit or
+  without the field, and the choice is remembered for that endpoint and model.
+  `SUPERCLI_LLM_MAX_TOKENS` now applies to the Responses wire as well; a
+  negative value never sends a cap.
+- **Tool-call arguments:** one call's arguments are stopped at 256 KiB, or
+  earlier when the last 16 KiB are a loop (fewer than 1024 distinct 16-byte
+  pieces, or one block of at most 2 KiB repeated at least 8 times). The model
+  is asked to retry within the existing bounded retry; the rejected text is
+  not kept in the history (a short `{"_rejected": ...}` stub is stored).
+  Very regular data such as a long zero-filled array can trip this; the model
+  is then asked to split the write.
+- **Streaming time per tool call:** 10 minutes by default
+  (`SUPERCLI_LLM_TOOL_STREAM_TIMEOUT`, in seconds; 0 = off), with a progress
+  notice every 30 s while a long call streams.
+- **Usage of cancelled streams:** tokens of a stream that was cancelled or
+  failed are counted; when the provider sent no usage they are estimated and
+  marked as estimated.
 
 `requests_per_minute` limits how many requests SuperCli itself starts per
 minute (a sliding 60-second window, at most N starts in any minute). Use it for
