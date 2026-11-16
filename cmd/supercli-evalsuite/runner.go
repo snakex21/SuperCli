@@ -76,8 +76,49 @@ func superCLIRunner(o options) agenteval.AgentRunner {
 		if err != nil && !errors.Is(ctx.Err(), context.DeadlineExceeded) && strings.Contains(stdout.String(), `{"type":"usage"`) {
 			err = nil
 		}
-		return agenteval.AgentOutput{Stdout: stdout.String(), Stderr: stderr.String(), Answer: tr.FinalAnswer, Extra: extra}, err
+		output := agenteval.AgentOutput{Stdout: stdout.String(), Stderr: stderr.String(), Answer: tr.FinalAnswer, Extra: extra}
+		// A timed-out (killed) run never prints its final usage line, but
+		// the model calls it made were paid for: recover them from the
+		// session store so the report, the ledger and the budget count them.
+		if !strings.Contains(output.Stdout, `{"type":"usage","name":"run"`) {
+			if m := usageFromSessionsDB(filepath.Join(in.DataDir, "sessions.db")); m != nil {
+				m.ToolCalls = tr.toolCalls()
+				output.Metrics = m
+				extra["usageSource"] = m.Source
+			}
+		}
+		return output, err
 	}
+}
+
+// usageFromSessionsDB sums the per-call token usage a (possibly killed)
+// supercli run journaled in its isolated sessions.db. billing_usage is the
+// append-only journal of every paid model call; session_usage is the
+// fallback for stores without it. Input includes cached input, as in the
+// --trace-jsonl usage line. Returns nil when nothing was recorded.
+func usageFromSessionsDB(dbPath string) *agenteval.RunMetrics {
+	if _, err := os.Stat(dbPath); err != nil {
+		return nil
+	}
+	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(dbPath)+"?mode=ro")
+	if err != nil {
+		return nil
+	}
+	defer db.Close()
+	for _, table := range []string{"billing_usage", "session_usage"} {
+		var calls, modelCalls, in, out, cached, reasoning int
+		var durationMs int64
+		row := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(source = 'model'), 0), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0),
+			COALESCE(SUM(cached_input_tokens), 0), COALESCE(SUM(reasoning_tokens), 0), COALESCE(SUM(duration_ms), 0) FROM ` + table)
+		if row.Scan(&calls, &modelCalls, &in, &out, &cached, &reasoning, &durationMs) != nil || calls == 0 {
+			continue
+		}
+		m := &agenteval.RunMetrics{Input: in, Output: out, Cached: cached, Reasoning: reasoning, Requests: modelCalls,
+			DurationMs: durationMs, Error: true, Partial: true, Source: "sessions.db:" + table}
+		_ = db.QueryRow(`SELECT model FROM ` + table + ` WHERE model != '' ORDER BY created_at DESC LIMIT 1`).Scan(&m.Model)
+		return m
+	}
+	return nil
 }
 
 // prepareWorkspace writes the isolated agent config and turns the
@@ -279,6 +320,14 @@ func readTranscript(dbPath, workspace, runDir string) transcript {
 		tr.OutsideRefs = tr.OutsideRefs[:10]
 	}
 	return tr
+}
+
+func (tr transcript) toolCalls() int {
+	n := 0
+	for _, count := range tr.Histogram {
+		n += count
+	}
+	return n
 }
 
 func underDir(p, dir string) bool {

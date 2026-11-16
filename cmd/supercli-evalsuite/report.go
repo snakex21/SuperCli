@@ -59,8 +59,13 @@ func (l *ledger) add(run agenteval.RunReport) float64 {
 	l.total += cost
 	l.rows++
 	if l.o.ledger != "" {
+		model := m.Model
+		if m.Partial {
+			// Usage recovered from sessions.db after a timeout/kill.
+			model += " (partial)"
+		}
 		row := fmt.Sprintf("| %d | %s | %s | %s | %d | %s | %d | %d | %d | %d | %.4f | %.4f |\n", l.rows, time.Now().Format("15:04:05"),
-			l.o.label, run.TaskID, run.Repeat, m.Model, m.Input, m.Cached, m.Output, m.Reasoning, cost, l.total)
+			l.o.label, run.TaskID, run.Repeat, model, m.Input, m.Cached, m.Output, m.Reasoning, cost, l.total)
 		if f, err := os.OpenFile(l.o.ledger, os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
 			_, _ = f.WriteString(row)
 			_ = f.Close()
