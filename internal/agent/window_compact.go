@@ -433,7 +433,7 @@ func (l *Loop) summarizePrefix(ctx context.Context, prefix []llm.Message) (strin
 	if l.registry != nil {
 		scope.activeTools = l.registry.ActiveNames
 	}
-	ctx = context.WithValue(ctx, compactToolScopeKey{}, scope)
+	ctx = withCompactWindow(context.WithValue(ctx, compactToolScopeKey{}, scope), l.windowResolution().Tokens)
 	summary, err := l.summarizer(llm.WithPurpose(ctx, llm.PurposeCompact), l.provider, prefix)
 	l.recordAuxWall(llm.PurposeCompact, time.Since(start))
 	return summary, err

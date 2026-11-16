@@ -39,16 +39,36 @@ func TestCompactUserContextKeepsUserSyntaxButExcludesTypedRuntime(t *testing.T) 
 	}
 }
 
-func TestCompactUserContextRefusesDroppingIrreducibleInstructions(t *testing.T) {
+// An oversized older request used to be carried unclipped, so compaction was
+// refused ("insufficient reduction") and the session could wedge. It is now cut
+// to a head+tail excerpt with an explicit marker inside the window budget; the
+// newest request (the active turn) is never part of the summarized prefix.
+func TestCompactUserContextTrimsOversizedRequestWithMarker(t *testing.T) {
 	p := &stubProvider{name: "fixture", scripts: [][]llm.Delta{{{Content: "Goal: continue. State: preserve constraints.", FinishReason: "stop"}}}}
 	l := newCompactionFailureLoop(t, p, NewAutoSummarizer(nil), 4096, nil)
-	before, _ := json.Marshal(l.Messages)
-	if _, err := l.CompactNow(context.Background()); err == nil || !strings.Contains(err.Error(), "insufficient reduction") {
-		t.Fatalf("accepted reduction obtained by dropping a long original request: %v", err)
+	if _, err := l.CompactNow(context.Background()); err != nil {
+		t.Fatalf("oversized older request still blocks compaction: %v", err)
 	}
-	after, _ := json.Marshal(l.Messages)
-	if string(before) != string(after) {
-		t.Fatal("failed reduction changed history")
+	var summary string
+	for _, m := range l.Messages {
+		if IsLegacyCompactionSummary(m) {
+			summary = m.Content
+		}
+	}
+	carry := decodeCompactUserContext(t, summary)
+	if len(carry.Requests) != 1 {
+		t.Fatalf("carried requests = %d, want 1", len(carry.Requests))
+	}
+	got := carry.Requests[0]
+	if !strings.HasPrefix(got, "Preserve every earlier requirement. ") || !strings.HasSuffix(got, "original request evidence ") ||
+		!strings.Contains(got, "omitted to fit the compaction budget") {
+		t.Fatalf("excerpt lost its head, tail or marker: %.200q", got)
+	}
+	if tok := compactCarryTokens(got); tok > compactUserContextBudget(4096) {
+		t.Fatalf("excerpt %d tokens exceeds budget %d", tok, compactUserContextBudget(4096))
+	}
+	if last := l.Messages[len(l.Messages)-2]; last.Content != "Retain this previous correction." {
+		t.Fatalf("active request was not kept verbatim: %q", last.Content)
 	}
 }
 

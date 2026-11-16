@@ -152,16 +152,30 @@ compaction-2026-07-05.
 
 ### 4. Summary fallback
 
-`internal/agent/window.go` + `compact.go`. Above the lower of 80% of the hard window
-and the learned prefill budget
-(`autoCompactThreshold`) the pre-turn history is summarized by the model
-(template + exact facts) and replaced by one system message. The cut is
-at the **last user turn boundary** (`compactSplit`): the current turn
-survives verbatim, because a small model resumes far better from its own
-recent messages than from a summary of them. A single giant turn (> half
-the window) falls back to replace-all. If summarization itself fails,
-the loop hides all but the last user turn — compaction can never wedge
-the session. Originals always stay in the SQLite session store
+`internal/agent/window.go` (`autoCompactThreshold`) + `window_compact.go`.
+The hard trigger is the window minus a generation reserve of 10% of the
+window, clamped to 2,048..65,536 tokens: 90% of windows from 20,480 to 655,360
+tokens (28,800 of 32,000), a fixed 2,048-token reserve below that (14,336
+of the 16k fallback) and a fixed 64k reserve above it. A learned prefill
+budget (see performance.md) replaces it only when lower. Above the
+effective threshold the completed older turns are summarized by the model
+(template + exact facts + retained user context) and replaced by one
+summary message. Automatic compaction keeps the active user turn and the
+one before it verbatim (`autoCompactSplit`), because a small model resumes
+far better from its own recent messages than from a summary of them; a
+real context-limit error may compact everything except the active turn.
+A summary must save at least 20% of the prefix it replaces. A failed
+summary, or an insufficient one above the hard threshold, leaves history
+unchanged and surfaces the error; an insufficient one triggered only by
+the learned budget is skipped. Only loops without a summarizer fall back
+to hiding older turns.
+Earlier user requests are carried next to the summary in the user's own
+words, bounded to 1/8 of the window (512..32,768 tokens,
+`compact_user_context_budget.go`): the newest carried request stays
+verbatim when it fits, older ones keep a marked head+tail excerpt, and
+the oldest after the original task are replaced by a counted omission
+marker when needed, so the carry cannot grow until compaction wedges the
+session. Originals always stay in the SQLite session store
 (searchable via search_history). Prune/compact also save a separate
 provider-visible projection; they never rewrite the transcript.
 
