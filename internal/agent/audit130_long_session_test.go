@@ -290,11 +290,14 @@ func a130RetainedTokens(msgs []llm.Message) int {
 }
 
 // Long sessions with realistic user prompts (pasted logs/specs, ~2.5k
-// tokens each). Compaction carries every earlier user request verbatim and
-// unclipped, so the carry grows monotonically: once it approaches the
-// threshold, compaction can no longer reduce the prefix and the session
-// fails. docs/architecture.md: "compaction can never wedge the session".
-func TestA130_LongSessionRetainedUserContextWedges(t *testing.T) {
+// tokens each). Compaction used to carry every earlier user request verbatim
+// and unclipped, so the carry grew monotonically until compaction could no
+// longer reduce the prefix and every following turn failed. The carry is now
+// bounded (compact_user_context_budget.go); the session must keep running,
+// compaction must actually happen, the carry must stay within its budget and
+// the pinned turn-1 requirement must survive. docs/architecture.md:
+// "compaction can never wedge the session".
+func TestA130_LongSessionRetainedUserContextDoesNotWedge(t *testing.T) {
 	const window = 32000
 	p := &a130SessionProvider{window: window}
 	reg := tools.NewRegistry()
@@ -309,10 +312,10 @@ func TestA130_LongSessionRetainedUserContextWedges(t *testing.T) {
 		t.Fatal(err)
 	}
 	paste := strings.Repeat("2026-11-16T10:00:00Z worker[42] WARN cache miss key=user/profile/0042 latency=118ms\n", 110) // ~2.5k tokens
-	failedAt, compactions, failedTurns, turns := 0, 0, 0, 0
+	failedAt, compactions, failedTurns, turns, maxRetained := 0, 0, 0, 0, 0
 	var failure error
 	var trail []string
-	for turn := 1; turn <= 16 && (failedAt == 0 || turn <= failedAt+5); turn++ {
+	for turn := 1; turn <= 40 && (failedAt == 0 || turn <= failedAt+5); turn++ {
 		turns = turn
 		prompt := fmt.Sprintf("Please handle turn %d: run probe twice, then answer. Log excerpt:\n%s", turn, paste)
 		if turn == 1 {
@@ -333,7 +336,9 @@ func TestA130_LongSessionRetainedUserContextWedges(t *testing.T) {
 				}
 			case AutoCompactEvent:
 				compactions++
-				trail = append(trail, fmt.Sprintf("t%d: removed=%d est=%d retained=%dtok", turn, e.Removed, e.Estimated, a130RetainedTokens(l.Messages)))
+				retained := a130RetainedTokens(l.Messages)
+				maxRetained = max(maxRetained, retained)
+				trail = append(trail, fmt.Sprintf("t%d: removed=%d est=%d retained=%dtok", turn, e.Removed, e.Estimated, retained))
 			}
 		}
 		cancel()
@@ -341,7 +346,19 @@ func TestA130_LongSessionRetainedUserContextWedges(t *testing.T) {
 	t.Logf("compactions=%d trail=%v", compactions, trail)
 	t.Logf("first failure at turn %d: %v; %d of %d turns failed", failedAt, failure, failedTurns, turns)
 	if failedAt > 0 {
-		a130AgentKnownFailing(t, fmt.Sprintf("compaction re-embeds every earlier user request verbatim (compact_user_context.go); with ~2.5k-token prompts and a 32k window the session wedges at turn %d (%d of the next %d turns fail): %v", failedAt, failedTurns, turns-failedAt+1, failure))
-		t.Fatalf("session wedged at turn %d", failedAt)
+		t.Fatalf("session wedged at turn %d (%d of %d turns failed): %v", failedAt, failedTurns, turns, failure)
+	}
+	if compactions == 0 {
+		t.Fatal("40 turns of ~2.5k-token prompts in a 32k window never compacted; the scenario no longer exercises the carry")
+	}
+	// Generous slack for the JSON envelope, header sentence and message framing.
+	if budget := compactUserContextBudget(window); maxRetained > budget+200 {
+		t.Errorf("retained user context %d tokens exceeds its budget %d", maxRetained, budget)
+	}
+	for _, v := range p.violations {
+		t.Errorf("invariant: %s", v)
+	}
+	if p.pinMissing > 0 {
+		t.Errorf("pinned turn-1 requirement missing from %d of %d requests", p.pinMissing, p.calls)
 	}
 }

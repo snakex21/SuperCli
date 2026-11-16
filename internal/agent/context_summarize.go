@@ -449,7 +449,7 @@ func NewAutoSummarizerWithProviderResolver(resolve func(context.Context) (llm.Pr
 		if toolNames != nil {
 			loaded = toolNames()
 		}
-		summary += compactPreservedUserContext(msgs)
+		summary += compactPreservedUserContextWithin(msgs, compactWindowFrom(ctx))
 		summary += CompactFacts(msgs, loaded)
 		return WrapCompactSummary(summary), nil
 	}

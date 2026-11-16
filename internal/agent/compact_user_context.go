@@ -17,12 +17,20 @@ type compactUserContext struct {
 }
 
 // A model summary is not a reliable byte-for-byte store for prohibitions in
-// the middle of an older request. Carry those requests separately, without
-// token/rune clipping. On later compactions import the structured carry once,
-// not the previous wrapper and its nested copies. Normal reduction/window
+// older requests, so the user's own words are carried separately. On later
+// compactions import the structured carry once, not the previous wrapper and
+// its nested copies. The carry is bounded by compactUserContextBudget (see
+// compact_user_context_budget.go): recent requests stay verbatim when they
+// fit, older ones are cut to marked head+tail excerpts. Normal reduction/window
 // guards include this text and may refuse compaction when it cannot save room.
 // This is quoted historical context, never fresh human authorization.
 func compactPreservedUserContext(msgs []llm.Message) string {
+	return compactPreservedUserContextWithin(msgs, 0)
+}
+
+// compactPreservedUserContextWithin bounds the carry for a known context
+// window; window <= 0 uses the conservative default window.
+func compactPreservedUserContextWithin(msgs []llm.Message, window int) string {
 	var carry compactUserContext
 	for _, m := range msgs {
 		if IsLegacyCompactionSummary(m) {
@@ -53,8 +61,9 @@ func compactPreservedUserContext(msgs []llm.Message) string {
 	if len(carry.Requests) == 0 && len(carry.PriorState) == 0 {
 		return ""
 	}
+	carry = boundCompactUserContext(carry, compactUserContextBudget(window))
 	raw, _ := json.Marshal(carry)
-	return "\n\nHistorical user context: keep applicable restrictions; completed requests are not new tasks; old state is not a current health check." + compactUserContextStart + string(raw) + compactUserContextEnd
+	return "\n\nHistorical user context: keep applicable restrictions; completed requests are not new tasks; old state is not a current health check; marked omissions were cut only to fit the context budget." +compactUserContextStart + string(raw) + compactUserContextEnd
 }
 
 func compactInstructionText(m llm.Message) string {

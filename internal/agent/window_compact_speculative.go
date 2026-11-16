@@ -85,12 +85,13 @@ func (l *Loop) maybeStartSpeculativeCompact(ctx context.Context) {
 		scope.activeTools = func() []string { return frozen }
 	}
 	summarize := l.summarizer
+	window := l.windowResolution().Tokens
 	l.speculativeMu.Lock()
 	l.speculative = job
 	l.speculativeMu.Unlock()
 	go func() {
 		defer close(job.done)
-		callCtx := context.WithValue(llm.WithPurpose(jobCtx, llm.PurposeCompact), compactToolScopeKey{}, scope)
+		callCtx := withCompactWindow(context.WithValue(llm.WithPurpose(jobCtx, llm.PurposeCompact), compactToolScopeKey{}, scope), window)
 		job.summary, job.err = summarize(callCtx, job.provider, job.prefix)
 	}()
 }
