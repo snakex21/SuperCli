@@ -21,7 +21,6 @@ func audit130Type(m Model, text string) Model {
 }
 
 func TestAudit130SlashCommandBusyRowFitsTerminal(t *testing.T) {
-	audit130KnownFailing(t, "non-local slash command: refreshTranscript runs before busy=true, frame is 1 row taller than the terminal")
 	dir := t.TempDir()
 	block := make(chan struct{})
 	t.Cleanup(func() { close(block) })

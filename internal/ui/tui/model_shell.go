@@ -54,13 +54,15 @@ func (m Model) dispatchShellEscape(text string) (tea.Model, tea.Cmd) {
 	m.chat.addUser("> !" + cmd)
 	m.markTranscriptPresent()
 	m.appendLine(m.marker.Running())
+	// Flip busy before the refit so the viewport leaves room for the
+	// working row (same ordering as dispatchSlashCommand).
+	m.busy = true
 	m.refreshTranscript()
 	ctx, cancel := context.WithCancel(context.Background())
 	invocation := &shellInvocation{ctx: ctx, cancel: cancel}
 	m.shellInvocation = invocation
 	m.cancel.Arm(cancelRun, cancel)
 	m.cancelling = false
-	m.busy = true
 	runner := m.shellRunner
 	return m, func() tea.Msg {
 		defer cancel()
