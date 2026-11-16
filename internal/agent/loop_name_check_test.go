@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"supercli/internal/llm"
 )
@@ -169,6 +170,10 @@ func TestNameCheckGitRefsAreNames(t *testing.T) {
 // The ho3 prompts that produced false hints in audit-130, run against their
 // fixtures: none of them may produce a note any more.
 func TestNameCheckHo3FalseHintsGone(t *testing.T) {
+	// The callsites fixture has 440 files; on a loaded machine the 400 ms
+	// production budget may not cover it, which would only skip the check.
+	defer func(old time.Duration) { nameCheckBudget = old }(nameCheckBudget)
+	nameCheckBudget = 30 * time.Second
 	cases := []struct{ fixture, prompt string }{
 		{"agent-ho3-multiturn-undo-rename", "(a) `Stock.add()` and `Stock.reserve()` must raise `ValueError` when the quantity is zero or negative.\n" +
 			"(b) Rename the `StockItem` field `qty_on_hand` to `on_hand` everywhere in the package and the tests (including the JSON key in `inventory/api.py`)."},

@@ -54,6 +54,12 @@ func withCompactWindow(ctx context.Context, window int) context.Context {
 	return context.WithValue(ctx, compactWindowKey{}, window)
 }
 
+// WithCompactWindow is withCompactWindow for callers outside the package
+// that run a summarizer directly (tests comparing against the loop).
+func WithCompactWindow(ctx context.Context, window int) context.Context {
+	return withCompactWindow(ctx, window)
+}
+
 func compactWindowFrom(ctx context.Context) int {
 	w, _ := ctx.Value(compactWindowKey{}).(int)
 	return w

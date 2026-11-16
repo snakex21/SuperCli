@@ -437,7 +437,7 @@ func TestWebCompactResolverMatchesEagerRequestFactsHistoryAndMainRequest(t *test
 		t.Fatal("oracle provider is not metered")
 	}
 	split := len(before) - 4 // the fixture has four turns; two remain protected
-	wantSummary, err := agent.NewAutoSummarizerWithProvider(eagerProvider, reg.ActiveNames)(llm.WithPurpose(ctx, llm.PurposeCompact), e.prov, before[:split])
+	wantSummary, err := agent.NewAutoSummarizerWithProvider(eagerProvider, reg.ActiveNames)(llm.WithPurpose(agent.WithCompactWindow(ctx, lazy.ContextWindow()), llm.PurposeCompact), e.prov, before[:split])
 	if err != nil {
 		t.Fatal(err)
 	}

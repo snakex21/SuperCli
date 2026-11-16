@@ -213,7 +213,7 @@ AGENTS.md (<AGE>)
 files (2):
 ./: AGENTS.md notes.txt
 
-[name check] These names from the request were not found anywhere in the workspace: `GOLDEN_CALL`; Confirm with a search before relying on this. Where the request treats such a name as existing (change, set, raise, lower, fix, use it), it is missing: do not add, define, wire up or rename anything to make it exist, and do not apply that part to a similar-looking name instead. Do every other part of the request, then say in the final answer exactly which name was not found (and which similar one exists, if any) and ask how to proceed. Names the user asks you to create are not affected.
+[name check] Not found in the workspace by a quick scan: `GOLDEN_CALL`; This is a hint, not a rule: check with a search. If the request uses it as a new value or something to create (a new setting value, a new branch or file, a standard-library name), just use or create it. If the request treats it as an existing part of the code to change or use (a function, key, flag, file) and it really is missing, do not invent it and do not apply that part to a similar-looking name: do the rest of the request, then say in the final answer which name was not found (and the similar one, if any) and ask how to proceed.
 --- msg 2 role=system origin={"source":"runtime"}
 Working directory (file sandbox root): <HOME>
 Use this exact path for file and directory operations. Relative paths resolve here; paths must stay inside it.
@@ -274,7 +274,7 @@ AGENTS.md (<AGE>)
 files (2):
 ./: AGENTS.md notes.txt
 
-[name check] These names from the request were not found anywhere in the workspace: `GOLDEN_CALL`; Confirm with a search before relying on this. Where the request treats such a name as existing (change, set, raise, lower, fix, use it), it is missing: do not add, define, wire up or rename anything to make it exist, and do not apply that part to a similar-looking name instead. Do every other part of the request, then say in the final answer exactly which name was not found (and which similar one exists, if any) and ask how to proceed. Names the user asks you to create are not affected.
+[name check] Not found in the workspace by a quick scan: `GOLDEN_CALL`; This is a hint, not a rule: check with a search. If the request uses it as a new value or something to create (a new setting value, a new branch or file, a standard-library name), just use or create it. If the request treats it as an existing part of the code to change or use (a function, key, flag, file) and it really is missing, do not invent it and do not apply that part to a similar-looking name: do the rest of the request, then say in the final answer which name was not found (and the similar one, if any) and ask how to proceed.
 --- msg 2 role=system origin={"source":"runtime"}
 Working directory (file sandbox root): <HOME>
 Use this exact path for file and directory operations. Relative paths resolve here; paths must stay inside it.
@@ -301,7 +301,7 @@ AGENTS.md (<AGE>)
 files (2):
 ./: AGENTS.md notes.txt
 
-[name check] These names from the request were not found anywhere in the workspace: `GOLDEN_CALL`; Confirm with a search before relying on this. Where the request treats such a name as existing (change, set, raise, lower, fix, use it), it is missing: do not add, define, wire up or rename anything to make it exist, and do not apply that part to a similar-looking name instead. Do every other part of the request, then say in the final answer exactly which name was not found (and which similar one exists, if any) and ask how to proceed. Names the user asks you to create are not affected.
+[name check] Not found in the workspace by a quick scan: `GOLDEN_CALL`; This is a hint, not a rule: check with a search. If the request uses it as a new value or something to create (a new setting value, a new branch or file, a standard-library name), just use or create it. If the request treats it as an existing part of the code to change or use (a function, key, flag, file) and it really is missing, do not invent it and do not apply that part to a similar-looking name: do the rest of the request, then say in the final answer which name was not found (and the similar one, if any) and ask how to proceed.
 --- msg 2 role=assistant origin={"source":"model"}
 [part 0 text source=]
 done after tool

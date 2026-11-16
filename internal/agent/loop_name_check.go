@@ -27,11 +27,14 @@ import (
 // scan cannot cover the workspace (too many files or too slow), because
 // "not found" would then be a guess. Config name_check = false turns it off.
 
+// nameCheckBudget bounds the workspace scan (a var so tests on a loaded
+// machine can widen it).
+var nameCheckBudget = 400 * time.Millisecond
+
 const (
 	nameCheckMaxNames    = 12
 	nameCheckMaxFiles    = 4000
 	nameCheckMaxFileSize = 512 << 10
-	nameCheckBudget      = 400 * time.Millisecond
 	nameCheckMaxIdents   = 200000
 )
 
