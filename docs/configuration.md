@@ -321,6 +321,32 @@ can be changed live with `/allow-all on|off` in the TUI or with the
 to file reads and writes, code search, `@file` mentions, images, Office
 documents, and ZIP extraction targets.
 
+### Links inside the workspace
+
+- Junctions and symlinks inside the workspace are deliberate grants by
+  whoever created them. A junction (`mklink /J ws\data D:\data`) is followed
+  for reads and writes without an approval prompt and without `allow_all`,
+  also when its target does not exist yet. A dangling symlink is a grant too:
+  `write_file` through it creates its target. A symlink whose existing target
+  is outside the workspace is resolved and refused like any outside path.
+- Hard links are broken on write. `write_file`, `patch_file`, `edit_files`
+  and undo replace an existing file through a temporary file and a rename,
+  keeping its permissions, so a workspace file hard-linked to a file outside
+  (for example a pnpm `node_modules` file linked into the global store) gets
+  its own copy and the outside file never changes.
+- Reserved Windows device names are refused in any path component, with any
+  extension and in any letter case, also with trailing dots or spaces: `CON`,
+  `PRN`, `AUX`, `NUL`, `CONIN$`, `CONOUT$`, `COM1`-`COM9`, `LPT1`-`LPT9` and
+  the superscript forms `COM¹²³`/`LPT¹²³` (so `sub\nul.txt` is refused too).
+  This applies with `allow_all` on as well. Other platforms have no such
+  names.
+- `read_zip` may extract into a junction or through one (an entry such as
+  `j/file.txt` when `j` is a junction). The zip-slip protections on entry names
+  stay in force: absolute paths, drive letters, `..`, alternate data streams
+  (`:`), device names and anything else that is not a plain relative path are
+  refused, and an existing symlink that leads outside the extraction target is
+  refused.
+
 ### Approvals for risky actions
 
 Tools declare a risk level per operation (`read`, `write_reversible`,

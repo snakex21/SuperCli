@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 
 	"supercli/internal/tools/sandbox"
@@ -59,17 +58,13 @@ func zipExtractArgs(path, target string) json.RawMessage {
 	return raw
 }
 
-func zipFixtureLinkResolved(link, destination string) bool {
-	resolved, err := filepath.EvalSymlinks(link)
-	if err != nil {
-		return false
-	}
-	if runtime.GOOS == "windows" {
-		return strings.EqualFold(filepath.Clean(resolved), filepath.Clean(destination))
-	}
-	return filepath.Clean(resolved) == filepath.Clean(destination)
-}
-
+// TestReadZipRejectsExistingDirectoryLinksOutsideTarget: an existing directory
+// SYMLINK inside the target that resolves outside it is refused.
+//
+// A directory JUNCTION is different (owner decision, docs/configuration.md
+// "Links inside the workspace"): a junction inside the workspace is a
+// deliberate grant by whoever created it, so extraction through it is
+// allowed and lands in the junction target, inside or outside the workspace.
 func TestReadZipRejectsExistingDirectoryLinksOutsideTarget(t *testing.T) {
 	for _, kind := range []string{"symlink", "junction"} {
 		for _, outsideWorkspace := range []bool{false, true} {
@@ -82,10 +77,19 @@ func TestReadZipRejectsExistingDirectoryLinksOutsideTarget(t *testing.T) {
 					registry := NewRegistry()
 					registry.MustRegister(NewReadZip(base, 0).Spec())
 					result, err := registry.Execute(context.Background(), "read_zip", zipExtractArgs("link.zip", target))
-					if err == nil && result.Err == nil {
-						t.Error("extraction followed an existing link outside target")
-					}
 					data, readErr := os.ReadFile(filepath.Join(external, "file.txt"))
+					if kind == "junction" {
+						if err != nil || result.Err != nil {
+							t.Fatalf("extraction through a junction grant refused: err=%v resultErr=%v", err, result.Err)
+						}
+						if readErr != nil || string(data) != "archive-value\n" {
+							t.Errorf("extraction did not land in the junction target: readErr=%v", readErr)
+						}
+						return
+					}
+					if err == nil && result.Err == nil {
+						t.Error("extraction followed an existing symlink outside target")
+					}
 					if readErr != nil || string(data) != "initial-value\n" {
 						t.Errorf("external fixture was overwritten: readErr=%v changed=%v", readErr, string(data) != "initial-value\n")
 					}
@@ -129,24 +133,31 @@ func TestReadZipRejectsFinalFileSymlinkOutsideTarget(t *testing.T) {
 	}
 }
 
-func TestReadZipJunctionGuardBeforeTargetMkdir(t *testing.T) {
+// TestReadZipTargetThroughJunctionIsGranted: a new target directory below a
+// junction inside the workspace is created in the junction target (the
+// junction is a grant), and the entries land there.
+func TestReadZipTargetThroughJunctionIsGranted(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("junction fixture is Windows-only")
 	}
 	base, external, target := zipOutsideLinkFixture(t, "junction", false)
-	if zipFixtureLinkResolved(filepath.Join(target, "link"), external) {
-		t.Skip("this runtime fully resolves junctions; explicit target aliases use their canonical destination")
-	}
 	result, err := NewReadZip(base, 0).Execute(context.Background(), zipExtractArgs("link.zip", filepath.Join(target, "link", "new-target")))
-	if err == nil && result.Err == nil {
-		t.Error("target creation followed an existing junction")
+	if err != nil || result.Err != nil {
+		t.Fatalf("target below a junction grant refused: err=%v resultErr=%v", err, result.Err)
 	}
-	if _, statErr := os.Stat(filepath.Join(external, "new-target")); !os.IsNotExist(statErr) {
-		t.Errorf("external target directory created before guard: err=%v", statErr)
+	data, readErr := os.ReadFile(filepath.Join(external, "new-target", "link", "file.txt"))
+	if readErr != nil || string(data) != "archive-value\n" {
+		t.Errorf("entry not written in the junction target: err=%v", readErr)
+	}
+	if data, _ := os.ReadFile(filepath.Join(external, "file.txt")); string(data) != "initial-value\n" {
+		t.Error("an unrelated file in the junction target was overwritten")
 	}
 }
 
-func TestReadZipResolvableAliasesAndUnresolvedJunctions(t *testing.T) {
+// TestReadZipResolvableAliasesAndJunctions: symlinks that resolve inside the
+// boundary and junctions (grants) work at every position: the workspace
+// itself, an ancestor of it, the target, and an entry's parent directory.
+func TestReadZipResolvableAliasesAndJunctions(t *testing.T) {
 	for _, kind := range []string{"symlink", "junction"} {
 		for _, position := range []string{"base", "above-base", "target", "entry"} {
 			t.Run(kind+"/"+position, func(t *testing.T) {
@@ -178,34 +189,14 @@ func TestReadZipResolvableAliasesAndUnresolvedJunctions(t *testing.T) {
 					}
 				}
 				zipFixtureLink(t, portable, link, destination, kind)
-				unresolvedJunction := kind == "junction" && !zipFixtureLinkResolved(link, destination)
 				writeTestZip(t, base, "alias.zip", map[string]string{entry: "archive-value\n"})
 				result, err := NewReadZip(toolBase, 0).Execute(context.Background(), zipExtractArgs("alias.zip", target))
-				if unresolvedJunction {
-					if err == nil && result.Err == nil {
-						t.Error("unresolved junction silently accepted")
-					}
-					// The existing resolver may already reject a nested workspace
-					// under an unsupported junction while resolving its home.
-					if result.Err == nil || (!strings.Contains(result.Err.Error(), "unresolved") && !(position == "above-base" && strings.Contains(result.Err.Error(), "resolve home"))) {
-						t.Errorf("junction refusal did not explain boundary resolution: resultErr=%v", result.Err)
-					}
-					if _, statErr := os.Stat(physicalFile); !os.IsNotExist(statErr) {
-						t.Errorf("junction changed a file before refusal: err=%v", statErr)
-					}
-					if position == "base" || position == "above-base" {
-						if _, statErr := os.Stat(physicalTarget); !os.IsNotExist(statErr) {
-							t.Errorf("junction created target before refusal: err=%v", statErr)
-						}
-					}
-					return
-				}
 				if err != nil || result.Err != nil {
-					t.Fatalf("resolvable contained symlink should work: err=%v resultErr=%v", err, result.Err)
+					t.Fatalf("contained %s should work: err=%v resultErr=%v", kind, err, result.Err)
 				}
 				data, err := os.ReadFile(physicalFile)
 				if err != nil || string(data) != "archive-value\n" {
-					t.Errorf("contained symlink changed output bytes: err=%v", err)
+					t.Errorf("contained %s changed output bytes: err=%v", kind, err)
 				}
 			})
 		}

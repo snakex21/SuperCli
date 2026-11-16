@@ -37,13 +37,6 @@ const (
 	audit130SecretFile = "secret.txt"
 )
 
-func audit130KnownFailing(t *testing.T, issue string) {
-	t.Helper()
-	if os.Getenv("SUPERCLI_AUDIT_KNOWN_FAILING") != "1" {
-		t.Skip("KNOWN-FAILING audit-130: " + issue)
-	}
-}
-
 type audit130Env struct {
 	root, ws, out string
 	// keepOutside skips the per-call outside reset (hard links would be
@@ -337,13 +330,11 @@ func TestAudit130EditFilesIncludeGlobEscape(t *testing.T) {
 	}
 }
 
-// TestAudit130ReservedDeviceNamesAccepted records that ResolveSafe accepts
-// DOS device names. On Windows 10 "<ws>\CON" opens the console and
-// "<ws>\COM1" a serial port, not a file in the workspace. Not a confinement
-// escape for writes (data goes to a device), but a read of CON/CONIN$ blocks
-// the tool call. We only check the resolver; we never open these names.
-func TestAudit130ReservedDeviceNamesAccepted(t *testing.T) {
-	audit130KnownFailing(t, "sandbox.ResolveSafe accepts reserved DOS device names (CON, NUL, COM1, sub\\AUX.txt); file tools then open the device instead of a workspace file")
+// TestAudit130ReservedDeviceNamesRefused: ResolveSafe refuses DOS device
+// names. On Windows 10 "<ws>\CON" opens the console and "<ws>\COM1" a serial
+// port, not a file in the workspace; a read of CON/CONIN$ would block the
+// tool call. We only check the resolver; we never open these names.
+func TestAudit130ReservedDeviceNamesRefused(t *testing.T) {
 	env := newAudit130Env(t)
 	for _, name := range []string{"CON", "NUL", "COM1", "LPT1", "AUX", `sub\CON.txt`, "CONIN$", "nul.txt"} {
 		if _, err := sandbox.ResolveSafe(env.ws, name); err == nil {
@@ -521,11 +512,10 @@ func TestAudit130HardlinkEditFilesBreaksLink(t *testing.T) {
 }
 
 // TestAudit130HardlinkInPlaceWritersMustNotModifyOutside: write_file
-// (fileops.WriteFileContext, internal/tools/fileops/fileops_fs.go:75) and
-// patch_file (fileops.PatchFileContext, internal/tools/fileops/patch_file.go:214)
-// use os.WriteFile on the existing path, which writes through the hard link.
+// (fileops.WriteFileContext) and patch_file (fileops.PatchFileContext) replace
+// an existing file through fileops.ReplaceFileContents (temp file + rename),
+// which breaks the hard link instead of writing through it.
 func TestAudit130HardlinkInPlaceWritersMustNotModifyOutside(t *testing.T) {
-	audit130KnownFailing(t, "write_file and patch_file write in place (os.WriteFile) and modify a hard-linked file outside the workspace; they must write via temp file + rename like edit_files")
 	for _, c := range []audit130HardlinkCase{
 		{name: "write_file", want: "PWNED", call: func(ws string) audit130Call {
 			return audit130Call{name: "write_file", tool: NewWriteFile(ws).Spec(), args: map[string]any{"path": "hard.txt", "content": "PWNED"}}

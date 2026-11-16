@@ -6,7 +6,6 @@ package fileops
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -221,5 +220,5 @@ func (t *Tracker) Undo(n int) ([]UndoResult, error) {
 
 // writeBytes writes data to a file, creating it if needed.
 func writeBytes(path string, data []byte) error {
-	return os.WriteFile(path, data, 0o644)
+	return ReplaceFileContents(path, data, 0o644)
 }

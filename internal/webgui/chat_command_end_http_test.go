@@ -105,7 +105,7 @@ func buildProductionUIChecks(t *testing.T) (root, runner string) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "go", "build", "-o", runner, "./scripts/ui-checks")
+	cmd := exec.CommandContext(ctx, "go", "build", "-buildvcs=false", "-o", runner, "./scripts/ui-checks")
 	cmd.Dir = root
 	childproc.HideWindow(cmd)
 	if output, err := cmd.CombinedOutput(); err != nil {

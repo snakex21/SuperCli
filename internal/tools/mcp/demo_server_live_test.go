@@ -32,7 +32,7 @@ func TestDemoServerLive(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		exe += ".exe"
 	}
-	build := exec.Command(goBin, "build", "-o", exe, "./examples/mcp/demo")
+	build := exec.Command(goBin, "build", "-buildvcs=false", "-o", exe, "./examples/mcp/demo")
 	build.Dir = filepath.Join("..", "..", "..")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("go build demo: %v\n%s", err, out)

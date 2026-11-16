@@ -83,6 +83,10 @@ type AgentOutput struct {
 	Answer string
 	// Extra carries runner-specific diagnostics into the report.
 	Extra map[string]any
+	// Metrics is the usage the runner recovered elsewhere when Stdout has
+	// no final usage line (a timed-out or killed run, Partial set). The
+	// stdout usage line wins when both exist.
+	Metrics *RunMetrics
 }
 
 type AgentRunner func(context.Context, AgentInput) (AgentOutput, error)
@@ -117,7 +121,8 @@ type RunReport struct {
 	StdoutTail       string        `json:"stdoutTail,omitempty"`
 	StderrTail       string        `json:"stderrTail,omitempty"`
 	// Metrics is the agent's last `{"type":"usage"}` stdout line
-	// (supercli --batch --trace-jsonl); nil when none was emitted.
+	// (supercli --batch --trace-jsonl), else the runner's recovered
+	// AgentOutput.Metrics (Partial); nil when neither exists.
 	Metrics *RunMetrics `json:"metrics,omitempty"`
 
 	Repeat            int            `json:"repeat,omitempty"`
@@ -365,6 +370,10 @@ func runOne(parent context.Context, suiteDir string, options BenchOptions, task 
 	}
 	run.MissingTrace = missingTrace(task.RequiredTraceEvents, out.Stdout)
 	run.Metrics = parseUsage(out.Stdout)
+	if run.Metrics == nil && out.Metrics != nil {
+		m := *out.Metrics
+		run.Metrics = &m
+	}
 	if task.GraderOverlay != "" {
 		if err := copyTree(filepath.Join(suiteDir, filepath.FromSlash(task.GraderOverlay)), workspace); err != nil && run.AgentError == "" {
 			run.AgentError = "grader overlay: " + err.Error()

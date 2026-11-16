@@ -89,7 +89,7 @@ func main() {
 	case "supercli":
 		if o.bin == "" {
 			o.bin = filepath.Join(o.workRoot, "supercli"+exeSuffix())
-			build := exec.Command("go", "build", "-o", o.bin, "./cmd/supercli")
+			build := exec.Command("go", "build", "-buildvcs=false", "-o", o.bin, "./cmd/supercli")
 			build.Stdout, build.Stderr = os.Stderr, os.Stderr
 			if err := build.Run(); err != nil {
 				fatal(fmt.Errorf("build supercli: %w", err))
@@ -139,6 +139,9 @@ func main() {
 			tokens := ""
 			if m := run.Metrics; m != nil {
 				tokens = fmt.Sprintf(" tools=%d in=%d cached=%d out=%d", m.ToolCalls, m.Input, m.Cached, m.Output)
+				if m.Partial {
+					tokens += " (partial usage from " + m.Source + ")"
+				}
 			}
 			fmt.Fprintf(os.Stderr, "[%s] done  %s r%d: %s score=%.2f %s%s %.0fs cost=$%.4f total=$%.4f\n",
 				time.Now().Format("15:04:05"), run.TaskID, run.Repeat, run.Status, run.Score, run.FailureCategory, tokens,

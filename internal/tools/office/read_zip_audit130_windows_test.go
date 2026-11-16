@@ -137,15 +137,10 @@ func TestAudit130ReadZipSlipEntriesRefused(t *testing.T) {
 // TestAudit130ReadZipExtractThroughJunctionGranted: extraction into a
 // junction (target_dir "j", "j\sub") and through one (entry "j/x.txt" into
 // the workspace root) must succeed and land in the junction target.
-//
-// Today read_zip refuses all three: rejectZipUnresolvedLinks
-// (internal/tools/office/read_zip.go:344) rejects any ModeIrregular/symlink
-// ancestor of the target (read_zip.go:263) and of each entry
-// (read_zip.go:322).
+// rejectZipUnresolvedLinks lets directory junctions pass (still refusing
+// unresolved symlinks and other reparse points), and sandbox resolves a
+// target below a junction.
 func TestAudit130ReadZipExtractThroughJunctionGranted(t *testing.T) {
-	if os.Getenv("SUPERCLI_AUDIT_KNOWN_FAILING") != "1" {
-		t.Skip("KNOWN-FAILING audit-130: read_zip refuses extraction into/through an in-workspace junction (rejectZipUnresolvedLinks), although a junction is an intentional grant")
-	}
 	e := newAudit130ZipEnv(t, true)
 	e.writeZip(t, "into.zip", "into.txt")
 	e.writeZip(t, "through.zip", "j/through.txt")

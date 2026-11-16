@@ -108,7 +108,7 @@ func readLines(path string) ([]string, error) {
 // always add one — POSIX convention).
 func writeLines(path string, lines []string) error {
 	if len(lines) == 0 {
-		return os.WriteFile(path, []byte{}, 0644)
+		return ReplaceFileContents(path, []byte{}, 0o644)
 	}
 	var b strings.Builder
 	for i, l := range lines {
@@ -119,7 +119,7 @@ func writeLines(path string, lines []string) error {
 	}
 	// Add trailing newline (POSIX).
 	b.WriteByte('\n')
-	return os.WriteFile(path, []byte(b.String()), 0644)
+	return ReplaceFileContents(path, []byte(b.String()), 0o644)
 }
 
 // LineRange represents a single line with its 1-based number.

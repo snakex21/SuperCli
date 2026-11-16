@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 )
@@ -152,6 +153,12 @@ func resolvePath(home, rel string, enforceHome bool) (string, error) {
 	} else {
 		abs = filepath.Join(absHome, rel)
 	}
+	// Reserved DOS device names (CON, NUL, COM1, sub/aux.txt, ...) open a
+	// device instead of a file on Windows; refuse them before anything is
+	// resolved or opened.
+	if err := rejectDeviceNames(absHome, abs); err != nil {
+		return "", err
+	}
 	// Symlink resolution. Walk up the path until we
 	// find an existing directory; resolve symlinks at
 	// that level; then re-append the rest.
@@ -179,10 +186,24 @@ func canonicalHomePath(home string) (string, error) {
 	prefix := home
 	var tail []string
 	for {
-		if _, err := os.Lstat(prefix); err == nil {
+		if linfo, err := os.Lstat(prefix); err == nil {
 			resolved, err := filepath.EvalSymlinks(prefix)
 			if err != nil {
-				return "", err
+				// filepath.EvalSymlinks fails for an existing directory
+				// BELOW an NTFS junction (it does not evaluate mount points
+				// but cannot walk through them either). Resolve the parent
+				// and keep this component, as evalSymlinksPrefix does, so a
+				// home reached through a junction grant works. A symlink
+				// that does not resolve (dangling, loop) still fails closed.
+				parent := filepath.Dir(prefix)
+				if runtime.GOOS != "windows" || linfo.Mode()&os.ModeSymlink != 0 || parent == prefix {
+					return "", err
+				}
+				canonicalParent, perr := canonicalHomePath(parent)
+				if perr != nil {
+					return "", err
+				}
+				resolved = filepath.Join(canonicalParent, filepath.Base(prefix))
 			}
 			info, err := os.Stat(resolved)
 			if err != nil {

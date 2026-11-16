@@ -14,13 +14,6 @@ import (
 	"testing"
 )
 
-func audit130SkipKnownFailing(t *testing.T, issue string) {
-	t.Helper()
-	if os.Getenv("SUPERCLI_AUDIT_KNOWN_FAILING") != "1" {
-		t.Skip("KNOWN-FAILING audit-130: " + issue)
-	}
-}
-
 func audit130Dirs(t *testing.T) (ws, out string) {
 	t.Helper()
 	prior := IsUnsandboxed()

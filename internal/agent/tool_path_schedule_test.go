@@ -193,7 +193,9 @@ func TestFileBatchWithoutWorkspaceUsesSequentialFallback(t *testing.T) {
 }
 
 // A move can turn a previously absent destination into an alias of another
-// existing hard link. The following write/read wave must use the new identity.
+// existing hard link. The following write/read wave must use the new identity
+// (the batch still succeeds in order); write_file then breaks the link, so the
+// other name keeps its old content.
 func TestFileBatchRechecksIdentityAfterMove(t *testing.T) {
 	l, root := pathScheduleFixture(t)
 	if err := os.Link(filepath.Join(root, "a.txt"), filepath.Join(root, "other.txt")); err != nil {
@@ -216,8 +218,14 @@ func TestFileBatchRechecksIdentityAfterMove(t *testing.T) {
 			t.Fatalf("result order at %d", i)
 		}
 	}
-	if !strings.Contains(l.Messages[2].Content, "after move") {
-		t.Fatalf("stale read after move: %s", l.Messages[2].Content)
+	// write_file breaks hard links (temp file + rename; see
+	// docs/configuration.md "Links inside the workspace"), so the write to
+	// moved.txt must NOT reach its former alias other.txt.
+	if !strings.Contains(l.Messages[2].Content, "before") || strings.Contains(l.Messages[2].Content, "after move") {
+		t.Fatalf("write through a hard link reached the other link: %s", l.Messages[2].Content)
+	}
+	if data, err := os.ReadFile(filepath.Join(root, "moved.txt")); err != nil || string(data) != "after move\n" {
+		t.Fatalf("moved.txt = %q, %v", data, err)
 	}
 }
 

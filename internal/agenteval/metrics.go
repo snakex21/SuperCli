@@ -23,6 +23,11 @@ type RunMetrics struct {
 	TTFTAvgMs  float64 `json:"ttftAvgMs"`
 	DurationMs int64   `json:"durationMs"`
 	Error      bool    `json:"error,omitempty"`
+	// Partial marks usage recovered after the run ended without its final
+	// usage line (timeout, crash): the model calls that completed before
+	// the process stopped. Source names where it came from.
+	Partial bool   `json:"partial,omitempty"`
+	Source  string `json:"source,omitempty"`
 }
 
 // ModelSummary aggregates every run of one model. Runs, Passed and

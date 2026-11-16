@@ -211,7 +211,7 @@ func PatchFileContext(ctx context.Context, path string, changes []PatchChange, b
 	if err := ctx.Err(); err != nil {
 		return PatchResult{}, err
 	}
-	if err := os.WriteFile(path, afterData, 0o644); err != nil {
+	if err := ReplaceFileContents(path, afterData, 0o644); err != nil {
 		return PatchResult{}, FileErr(err, path)
 	}
 	notePatchWrite(path)
