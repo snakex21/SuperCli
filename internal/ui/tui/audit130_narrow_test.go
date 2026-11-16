@@ -154,7 +154,6 @@ func TestAudit130NarrowAskAndSettingsFit(t *testing.T) {
 		}
 	}
 	if len(problems) > 0 {
-		audit130KnownFailing(t, "ask_user/settings overflow at narrow sizes")
 		t.Fatalf("overflow:\n%s", strings.Join(problems, "\n"))
 	}
 }
@@ -176,7 +175,6 @@ func TestAudit130NarrowMainScreenFits(t *testing.T) {
 		}
 	}
 	if len(problems) > 0 {
-		audit130KnownFailing(t, "main screen overflows tiny terminals")
 		t.Fatalf("overflow:\n%s", strings.Join(problems, "\n"))
 	}
 }
@@ -218,7 +216,6 @@ func TestAudit130NarrowApprovalKeyHintVisible(t *testing.T) {
 		}
 	}
 	if len(problems) > 0 {
-		audit130KnownFailing(t, "approval key hint (y/n/a) truncated at narrow widths")
 		t.Fatalf("key hint truncated:\n%s", strings.Join(problems, "\n"))
 	}
 }

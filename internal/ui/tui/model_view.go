@@ -34,23 +34,18 @@ func (m Model) View() string {
 	if m.mode == modeMenu {
 		return m.renderMenuView()
 	}
-	var b strings.Builder
-
 	// 1. Header chrome
-	b.WriteString(m.renderHeader())
-	b.WriteString("\n")
+	header := m.renderHeader()
 
 	// 2. Chat area (scrollable)
-	b.WriteString(m.viewport.View())
-
+	chatArea := m.viewport.View()
 	if lines := m.workerPanelLines(); len(lines) > 0 {
-		b.WriteString("\n" + strings.Join(lines, "\n"))
+		chatArea += "\n" + strings.Join(lines, "\n")
 	}
 
 	// 3. Separator line
-	sep := m.rule()
-	b.WriteString("\n")
-	b.WriteString(sep)
+	var b strings.Builder
+	b.WriteString(m.rule())
 	b.WriteString("\n")
 
 	// 4. Status bar
@@ -95,7 +90,45 @@ func (m Model) View() string {
 	b.WriteString(m.renderInputBox())
 	b.WriteString("\n")
 	b.WriteString(m.renderHintLine())
-	return b.String()
+	return m.fitMainFrame(header, chatArea, b.String())
+}
+
+// fitMainFrame joins the main screen and keeps it inside the terminal. The
+// fixed chrome (header, rule, status, composer, hints) can need more rows
+// than a tiny terminal has even with a one-row viewport; then the chat
+// rows go first, then the header, then the chrome from the top, so the
+// composer and hints stay on screen. Lines wider than the terminal (the
+// composer border at 1-2 columns) are truncated.
+func (m Model) fitMainFrame(header, chatArea, chrome string) string {
+	frame := header + "\n" + chatArea + "\n" + chrome
+	if m.width <= 0 || m.height <= 0 {
+		return frame
+	}
+	headLines := strings.Split(header, "\n")
+	chatLines := strings.Split(chatArea, "\n")
+	chromeLines := strings.Split(chrome, "\n")
+	excess := len(headLines) + len(chatLines) + len(chromeLines) - m.height
+	if excess <= 0 && m.width > 4 { // the composer border only overflows at <= 4 columns
+		return frame
+	}
+	if excess > 0 {
+		drop := min(excess, len(chatLines))
+		chatLines, excess = chatLines[drop:], excess-drop
+	}
+	if excess > 0 {
+		drop := min(excess, len(headLines))
+		headLines, excess = headLines[drop:], excess-drop
+	}
+	if excess > 0 {
+		chromeLines = chromeLines[min(excess, len(chromeLines)):]
+	}
+	lines := append(append(headLines, chatLines...), chromeLines...)
+	for i, line := range lines {
+		if ansi.StringWidth(line) > m.width {
+			lines[i] = truncateVisible(line, m.width)
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // renderHeader draws the slim top bar:

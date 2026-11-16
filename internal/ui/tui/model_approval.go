@@ -246,7 +246,7 @@ func (m Model) renderApprovalView() string {
 			}
 		}
 	}
-	card = append(card, edge("╰", " "+m.tr("tui.approval.keys")+" ", "╯"))
+	card = append(card, edge("╰", " "+fitKeyHint(m.tr("tui.approval.keys"), inner-2)+" ", "╯"))
 
 	// The conversation stays visible above the card: header plus the tail
 	// of the transcript viewport fill whatever the card does not need.
@@ -329,4 +329,15 @@ func (m Model) handleApprovalKey(msg tea.KeyMsg, a *pendingAsk, canAllow bool, l
 		a.cursor = 0
 	}
 	return m, nil
+}
+
+// fitKeyHint shortens a " · "-separated key hint to width by dropping its
+// leading segments, so the trailing (most important) keys such as "y/n/a"
+// stay readable instead of being cut off with an ellipsis.
+func fitKeyHint(hint string, width int) string {
+	parts := strings.Split(hint, " · ")
+	for len(parts) > 1 && ansi.StringWidth(strings.Join(parts, " · ")) > width {
+		parts = parts[1:]
+	}
+	return strings.Join(parts, " · ")
 }
