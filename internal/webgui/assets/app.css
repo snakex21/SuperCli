@@ -66,7 +66,8 @@
   --danger: #d05c5c;
   --ok: #58a56f;
   /* Status colours: colour encodes state (shared with the TUI palette,
-     internal/ui/tui/view_theme.go), never the kind of tool. */
+     internal/ui/tui/view_theme.go). Tool kinds use the --hl-* colours on
+     their glyph and title; a status colour always overrides them. */
   --status-running: #82aaff;
   --status-ok: #7fd18b;
   --status-warn: #e5c07b;
@@ -760,15 +761,23 @@ button.side-cost:focus-visible { outline: 2px solid var(--accent); outline-offse
   color: var(--text); font: 600 var(--fs-sm) var(--sans);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* Colour encodes status (running / ok / error / pending / denied); the kind
-   of tool is a quiet glyph, so a write that waits or fails is never green. */
+/* The kind of tool has a glyph and a colour on the glyph and the title
+   (read: blue diamond outline, write: green diamond, run: amber $, web: violet
+   ring; restored in 1.0.32 after 1.0.26 made them grey). Status still wins: a
+   failed, denied or waiting row takes the status colour, so a write that
+   fails is never green. */
 .tool-row .tname::before { color: var(--faint); font-weight: 400; }
 .tool-row.tk-read .tname::before { content: "\25C7\00a0"; }
 .tool-row.tk-write .tname::before { content: "\25C6\00a0"; }
 .tool-row.tk-run .tname::before { content: "$\00a0"; }
 .tool-row.tk-web .tname::before { content: "\25CE\00a0"; }
-.tool-row.failed .tname { color: var(--status-error); }
-.tool-row.denied .tname { color: var(--status-denied); }
+.tool-row.tk-read .tname, .tool-row.tk-read .tname::before { color: var(--hl-fn); }
+.tool-row.tk-write .tname, .tool-row.tk-write .tname::before { color: var(--hl-add); }
+.tool-row.tk-run .tname, .tool-row.tk-run .tname::before { color: var(--hl-type); }
+.tool-row.tk-web .tname, .tool-row.tk-web .tname::before { color: var(--hl-kw); }
+.tool-row.pending-approval .tname, .tool-row.pending-approval .tname::before { color: var(--status-pending); }
+.tool-row.failed .tname, .tool-row.failed .tname::before { color: var(--status-error); }
+.tool-row.denied .tname, .tool-row.denied .tname::before { color: var(--status-denied); }
 .tool-row .thint { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-row .tstat {
   display: inline-flex; align-items: center; justify-content: flex-end; gap: 7px;
@@ -1037,6 +1046,11 @@ button[data-sec="about"].has-update::after {
 .task-activity-item.tk-write .activity-name::before { content: "\25C6\00a0"; }
 .task-activity-item.tk-run .activity-name::before { content: "$\00a0"; }
 .task-activity-item.tk-web .activity-name::before { content: "\25CE\00a0"; }
+.task-activity-item.tk-read .activity-name, .task-activity-item.tk-read .activity-name::before { color: var(--hl-fn); }
+.task-activity-item.tk-write .activity-name, .task-activity-item.tk-write .activity-name::before { color: var(--hl-add); }
+.task-activity-item.tk-run .activity-name, .task-activity-item.tk-run .activity-name::before { color: var(--hl-type); }
+.task-activity-item.tk-web .activity-name, .task-activity-item.tk-web .activity-name::before { color: var(--hl-kw); }
+.task-activity-item.failed .activity-name, .task-activity-item.failed .activity-name::before { color: var(--status-error); }
 .task-activity-item .activity-hint { color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-activity-item .activity-status { color: var(--faint); white-space: nowrap; }
 .task-activity-item.running .activity-status { color: var(--status-running); }
