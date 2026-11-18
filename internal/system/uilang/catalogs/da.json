@@ -895,6 +895,7 @@
   "tui.status.draft": "udkast",
   "tui.status.session": "sess",
   "tui.status.tokens": "tok",
+  "tui.status.memoryOff": "Hukommelse fra",
   "tui.worker.name": "Hjælpeagent %s",
   "tui.cost_source.manual": "Manuel pris",
   "tui.cost_source.free": "Gratis service",

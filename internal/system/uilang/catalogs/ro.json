@@ -896,6 +896,7 @@
   "tui.status.draft": "proiect",
   "tui.status.session": "sess",
   "tui.status.tokens": "tok",
+  "tui.status.memoryOff": "Memorie dezactivată",
   "tui.cost_source.manual": "Preț manual",
   "tui.cost_source.free": "Serviciu gratuit",
   "tui.cost_source.local": "Timp de rulare local",

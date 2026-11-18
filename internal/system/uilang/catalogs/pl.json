@@ -894,6 +894,7 @@
   "tui.status.draft": "szkic",
   "tui.status.session": "rozmowa",
   "tui.status.tokens": "tok.",
+  "tui.status.memoryOff": "Pamięć wyłączona",
   "app.onboarding.login_failed": "Logowanie do ChatGPT nieudane: %v\nUruchamiamy bez konfiguracji — użyj /login w SuperCli, aby spróbować ponownie.\n",
   "tui.cost_source.manual": "Cena ręczna",
   "tui.cost_source.free": "Usługa bezpłatna",

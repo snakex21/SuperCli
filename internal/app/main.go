@@ -611,6 +611,9 @@ func Main() {
 	if err != nil {
 		fatal("init agent", err)
 	}
+	// search_history follows the live session id (/resume included) while
+	// memory is off.
+	memoryCurrentSessionID = loop.SessionID
 
 	loop.ConfigureHostPower(hostPower, goalSvc, false)
 	configureInvocationPersistence(loop, sessStore, checkpointCtrl)

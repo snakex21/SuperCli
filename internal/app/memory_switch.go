@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
+	"time"
 
 	"supercli/internal/agent"
 	"supercli/internal/agent/reflect"
@@ -172,6 +174,7 @@ func memorySwitchCommand(s *memorySwitch, language, args string) (string, bool) 
 	if err := config.SaveToml(globalPath, tc); err != nil {
 		return uilang.Format(language, "app.memory.saveFailed", err), true
 	}
+	defer invalidateMemoryOffIndicator()
 	// /memory on|off is an explicit choice for this session too, so it also
 	// replaces a --no-memory/--memory flag given at launch.
 	if _, flagged := config.MemoryOverride(); flagged {
@@ -217,4 +220,50 @@ func gatedPatternInjector(in *reflect.Injector) agent.PatternInjector {
 		return in
 	}
 	return gatedInjector{inner: in}
+}
+
+// memoryCurrentSessionID returns the live session id; Main sets it once the
+// loop exists. nil (tests, before the loop) restricts to nothing reachable.
+var memoryCurrentSessionID func() string
+
+// memoryHistoryScope limits search_history to the current conversation while
+// memory is off: recovering compacted parts of this conversation keeps
+// working, earlier conversations stay out of reach.
+func memoryHistoryScope(context.Context) (string, bool) {
+	if memoryActive() {
+		return "", false
+	}
+	if memoryCurrentSessionID == nil {
+		return "", true
+	}
+	return memoryCurrentSessionID(), true
+}
+
+// memoryOffCache keeps the TUI header badge cheap: the header renders on
+// every spinner tick, the switch is re-read from the config files at most
+// once per memoryOffTTL (or at once after /memory on|off).
+var memoryOffCache struct {
+	mu      sync.Mutex
+	checked time.Time
+	off     bool
+}
+
+const memoryOffTTL = 2 * time.Second
+
+// memoryOffIndicator reports whether the "memory off" badge is shown.
+func memoryOffIndicator() bool {
+	memoryOffCache.mu.Lock()
+	defer memoryOffCache.mu.Unlock()
+	if now := time.Now(); memoryOffCache.checked.IsZero() || now.Sub(memoryOffCache.checked) >= memoryOffTTL {
+		memoryOffCache.off = !memoryActive()
+		memoryOffCache.checked = now
+	}
+	return memoryOffCache.off
+}
+
+// invalidateMemoryOffIndicator makes the next header render re-read the switch.
+func invalidateMemoryOffIndicator() {
+	memoryOffCache.mu.Lock()
+	memoryOffCache.checked = time.Time{}
+	memoryOffCache.mu.Unlock()
 }

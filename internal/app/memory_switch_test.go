@@ -189,3 +189,33 @@ func TestMemorySwitchCLIFlagWinsOverConfig(t *testing.T) {
 	}
 	_ = os.Remove(globalPath)
 }
+
+func TestMemoryHistoryScopeFollowsSwitch(t *testing.T) {
+	s := installMemorySwitch(t, true)
+	prev := memoryCurrentSessionID
+	memoryCurrentSessionID = func() string { return "sess-now" }
+	t.Cleanup(func() { memoryCurrentSessionID = prev })
+	if _, restrict := memoryHistoryScope(context.Background()); restrict {
+		t.Fatal("memory on: search_history must not be restricted")
+	}
+	memorySwitchCommand(s, "en", "off")
+	if id, restrict := memoryHistoryScope(context.Background()); !restrict || id != "sess-now" {
+		t.Fatalf("memory off: scope = %q/%v, want sess-now/true", id, restrict)
+	}
+}
+
+func TestMemoryOffIndicatorFollowsSlashCommand(t *testing.T) {
+	s := installMemorySwitch(t, true)
+	invalidateMemoryOffIndicator()
+	if memoryOffIndicator() {
+		t.Fatal("badge shown while memory is on")
+	}
+	memorySwitchCommand(s, "en", "off")
+	if !memoryOffIndicator() {
+		t.Fatal("badge must appear right after /memory off")
+	}
+	memorySwitchCommand(s, "en", "on")
+	if memoryOffIndicator() {
+		t.Fatal("badge must disappear right after /memory on")
+	}
+}

@@ -896,6 +896,7 @@
   "tui.status.draft": "проект",
   "tui.status.session": "сес",
   "tui.status.tokens": "ток",
+  "tui.status.memoryOff": "Пам'ять вимкнена",
   "tui.cost_source.manual": "Ціна вручну",
   "tui.cost_source.free": "Безкоштовне обслуговування",
   "tui.cost_source.local": "Локальний час виконання",

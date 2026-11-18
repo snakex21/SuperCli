@@ -133,6 +133,7 @@ func buildTUIOptions(d tuiLaunchDeps) tui.Options {
 		LLM:                 d.provider,
 		Commands:            d.mergedCommands,
 		DashboardFn:         d.dashboardFn,
+		MemoryOffFn:         memoryOffIndicator,
 		// Incremental memory: after every finished agent turn,
 		// deterministic user facts are saved immediately (no model
 		// call) and the model-backed summary is scheduled for the

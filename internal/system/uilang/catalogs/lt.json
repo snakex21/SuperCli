@@ -894,6 +894,7 @@
   "tui.status.draft": "juodraštis",
   "tui.status.session": "sess",
   "tui.status.tokens": "tok",
+  "tui.status.memoryOff": "Atmintis išjungta",
   "app.onboarding.login_failed": "Nepavyko prisijungti prie ChatGPT: %v\nTęsiama be konfigūravimo — norėdami bandyti dar kartą, vykdykite /login programoje SuperCli.\n",
   "tui.worker.name": "DI subagentas %s",
   "tui.cost_source.manual": "Rankinė kaina",

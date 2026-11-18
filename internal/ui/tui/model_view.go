@@ -178,6 +178,19 @@ func (m Model) renderHeader() string {
 		// The run waits for the user: pending (amber), not working.
 		right = m.palette.StatusPending.Inherit(bar).Render(mode) + bar.Render(" ")
 	}
+	if m.memoryOffFn != nil && m.memoryOffFn() {
+		// Permanent, like the GUI chip. The badge belongs to the right-hand
+		// group, so on a narrow terminal the model name is shortened first
+		// and the badge stays visible.
+		right = m.palette.HeaderMode.Inherit(bar).Render(m.tr("tui.status.memoryOff")) + sep + right
+		if room := width - lipgloss.Width(right) - 1; lipgloss.Width(left) > room {
+			left = truncateVisible(left, max(0, room))
+		}
+		if lipgloss.Width(right) >= width {
+			// Tiny terminal: the badge alone, over the mode and the name.
+			return truncateVisible(m.palette.HeaderMode.Inherit(bar).Render(m.tr("tui.status.memoryOff")), width)
+		}
+	}
 	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1

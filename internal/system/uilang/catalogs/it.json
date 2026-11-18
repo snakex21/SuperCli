@@ -894,6 +894,7 @@
   "tui.status.draft": "bozza",
   "tui.status.session": "sess",
   "tui.status.tokens": "tok",
+  "tui.status.memoryOff": "Memoria disattivata",
   "app.onboarding.login_failed": "Accesso a ChatGPT non riuscito: %v\nSi prosegue senza configurazione — esegui /login in SuperCli per riprovare.\n",
   "tui.worker.name": "Sottoagente %s",
   "tui.cost_source.manual": "Prezzo manuale",

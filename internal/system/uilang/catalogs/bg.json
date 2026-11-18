@@ -895,6 +895,7 @@
   "tui.status.draft": "чернова",
   "tui.status.session": "разг.",
   "tui.status.tokens": "ток",
+  "tui.status.memoryOff": "Паметта е изключена",
   "tui.worker.name": "Подагент %s",
   "tui.cost_source.manual": "Ръчна цена",
   "tui.cost_source.free": "Безплатно обслужване",

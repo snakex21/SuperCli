@@ -77,7 +77,12 @@ func (ts *interactiveToolset) registerCore(mem memoryBundle, goals *goal.Service
 	}
 	if sessStore != nil {
 		// Opt-in: the model discovers it via tool_search.
-		provided["search_history"] = tools.NewSearchHistory(sessStore).Spec()
+		// Memory off restricts it to the current conversation (see
+		// memoryHistoryScope); the memory-on description is unchanged.
+		searchHistory := tools.NewSearchHistory(sessStore)
+		searchHistory.Scope = memoryHistoryScope
+		searchHistory.CurrentOnly = !supercliMemoryAtStartup
+		provided["search_history"] = searchHistory.Spec()
 	}
 	ts.deps.Goals = goals
 	ts.deps.GoalSetup = goalSetup

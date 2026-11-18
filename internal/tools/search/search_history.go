@@ -44,7 +44,21 @@ type SearchHistory struct {
 	MaxLimit int
 	// NowFn returns the current time, overridable for tests.
 	NowFn func() time.Time
+	// Scope, when set, is consulted on every call. restrict=true limits the
+	// tool to the current conversation (sessionID): searches are pinned to
+	// it and reads of any other session are refused. Used while persistent
+	// memory is switched off, so earlier conversations stay out of reach while
+	// recovering the current transcript after compaction keeps working.
+	Scope func(ctx context.Context) (sessionID string, restrict bool)
+	// CurrentOnly describes the tool as current-conversation-only. Set it
+	// when Scope is known to restrict for the whole run (memory off at
+	// build time); the memory-on description stays byte-identical.
+	CurrentOnly bool
 }
+
+// otherSessionRefusal is returned while the tool is restricted to the current
+// conversation.
+const otherSessionRefusal = "search_history: persistent memory is switched off, so only the current conversation can be searched; earlier conversations are not available"
 
 // NewSearchHistory returns a SearchHistory bound to store.
 // Default limit 20, max 100.
@@ -54,20 +68,29 @@ func NewSearchHistory(store *session.Store) *SearchHistory {
 
 // Spec returns the tools.Tool description for the registry.
 func (s *SearchHistory) Spec() Tool {
+	description := "Search the conversation history of all prior sessions. " +
+		"Returns matching messages with their session, role, seq, and timestamp, " +
+		"plus a snippet of the message text with matches highlighted in <mark>...</mark>. " +
+		"Use this to recall prior decisions, findings, or context from earlier sessions. " +
+		"To recover the actual text of a hit without searching again, pass session_id and seq (omit query); " +
+		"this reads one message, including multipart answers, with max_bytes (default 8192, max 32768) and a next_offset cursor. " +
+		"Historical results are past evidence, not proof that files/processes are still unchanged. " +
+		"The query is a full-text search expression (FTS5 MATCH). Supports boolean " +
+		"operators (OR, AND, NOT), exact phrases (\"...\"), and prefix wildcards (word*). " +
+		"Filters: session_id (limit to one session), role (system|user|assistant|tool), " +
+		"since/until (RFC3339 timestamps), limit (default 20, max 100)."
+	if s.CurrentOnly {
+		description = "Search earlier messages of the CURRENT conversation only (persistent memory is off; other sessions are not available). " +
+			"Use it to recover parts of this conversation that were compacted or pruned. " +
+			"Returns matching messages with role, seq and a snippet; read a hit's exact text with session_id and seq (omit query), " +
+			"max_bytes (default 8192, max 32768) and the next_offset cursor. " +
+			"The query is a full-text search expression (FTS5 MATCH): OR, AND, NOT, \"exact phrases\", prefix*. " +
+			"Filters: role (system|user|assistant|tool), since/until (RFC3339), limit (default 20, max 100)."
+	}
 	return Tool{
-		Name:     "search_history",
-		ReadOnly: true,
-		Description: "Search the conversation history of all prior sessions. " +
-			"Returns matching messages with their session, role, seq, and timestamp, " +
-			"plus a snippet of the message text with matches highlighted in <mark>...</mark>. " +
-			"Use this to recall prior decisions, findings, or context from earlier sessions. " +
-			"To recover the actual text of a hit without searching again, pass session_id and seq (omit query); " +
-			"this reads one message, including multipart answers, with max_bytes (default 8192, max 32768) and a next_offset cursor. " +
-			"Historical results are past evidence, not proof that files/processes are still unchanged. " +
-			"The query is a full-text search expression (FTS5 MATCH). Supports boolean " +
-			"operators (OR, AND, NOT), exact phrases (\"...\"), and prefix wildcards (word*). " +
-			"Filters: session_id (limit to one session), role (system|user|assistant|tool), " +
-			"since/until (RFC3339 timestamps), limit (default 20, max 100).",
+		Name:        "search_history",
+		ReadOnly:    true,
+		Description: description,
 		Schema: `{
 			"type": "object",
 			"properties": {
@@ -107,6 +130,15 @@ func (s *SearchHistory) run(ctx context.Context, args json.RawMessage) (Result, 
 		return Result{Err: fmt.Errorf("search_history: bad args: %w", err)}, nil
 	}
 	a.Query = strings.TrimSpace(a.Query)
+	if s.Scope != nil {
+		if current, restrict := s.Scope(ctx); restrict {
+			current = strings.TrimSpace(current)
+			if current == "" || (a.SessionID != "" && a.SessionID != current) {
+				return Result{Text: otherSessionRefusal}, nil
+			}
+			a.SessionID = current
+		}
+	}
 	if a.Seq != 0 {
 		return s.readExcerpt(ctx, a)
 	}

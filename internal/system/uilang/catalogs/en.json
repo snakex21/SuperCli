@@ -894,6 +894,7 @@
   "tui.status.draft": "draft",
   "tui.status.session": "sess",
   "tui.status.tokens": "tok",
+  "tui.status.memoryOff": "Memory off",
   "app.onboarding.login_failed": "ChatGPT login failed: %v\nFalling back to setup-free start — run /login inside SuperCli to retry.\n",
   "tui.cost_source.manual": "Manual price",
   "tui.cost_source.free": "Free service",

@@ -896,6 +896,7 @@
   "tui.status.draft": "черновик",
   "tui.status.session": "разговор",
   "tui.status.tokens": "ток",
+  "tui.status.memoryOff": "Память выключена",
   "tui.cost_source.manual": "Ручная цена",
   "tui.cost_source.free": "Бесплатный сервис",
   "tui.cost_source.local": "Локальная среда выполнения",

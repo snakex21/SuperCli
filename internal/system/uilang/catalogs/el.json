@@ -894,6 +894,7 @@
   "tui.status.draft": "προσχέδιο",
   "tui.status.session": "συνομιλία",
   "tui.status.tokens": "tok",
+  "tui.status.memoryOff": "Μνήμη ανενεργή",
   "app.onboarding.login_failed": "Η σύνδεση στο ChatGPT απέτυχε: %v\nΣυνεχίζουμε χωρίς ρύθμιση — εκτελέστε /login μέσα στο SuperCli για να δοκιμάσετε ξανά.\n",
   "tui.worker.name": "Υποπράκτορας AI %s",
   "tui.cost_source.manual": "Χειροκίνητη τιμή",

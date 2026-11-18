@@ -896,6 +896,7 @@
   "tui.status.draft": "taslak",
   "tui.status.session": "konuşma",
   "tui.status.tokens": "tok",
+  "tui.status.memoryOff": "Bellek kapalı",
   "tui.cost_source.manual": "Manuel fiyat",
   "tui.cost_source.free": "Ücretsiz",
   "tui.cost_source.local": "Yerel çalışma zamanı",

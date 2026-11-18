@@ -894,6 +894,7 @@
   "tui.status.draft": "mustand",
   "tui.status.session": "vestlus",
   "tui.status.tokens": "tok",
+  "tui.status.memoryOff": "Mälu väljas",
   "app.onboarding.login_failed": "ChatGPT-sse sisselogimine ebaõnnestus: %v\nJätkame seadistamiseta — uuesti proovimiseks käivita SuperCli-s /login.\n",
   "tui.worker.name": "Alamagent %s",
   "tui.cost_source.manual": "Käsitsi hind",

@@ -894,6 +894,7 @@
   "tui.status.draft": "luonnos",
   "tui.status.session": "sess",
   "tui.status.tokens": "tok",
+  "tui.status.memoryOff": "Muisti pois",
   "app.onboarding.login_failed": "ChatGPT-kirjautuminen epäonnistui: %v\nJatketaan ilman määrityksiä — yritä uudelleen suorittamalla /login SuperCli-sovelluksessa.\n",
   "tui.worker.name": "Apuriagentti %s",
   "tui.cost_source.manual": "Manuaalinen hinta",

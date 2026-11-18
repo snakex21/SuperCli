@@ -896,6 +896,7 @@
   "tui.status.draft": "osnutek",
   "tui.status.session": "sess",
   "tui.status.tokens": "tok",
+  "tui.status.memoryOff": "Pomnilnik izklopljen",
   "tui.cost_source.manual": "Ročna cena",
   "tui.cost_source.free": "Brezplačna storitev",
   "tui.cost_source.local": "Lokalno izvajanje",

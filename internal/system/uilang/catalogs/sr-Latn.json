@@ -896,6 +896,7 @@
   "tui.status.draft": "nacrt",
   "tui.status.session": "razg.",
   "tui.status.tokens": "tok",
+  "tui.status.memoryOff": "Memorija isključena",
   "tui.cost_source.manual": "Ručna cena",
   "tui.cost_source.free": "Besplatna usluga",
   "tui.cost_source.local": "Lokalno vreme izvođenja",

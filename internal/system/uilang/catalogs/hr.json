@@ -894,6 +894,7 @@
   "tui.status.draft": "nacrt",
   "tui.status.session": "razg.",
   "tui.status.tokens": "tok",
+  "tui.status.memoryOff": "Memorija isključena",
   "app.onboarding.login_failed": "Prijava u ChatGPT nije uspjela: %v\nNastavljamo bez postavljanja — pokrenite /login u SuperCli za ponovni pokušaj.\n",
   "tui.worker.name": "Pomoćni agent %s",
   "tui.cost_source.manual": "Ručna cijena",

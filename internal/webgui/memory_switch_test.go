@@ -114,6 +114,11 @@ func TestWebMemorySwitchOffRemovesToolsBriefingAndGuidance(t *testing.T) {
 	if strings.Contains(system, llmprompt.MemoryGuidance(true)) || strings.Contains(system, "remember preferences; recall only") {
 		t.Fatal("memory off: prompt still advertises memory tools")
 	}
+	if _, reg, err := eng.buildLoopWithSession(nil, nil, home, nil, nil); err != nil {
+		t.Fatal(err)
+	} else if history, ok := reg.Get("search_history"); !ok || !strings.Contains(history.Description, "CURRENT conversation only") {
+		t.Fatalf("memory off: search_history must be limited to the current conversation (present=%v)", ok)
+	}
 	store, err := memory.OpenStore(data)
 	if err != nil {
 		t.Fatal(err)

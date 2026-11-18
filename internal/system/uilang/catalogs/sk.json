@@ -896,6 +896,7 @@
   "tui.status.draft": "návrh",
   "tui.status.session": "sess",
   "tui.status.tokens": "tok",
+  "tui.status.memoryOff": "Pamäť vypnutá",
   "tui.cost_source.manual": "Manuálna cena",
   "tui.cost_source.free": "Bezplatná služba",
   "tui.cost_source.local": "Miestny čas spustenia",

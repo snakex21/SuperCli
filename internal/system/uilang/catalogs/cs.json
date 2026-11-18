@@ -895,6 +895,7 @@
   "tui.status.draft": "návrh",
   "tui.status.session": "sess",
   "tui.status.tokens": "tok",
+  "tui.status.memoryOff": "Paměť vypnutá",
   "tui.worker.name": "Pomocný agent %s",
   "tui.cost_source.manual": "Manuální cena",
   "tui.cost_source.free": "Bezplatná služba",

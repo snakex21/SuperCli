@@ -894,6 +894,7 @@
   "tui.status.draft": "Entwurf",
   "tui.status.session": "Gespräch",
   "tui.status.tokens": "tok",
+  "tui.status.memoryOff": "Gedächtnis aus",
   "app.onboarding.login_failed": "Die Anmeldung bei ChatGPT ist fehlgeschlagen: %v\nDer Start erfolgt ohne Einrichtung — führen Sie /login in SuperCli aus, um es erneut zu versuchen.\n",
   "tui.worker.name": "Hilfsagent %s",
   "tui.cost_source.manual": "Manueller Preis",

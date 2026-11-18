@@ -896,6 +896,7 @@
   "tui.status.draft": "rascunho",
   "tui.status.session": "conversa",
   "tui.status.tokens": "tok",
+  "tui.status.memoryOff": "Memória desativada",
   "tui.cost_source.manual": "Preço manual",
   "tui.cost_source.free": "Serviço gratuito",
   "tui.cost_source.local": "Tempo de execução local",

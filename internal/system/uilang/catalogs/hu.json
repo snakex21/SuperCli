@@ -894,6 +894,7 @@
   "tui.status.draft": "tervezet",
   "tui.status.session": "sess",
   "tui.status.tokens": "tok",
+  "tui.status.memoryOff": "Memória kikapcsolva",
   "app.onboarding.login_failed": "A ChatGPT-be való bejelentkezés sikertelen: %v\nFolytatás beállítás nélkül — az újrapróbáláshoz futtasd a /login parancsot a SuperCli alkalmazásban.\n",
   "tui.worker.name": "Segédügynök %s",
   "tui.cost_source.manual": "Manuális ár",

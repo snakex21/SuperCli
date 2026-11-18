@@ -261,8 +261,10 @@ The global value is what GUI **Settings → Memory** and TUI `/settings` →
 Memory edit, and what `/memory on` / `/memory off` write. `/memory status`
 (TUI) and the GUI settings row show the effective state for the current project
 and where it comes from (launch option, environment variable, project settings,
-settings or default). In the GUI a **memory off** chip next to the model button
-is visible while memory is off; it opens the settings.
+settings or default). While memory is off, the GUI shows a **memory off** chip
+next to the model button (it opens the settings) and the TUI header shows a
+permanent **memory off** badge next to the run state; on a narrow terminal the
+model name is shortened first so the badge stays visible.
 
 When memory is off:
 
@@ -272,6 +274,9 @@ When memory is off:
   updates or learned patterns;
 - `remember` and `recall` are not offered to the model, and the stable system
   prompt drops its memory hint and says that memory is off;
+- `search_history` only searches and reads the **current** conversation, so
+  recovering compacted parts of it still works while earlier conversations are
+  out of reach (other session ids are refused);
 - a session that **starts** with memory off does not open the memory databases
   at all;
 - stored memory is **not deleted**. Switching memory back on restores it. To
@@ -295,9 +300,8 @@ briefing is just one changed tail, appended like any other tail change. In a
 running TUI session the system prefix and the tool list do not change at all
 until the next start.
 
-Not affected: conversation history (`sessions.db`, `/resume`, the
-`search_history` tool used to recover earlier parts of the transcript after
-compaction), goals, user instructions and project instructions.
+Not affected: conversation history itself (`sessions.db`, `/resume`), goals,
+user instructions and project instructions.
 
 ## Cache / prompt shape (see architecture.md, performance.md)
 

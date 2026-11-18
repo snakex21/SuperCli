@@ -72,6 +72,7 @@ type Model struct {
 	// disables the status line entirely. F7.
 	statusFn    func() string
 	dashboardFn func() DashboardSnapshot
+	memoryOffFn func() bool
 
 	// F25: theme and styled markers
 	palette     Palette
@@ -299,6 +300,10 @@ type Options struct {
 	StatusFn func() string
 	// DashboardFn supplies cheap, structured footer data.
 	DashboardFn func() DashboardSnapshot
+	// MemoryOffFn reports whether persistent memory is switched off; the
+	// header then shows a permanent "memory off" badge (the GUI chip's
+	// counterpart). It is called on every render, so it must be cheap.
+	MemoryOffFn func() bool
 	// ExtCh is the loop's external event channel
 	// (F12 ConsultEvent). When non-nil, the TUI
 	// starts a read pump in Init() and routes
@@ -451,6 +456,7 @@ func New(opts Options) Model {
 		commands:          opts.Commands,
 		statusFn:          opts.StatusFn,
 		dashboardFn:       opts.DashboardFn,
+		memoryOffFn:       opts.MemoryOffFn,
 		palette:           p,
 		renderCache:       new(tuiRenderCache),
 		marker:            mkr,

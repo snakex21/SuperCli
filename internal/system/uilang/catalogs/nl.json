@@ -894,6 +894,7 @@
   "tui.status.draft": "voorlopige versie",
   "tui.status.session": "gesprek",
   "tui.status.tokens": "tok",
+  "tui.status.memoryOff": "Geheugen uit",
   "app.onboarding.login_failed": "Aanmelden bij ChatGPT is mislukt: %v\nWe gaan verder zonder configuratie — voer /login uit in SuperCli om het opnieuw te proberen.\n",
   "tui.worker.name": "Subagent %s",
   "tui.cost_source.manual": "Handmatige prijs",

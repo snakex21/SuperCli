@@ -894,6 +894,7 @@
   "tui.status.draft": "brouillon",
   "tui.status.session": "séance",
   "tui.status.tokens": "je t'aime",
+  "tui.status.memoryOff": "Mémoire désactivée",
   "app.onboarding.login_failed": "La connexion à ChatGPT a échoué : %v\nLe démarrage continue sans configuration — exécutez /login dans SuperCli pour réessayer.\n",
   "tui.worker.name": "Agent auxiliaire %s",
   "tui.cost_source.manual": "Prix ​​manuel",

@@ -120,7 +120,18 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 		provided["recall"] = tools.NewRecallDual(projectMemory, globalMemory).Spec()
 	}
 	if history, historyErr := e.sessionStore(); historyErr == nil {
-		provided["search_history"] = tools.NewSearchHistory(history).Spec()
+		searchHistory := tools.NewSearchHistory(history)
+		if !memoryOn {
+			// Memory off: only this conversation stays searchable (compaction
+			// recovery); earlier conversations are out of reach.
+			runSessionID := ""
+			if bound, ok := writer.(interface{ SessionID() string }); ok {
+				runSessionID = bound.SessionID()
+			}
+			searchHistory.CurrentOnly = true
+			searchHistory.Scope = func(context.Context) (string, bool) { return runSessionID, true }
+		}
+		provided["search_history"] = searchHistory.Spec()
 	}
 	if !officeProfile && config.DarwinEnabled(tc) {
 		provided["darwin"] = e.darwinSpec(reg, prov, cfg, tc, home, systemPrompt)

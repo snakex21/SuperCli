@@ -896,6 +896,7 @@
   "tui.status.draft": "förslag",
   "tui.status.session": "sess",
   "tui.status.tokens": "tok",
+  "tui.status.memoryOff": "Minne av",
   "tui.cost_source.manual": "Manuellt pris",
   "tui.cost_source.free": "Gratis service",
   "tui.cost_source.local": "Lokal körtid",
