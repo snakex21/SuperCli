@@ -282,10 +282,58 @@ sections.appearance = function () {
     return gg;
   }
   panelContent.appendChild(selectRow(t("app.lang"), "lang", UI_LANGUAGES.map(function (language) { return [language.code, language.name]; })));
-  panelContent.appendChild(selectRow(t("app.uiFont"), "uiFont",
-    [["system", t("app.systemFont")], ["segoe", "Segoe UI"], ["aptos", "Aptos"], ["arial", "Arial"], ["tahoma", "Tahoma"], ["verdana", "Verdana"], ["trebuchet", "Trebuchet MS"], ["georgia", "Georgia"]]));
-  panelContent.appendChild(selectRow(t("app.codeFont"), "codeFont",
-    [["system", t("app.systemCodeFont")], ["cascadia", "Cascadia Mono"], ["jetbrains", "JetBrains Mono"], ["fira", "Fira Code"], ["consolas", "Consolas"], ["courier", "Courier New"], ["lucida", "Lucida Console"]]));
+  // Font rows: a select (embedded fonts, installed Windows fonts, "Custom…"),
+  // a name field shown for "Custom…" and one shared live preview.
+  var fontPreview = null;
+  function renderFontPreview() {
+    if (!fontPreview) return;
+    fontPreview.querySelector(".font-preview-text").style.fontFamily = uiFontFamily();
+    fontPreview.querySelector(".font-preview-code").style.fontFamily = codeFontFamily();
+  }
+  function fontRow(label, key, customKey, options) {
+    var gg = selectRow(label, key, options.concat([["custom", t("app.customFont")]]));
+    var sel = gg.querySelector("select");
+    sel.classList.add("font-select");
+    sel.dataset.fontKey = key;
+    var nameRow = el("label", "toggle-row font-custom-row");
+    nameRow.appendChild(el("span", "", t("app.customFontName")));
+    var input = el("input", "field-input font-custom-input");
+    input.type = "text";
+    input.maxLength = 64;
+    input.spellcheck = false;
+    input.value = ui[customKey] || "";
+    input.dataset.fontKey = customKey;
+    input.addEventListener("input", function () {
+      ui[customKey] = input.value;
+      applyUI();
+      saveUI();
+      renderFontPreview();
+    });
+    nameRow.appendChild(input);
+    var hint = el("div", "font-custom-hint", t("app.customFontHint"));
+    function syncCustom() {
+      var on = sel.value === "custom";
+      nameRow.hidden = !on;
+      hint.hidden = !on;
+    }
+    sel.addEventListener("change", function () { syncCustom(); renderFontPreview(); });
+    gg.appendChild(nameRow);
+    gg.appendChild(hint);
+    syncCustom();
+    return gg;
+  }
+  panelContent.appendChild(fontRow(t("app.uiFont"), "uiFont", "uiFontCustom",
+    [["system", t("app.systemFont")], ["inter", "Inter"], ["plex", "IBM Plex Sans"], ["atkinson", "Atkinson Hyperlegible (" + t("app.fontLatinOnly") + ")"], ["noto", "Noto Sans"],
+      ["segoe", "Segoe UI"], ["aptos", "Aptos"], ["arial", "Arial"], ["tahoma", "Tahoma"], ["verdana", "Verdana"], ["trebuchet", "Trebuchet MS"], ["georgia", "Georgia"]]));
+  panelContent.appendChild(fontRow(t("app.codeFont"), "codeFont", "codeFontCustom",
+    [["system", t("app.systemCodeFont")], ["jetbrains", "JetBrains Mono"], ["fira", "Fira Code"], ["firalig", "Fira Code (" + t("app.fontLigatures") + ")"], ["cascadiacode", "Cascadia Code"],
+      ["plexmono", "IBM Plex Mono"], ["sourcecode", "Source Code Pro"], ["cascadia", "Cascadia Mono"], ["consolas", "Consolas"], ["courier", "Courier New"], ["lucida", "Lucida Console"]]));
+  fontPreview = el("div", "group font-preview");
+  fontPreview.appendChild(i18nEl("div", "g-label", "app.fontPreview"));
+  fontPreview.appendChild(el("p", "font-preview-text", "Zażółć gęślą jaźń · Съешь же ещё этих булок · The quick brown fox 0123456789"));
+  fontPreview.appendChild(el("pre", "font-preview-code", "func main() {\n\tif a != b && n >= 0 { return \"0O 1lI → ok\" }\n}"));
+  panelContent.appendChild(fontPreview);
+  renderFontPreview();
   panelContent.appendChild(selectRow(t("app.scale"), "uiScale", [["auto", t("app.auto")], ["compact", "90%"], ["normal", "100%"], ["large", "110%"], ["xlarge", "125%"], ["huge", "140%"]]));
 
   var gn = el("div", "group");

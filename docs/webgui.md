@@ -81,6 +81,18 @@ muted `#63636b`, faint `#9a9aa0`, same accent.
 Type: system UI stack for the interface, `ui-monospace` stack for
 code, paths, telemetry. Base 14px; chat 14.5px/1.65.
 
+Fonts (Appearance → Interface font / Code font): the system stacks by
+default; embedded fonts that work offline (Inter, IBM Plex Sans, Atkinson
+Hyperlegible, Noto Sans; JetBrains Mono, Fira Code with or without
+ligatures, Cascadia Code, IBM Plex Mono, Source Code Pro); installed
+Windows fonts (Segoe UI, Aptos, Arial, Tahoma, Verdana, Trebuchet MS,
+Georgia; Cascadia Mono, Consolas, Courier New, Lucida Console); and
+"Custom…", the name of any installed font, with the system stack as
+fallback when it is missing. Atkinson Hyperlegible covers Latin only;
+Cyrillic and Greek fall back to Noto Sans. A preview under the selects
+shows sample text and code in the chosen fonts. The embedded fonts are
+OFL 1.1 (`LICENSES/fonts/`, `THIRD_PARTY_NOTICES.md`).
+
 ## Persistence
 
 UI preferences, composer drafts and the sent-attachment index live in the

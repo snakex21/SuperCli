@@ -109,3 +109,24 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Web GUI fonts
+
+The web GUI embeds these fonts (`internal/webgui/assets/fonts/`), all under the SIL Open Font
+License 1.1. The full licence texts with their copyright lines are in `LICENSES/fonts/`;
+`LICENSES/fonts/MANIFEST.json` lists each file's source URL, version and SHA-256.
+
+Fonts with a Reserved Font Name (IBM Plex, Source Code Pro, Cascadia Code) are shipped
+unmodified. Inter, Atkinson Hyperlegible, Noto Sans, JetBrains Mono and Fira Code are
+modified: variable fonts instanced to weights 400-700, all subset to Latin, Latin Extended, Cyrillic and
+punctuation, and converted to WOFF2 (Fira Code once more without programming ligatures).
+
+- Inter (Version 4.001): `LICENSES/fonts/inter.txt`
+- IBM Plex Sans (Version 3.201): `LICENSES/fonts/ibmplexsans.txt`
+- Atkinson Hyperlegible (Version 1.006): `LICENSES/fonts/atkinsonhyperlegible.txt`
+- Noto Sans (Version 2.015): `LICENSES/fonts/notosans.txt`
+- JetBrains Mono (Version 2.211): `LICENSES/fonts/jetbrainsmono.txt`
+- Fira Code (Version 5.002): `LICENSES/fonts/firacode.txt`
+- Source Code Pro (Version 1.026): `LICENSES/fonts/sourcecodepro.txt`
+- IBM Plex Mono (Version 2.3): `LICENSES/fonts/ibmplexmono.txt`
+- Cascadia Code (Version 2102.025): `LICENSES/fonts/cascadia.txt`

@@ -4,6 +4,7 @@
 
 var ui = {
   theme: "dark", lang: detectedLanguage(), uiFont: "system", codeFont: "system", uiScale: "auto",
+  uiFontCustom: "", codeFontCustom: "",
   notifySound: false, notifyDesktop: false, appBadge: true, sidebarHidden: true, rememberSessionRuntime: true,
   toolsExpanded: false, thinkingExpanded: null, showGenerationSpeed: true, resumeLastSession: false,
   assistantEdit: false, assistantEditModelSees: false,
@@ -12,10 +13,16 @@ var ui = {
 var uiBlob = {}; // last blob seen from the server (read-only mirror)
 var sidebarCompactMQ = window.matchMedia("(max-width: 1180px)");
 
-// Real, commonly-installed font choices. Every option must visibly
-// change rendering on a stock Windows box — a knob that does nothing
-// breaks the "it just works" contract.
+// Font choices. Every option must visibly change rendering on a stock
+// Windows box — a knob that does nothing breaks the "it just works"
+// contract — so the non-Windows families are embedded (fonts.css,
+// LICENSES/fonts/) and listed first, before an installed copy.
 var UI_FONTS = {
+  inter: '"SuperCli Inter", Inter, "Segoe UI", system-ui, sans-serif',
+  plex: '"SuperCli IBM Plex Sans", "IBM Plex Sans", "Segoe UI", system-ui, sans-serif',
+  // Atkinson Hyperlegible has Latin only: Cyrillic and Greek fall back to Noto Sans.
+  atkinson: '"SuperCli Atkinson Hyperlegible", "SuperCli Noto Sans", "Segoe UI", system-ui, sans-serif',
+  noto: '"SuperCli Noto Sans", "Noto Sans", "Segoe UI", system-ui, sans-serif',
   system: '-apple-system, "Segoe UI", system-ui, sans-serif',
   segoe: '"Segoe UI", system-ui, sans-serif',
   arial: 'Arial, Helvetica, sans-serif',
@@ -31,9 +38,30 @@ var CODE_FONTS = {
   consolas: 'Consolas, "Lucida Console", monospace',
   courier: '"Courier New", Courier, monospace',
   lucida: '"Lucida Console", Consolas, monospace',
-  jetbrains: '"JetBrains Mono", "Cascadia Mono", Consolas, monospace',
-  fira: '"Fira Code", "Cascadia Mono", Consolas, monospace',
+  jetbrains: '"SuperCli JetBrains Mono", "JetBrains Mono", "Cascadia Mono", Consolas, monospace',
+  fira: '"SuperCli Fira Code", "Cascadia Mono", Consolas, monospace',
+  firalig: '"SuperCli Fira Code Ligatures", "Fira Code", "Cascadia Mono", Consolas, monospace',
+  cascadiacode: '"SuperCli Cascadia Code", "Cascadia Code", "Cascadia Mono", Consolas, monospace',
+  plexmono: '"SuperCli IBM Plex Mono", "IBM Plex Mono", "Cascadia Mono", Consolas, monospace',
+  sourcecode: '"SuperCli Source Code Pro", "Source Code Pro", "Cascadia Mono", Consolas, monospace',
 };
+
+// customFontFamily turns a user-typed installed font name into a CSS
+// family list with the system stack as fallback. Only letters, digits,
+// spaces and . _ - are kept, so the value can never break out of the
+// quoted family name; an empty or unusable name means the system stack.
+function customFontFamily(name, fallback) {
+  var clean = String(name || "").replace(/[^\p{L}\p{N} ._-]/gu, "").replace(/\s+/g, " ").trim().slice(0, 64);
+  return clean ? '"' + clean + '", ' + fallback : fallback;
+}
+function uiFontFamily() {
+  if (ui.uiFont === "custom") return customFontFamily(ui.uiFontCustom, UI_FONTS.system);
+  return UI_FONTS[ui.uiFont] || UI_FONTS.system;
+}
+function codeFontFamily() {
+  if (ui.codeFont === "custom") return customFontFamily(ui.codeFontCustom, CODE_FONTS.system);
+  return CODE_FONTS[ui.codeFont] || CODE_FONTS.system;
+}
 
 var pushTimer = null;
 // saveUI persists ONLY the keys this client owns (ui.*). The server
@@ -123,8 +151,8 @@ function applyUI() {
   applyGenerationSpeedVisibility();
   applyAssistantEditVisibility();
   document.documentElement.dataset.theme = ui.theme || "dark";
-  document.documentElement.style.setProperty("--sans", UI_FONTS[ui.uiFont] || UI_FONTS.system);
-  document.documentElement.style.setProperty("--mono", CODE_FONTS[ui.codeFont] || CODE_FONTS.system);
+  document.documentElement.style.setProperty("--sans", uiFontFamily());
+  document.documentElement.style.setProperty("--mono", codeFontFamily());
   applyViewportScale();
   $("#shell").classList.toggle("sidebar-hidden", !!ui.sidebarHidden);
   applyI18n();

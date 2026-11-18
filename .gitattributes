@@ -5,3 +5,7 @@ test/go/eval/fixtures/**/logs/*.log -text
 # (CRLF / UTF-8 BOM tasks); never convert line endings on checkout.
 test/go/eval/fixtures/agent-ho3-*/** -text
 test/go/eval/agent-suite-ref/ho3-*/** -text
+
+# Embedded GUI fonts are binary.
+*.woff2 binary
+*.ttf binary

@@ -2495,3 +2495,10 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
 .subscription-summary.compact .subscription-window-meta { font-size: 9px; }
 .side-cost.cost-state-subscription .side-cost-value { font-size: var(--fs-sm); line-height: 1.5; white-space: normal; }
 @media(max-width:540px) { .claude-auth-content { padding: 24px 18px; } .claude-auth-title { font-size: var(--fs-xl); } .claude-auth-actions { align-items: stretch; flex-direction: column; } }
+
+/* Font settings (1.0.33): name field for "Custom…" and the live preview. */
+.font-custom-row .field-input { flex: 1; min-width: 0; max-width: 260px; }
+.font-custom-hint { color: var(--faint); font-size: var(--fs-xs); padding: 0 0 6px; }
+.font-preview .font-preview-text { margin: 6px 0; font-size: var(--fs-md); color: var(--text); }
+.font-preview .font-preview-code { margin: 0; padding: 8px 10px; font-size: var(--fs-sm); color: var(--text); background: var(--raise); border: 1px solid var(--line); border-radius: var(--radius); white-space: pre; overflow-x: auto; }
+.font-custom-row[hidden], .font-custom-hint[hidden] { display: none; }

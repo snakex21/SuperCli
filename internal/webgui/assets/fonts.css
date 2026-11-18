@@ -1,0 +1,15 @@
+/* Embedded fonts (1.0.33): OFL 1.1, licences and sources in LICENSES/fonts/.
+   Fonts with a Reserved Font Name ship unmodified (.ttf); the others are
+   subset to Latin, Latin Extended, Cyrillic and punctuation (WOFF2). */
+@font-face { font-family: "SuperCli Inter"; src: url("fonts/inter.woff2") format("woff2"); font-weight: 400 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "SuperCli IBM Plex Sans"; src: url("fonts/ibm-plex-sans.ttf") format("truetype"); font-weight: 400 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "SuperCli Atkinson Hyperlegible"; src: url("fonts/atkinson-regular.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "SuperCli Atkinson Hyperlegible"; src: url("fonts/atkinson-bold.woff2") format("woff2"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "SuperCli Noto Sans"; src: url("fonts/noto-sans.woff2") format("woff2"); font-weight: 400 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "SuperCli JetBrains Mono"; src: url("fonts/jetbrains-mono.woff2") format("woff2"); font-weight: 400 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "SuperCli Fira Code"; src: url("fonts/fira-code.woff2") format("woff2"); font-weight: 400 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "SuperCli Fira Code Ligatures"; src: url("fonts/fira-code-ligatures.woff2") format("woff2"); font-weight: 400 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "SuperCli Source Code Pro"; src: url("fonts/source-code-pro.ttf") format("truetype"); font-weight: 400 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "SuperCli IBM Plex Mono"; src: url("fonts/ibm-plex-mono-regular.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "SuperCli IBM Plex Mono"; src: url("fonts/ibm-plex-mono-semibold.ttf") format("truetype"); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: "SuperCli Cascadia Code"; src: url("fonts/cascadia-code.ttf") format("truetype"); font-weight: 400 700; font-style: normal; font-display: swap; }

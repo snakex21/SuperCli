@@ -13,7 +13,7 @@ import (
 func TestReleaseBundleContainsPublicFilesAndNeverUserData(t *testing.T) {
 	root := t.TempDir()
 	output := t.TempDir()
-	files := map[string]string{"README.md": "public", "LICENSE": "MIT", "THIRD_PARTY_NOTICES.md": "notices", "cli.exe": "cli", "gui.exe": "gui", "docs/readme/en.md": "English", "docs/readme/bg.md": "Bulgarian", "docs/configuration.md": "config docs", "docs/releases/1.0.0.md": "release notes", "docs/screenshots/1.0.0/README.md": "gallery", "docs/screenshots/1.0.0/gui-en.jpg": "public screenshot", "supercli-data/skills/builtin-skills.zip": "builtin skills", "supercli-data/config.toml": "SECRET", "supercli-data/auth.json": "SECRET", "supercli-data/sessions.db": "SECRET", "docs/evals/private.md": "SECRET", "notes.txt": "SECRET"}
+	files := map[string]string{"README.md": "public", "LICENSE": "MIT", "THIRD_PARTY_NOTICES.md": "notices", "cli.exe": "cli", "gui.exe": "gui", "docs/readme/en.md": "English", "docs/readme/bg.md": "Bulgarian", "docs/configuration.md": "config docs", "docs/releases/1.0.0.md": "release notes", "docs/screenshots/1.0.0/README.md": "gallery", "docs/screenshots/1.0.0/gui-en.jpg": "public screenshot", "supercli-data/skills/builtin-skills.zip": "builtin skills", "supercli-data/config.toml": "SECRET", "supercli-data/auth.json": "SECRET", "supercli-data/sessions.db": "SECRET", "docs/evals/private.md": "SECRET", "notes.txt": "SECRET", "LICENSES/fonts/inter.txt": "SIL OPEN FONT LICENSE", "LICENSES/fonts/MANIFEST.json": "[]", "LICENSES/fonts/scratch.ttf": "SECRET"}
 	for name, raw := range files {
 		full := filepath.Join(root, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(full), 0700); err != nil {
@@ -35,11 +35,11 @@ func TestReleaseBundleContainsPublicFilesAndNeverUserData(t *testing.T) {
 	names := map[string]bool{}
 	for _, file := range archive.File {
 		names[file.Name] = true
-		if strings.Contains(file.Name, "auth") || strings.Contains(file.Name, "sessions") || file.Name == "supercli-data/config.toml" || strings.Contains(file.Name, "evals") || file.Name == "notes.txt" {
+		if strings.Contains(file.Name, "auth") || strings.Contains(file.Name, "sessions") || file.Name == "supercli-data/config.toml" || strings.Contains(file.Name, "evals") || file.Name == "notes.txt" || strings.HasSuffix(file.Name, ".ttf") {
 			t.Fatalf("private asset %s", file.Name)
 		}
 	}
-	for _, name := range []string{"supercli.exe", "supercli-web.exe", "README.md", "docs/readme/en.md", "docs/readme/bg.md", "docs/releases/1.0.0.md", "docs/screenshots/1.0.0/README.md", "docs/screenshots/1.0.0/gui-en.jpg", "supercli-data/skills/builtin-skills.zip"} {
+	for _, name := range []string{"supercli.exe", "supercli-web.exe", "README.md", "docs/readme/en.md", "docs/readme/bg.md", "docs/releases/1.0.0.md", "docs/screenshots/1.0.0/README.md", "docs/screenshots/1.0.0/gui-en.jpg", "supercli-data/skills/builtin-skills.zip", "LICENSES/fonts/inter.txt", "LICENSES/fonts/MANIFEST.json"} {
 		if !names[name] {
 			t.Fatalf("missing %s", name)
 		}
