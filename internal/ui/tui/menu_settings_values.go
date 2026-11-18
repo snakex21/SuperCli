@@ -42,6 +42,8 @@ func settingToggleKey(c *config.TomlConfig, key string) {
 		c.ShowGenerationSpeed = cycleTri(c.ShowGenerationSpeed)
 	case "update_notify":
 		c.UpdateNotify = cycleTri(c.UpdateNotify)
+	case "memory":
+		c.Memory.Enabled = cycleTri(c.Memory.Enabled)
 	case "assistant_edit":
 		c.AssistantEdit = cycleTri(c.AssistantEdit)
 	case "assistant_edit_model_sees":
@@ -107,6 +109,8 @@ func settingResetKey(c *config.TomlConfig, key string) {
 		c.ShowGenerationSpeed = nil
 	case "update_notify":
 		c.UpdateNotify = nil
+	case "memory":
+		c.Memory.Enabled = nil
 	case "assistant_edit":
 		c.AssistantEdit = nil
 	case "assistant_edit_model_sees":
@@ -208,6 +212,8 @@ func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, so
 		return m.triDisplay(c.ShowGenerationSpeed, "on")
 	case "update_notify":
 		return m.triDisplay(c.UpdateNotify, "on")
+	case "memory":
+		return m.triDisplay(c.Memory.Enabled, "on")
 	case "assistant_edit":
 		return m.triDisplay(c.AssistantEdit, "off")
 	case "assistant_edit_model_sees":

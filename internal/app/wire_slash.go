@@ -477,6 +477,20 @@ func wireSlashEarly(cmds map[string]tui.SlashHandler, d slashWireDeps) {
 	// `/memory search <q>` runs a hybrid search over both stores;
 	// `/memory forget <id>` deletes an entry wherever it lives.
 	cmds["memory"] = func(ctx context.Context, args string) (string, error) {
+		language := updateLanguage(d.dataDir, d.home)
+		if out, ok := memorySwitchCommand(memSwitch, language, args); ok {
+			return out, nil
+		}
+		if !memoryActive() {
+			// Stored memory stays browsable from /memory search when the
+			// stores are open; a session started with memory off has none.
+			if d.memStore == nil && d.globalMemStore == nil {
+				return memoryStatusText(memSwitch, language), nil
+			}
+			if strings.TrimSpace(args) == "" {
+				return memoryStatusText(memSwitch, language) + "\n\n" + memoryOverview(d.memStore, d.globalMemStore, ""), nil
+			}
+		}
 		return memoryCommand(ctx, d.memStore, d.globalMemStore, d.memoryBriefing, args)
 	}
 

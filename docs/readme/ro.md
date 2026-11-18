@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.33
+# SuperCli 1.0.34
 
 <!-- readme-unit:intro -->
 Un agent AI portabil pentru programare, scris în Go, cu interfață de terminal (TUI), interfață desktop/web (GUI) și mod batch care folosesc același motor.
 
 <!-- readme-unit:status -->
-Acest README descrie versiunea `1.0.33`. Pachetele portabile sunt distribuite prin [GitHub Releases](https://github.com/snakex21/SuperCli/releases); o compilare locală nu înseamnă că versiunea ei a fost deja publicată.
+Acest README descrie versiunea `1.0.34`. Pachetele portabile sunt distribuite prin [GitHub Releases](https://github.com/snakex21/SuperCli/releases); o compilare locală nu înseamnă că versiunea ei a fost deja publicată.
 
 <!-- readme-unit:h.screenshots -->
 ## Capturi de ecran
@@ -116,7 +116,7 @@ model = "qwen"
 GUI și TUI acceptă aceleași 27 de limbi de interfață. Oferă conversații în flux, recuperarea sesiunilor, alegerea proiectelor, gestionarea modelelor, atașamente și vizualizări ale utilizării. TUI permite derularea cu mouse-ul, căutarea în conversație și restrângerea ieșirilor de raționament/instrumente.
 
 <!-- readme-unit:agent -->
-Motorul permite descoperirea instrumentelor, editări verificate de fișiere, executarea comenzilor, istoricul sesiunilor, memoria proiectului, compactarea contextului, obiective, delegare către agenți de lucru, consultare și modele opționale de schiță.
+Motorul permite descoperirea instrumentelor, editări verificate de fișiere, executarea comenzilor, istoricul sesiunilor, memoria proiectului, compactarea contextului, obiective, delegare către agenți de lucru, consultare și modele opționale de schiță. Memoria persistentă este activată implicit; o poți dezactiva din setări, cu `/memory off` sau doar pentru o rulare cu `--no-memory`.
 
 <!-- readme-unit:tools -->
 Instrumentele acoperă căutarea în cod, citiri și patch-uri țintite, imagini, arhive ZIP, documente DOCX/XLSX/PDF și execuție de context limitată. Instrumentele disponibile depind de profilul și modelul ales; folosiți descoperirea instrumentelor pentru catalogul curent.

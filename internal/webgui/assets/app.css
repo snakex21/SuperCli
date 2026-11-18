@@ -244,6 +244,18 @@ a:hover { text-decoration: underline; }
 .think-btn.active { color: var(--muted); border-color: var(--accent); }
 .think-btn .think-level { color: var(--faint); }
 .think-btn.active .think-level { color: var(--accent); }
+
+/* Persistent memory switched off: a quiet, clickable reminder next to the model. */
+.memory-off-chip {
+  height: 28px; flex: none; display: inline-flex; align-items: center; gap: 5px;
+  padding: 0 8px; border: 1px dashed var(--line); border-radius: var(--radius);
+  color: var(--muted); font: var(--fs-xs) var(--mono); text-transform: lowercase; white-space: nowrap;
+}
+.memory-off-chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; border: 1px solid currentColor; }
+.memory-off-chip:hover { background: var(--raise); color: var(--text); }
+.memory-off-chip[hidden] { display: none; }
+.memory-status-note { margin: 6px 0 2px; }
+.memory-off-banner { border-left: 2px solid var(--accent); padding-left: 8px; }
 .think-btn .think-level::before { content: "·"; margin-right: 5px; color: var(--faint); }
 .think-btn .chev { color: var(--faint); font-size: 7px; margin-left: 1px; }
 .reasoning-menu {

@@ -118,7 +118,7 @@ func HelpContentEntries() []SlashEntry {
 		{Name: "context-limit", Desc: textFor("en", "tui.command_desc.context-limit"), Args: "[100k|131072|1m|auto]"},
 		{Name: "mcp", Desc: textFor("en", "tui.command_desc.mcp"), Args: "[restart <name>]"},
 		{Name: "skills", Desc: textFor("en", "tui.command_desc.skills"), Args: "[query]"},
-		{Name: "memory", Desc: textFor("en", "tui.command_desc.memory"), Args: "[search <query> | forget <id>]"},
+		{Name: "memory", Desc: textFor("en", "tui.command_desc.memory"), Args: "[on | off | status | search <query> | forget <id> | tidy]"},
 		{Name: "providers", Desc: textFor("en", "tui.command_desc.providers")},
 		{Name: "sandbox", Desc: textFor("en", "tui.command_desc.sandbox")},
 		{Name: "allow-all", Desc: textFor("en", "tui.command_desc.allow-all"), Args: "on|off"},

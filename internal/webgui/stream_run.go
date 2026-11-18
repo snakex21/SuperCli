@@ -145,7 +145,13 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	// with no summarizer/model call. Do it on every exit: the helper skips
 	// empty/meaningless runs, and a local SQLite read+upsert is tiny compared
 	// with provider latency.
+	// Memory off ([memory] enabled = false etc.) skips the capsule and the
+	// cross-session recall below; existing capsules are kept for later.
+	memoryOn := e.memoryEnabledAt(home)
 	defer func() {
+		if !memoryOn {
+			return
+		}
 		memoryCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		e.saveWebSessionCapsule(memoryCtx, sid, home)
@@ -201,7 +207,10 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	// Pull only a few relevant capsules from OTHER conversations. This is a
 	// local FTS5 lookup (no model/embedding call), capped to a few hundred
 	// tokens so remembering old work does not add perceptible drag.
-	recallAddon := e.webRelevantSessionMemory(ctx, home, prompt, sid, webSessionRecallTokens)
+	recallAddon := ""
+	if memoryOn {
+		recallAddon = e.webRelevantSessionMemory(ctx, home, prompt, sid, webSessionRecallTokens)
+	}
 	combinedAddon := strings.TrimSpace(userAddon)
 	if recallAddon != "" {
 		if combinedAddon != "" {

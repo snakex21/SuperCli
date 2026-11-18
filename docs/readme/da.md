@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.33
+# SuperCli 1.0.34
 
 <!-- readme-unit:intro -->
 En bærbar AI-kodningsagent skrevet i Go, med en terminalgrænseflade (TUI), en skrivebords-/webgrænseflade (GUI) og batchtilstand, der deler én motor.
 
 <!-- readme-unit:status -->
-Denne README beskriver version `1.0.33`. Bærbare udgivelsespakker distribueres via [GitHub Releases](https://github.com/snakex21/SuperCli/releases); en lokal bygning betyder ikke, at dens udgivelse allerede er offentliggjort.
+Denne README beskriver version `1.0.34`. Bærbare udgivelsespakker distribueres via [GitHub Releases](https://github.com/snakex21/SuperCli/releases); en lokal bygning betyder ikke, at dens udgivelse allerede er offentliggjort.
 
 <!-- readme-unit:h.screenshots -->
 ## Skærmbilleder
@@ -116,7 +116,7 @@ Udskift eksemplets endpoint og model med værdierne fra din server. Cloudtjenest
 GUI og TUI understøtter de samme 27 grænsefladesprog. De tilbyder streamede samtaler, gendannelse af sessioner, projektvalg, modelstyring, vedhæftninger og forbrugsoversigter. TUI understøtter rulning med musen, søgning i samtalen og sammenklappeligt output fra ræsonnering/værktøjer.
 
 <!-- readme-unit:agent -->
-Motoren understøtter værktøjssøgning, verificerede filændringer, kommandoudførelse, sessionshistorik, projekthukommelse, komprimering af kontekst, mål, delegering til arbejdsagenter, konsultation og valgfrie kladdemodeller.
+Motoren understøtter værktøjssøgning, verificerede filændringer, kommandoudførelse, sessionshistorik, projekthukommelse, komprimering af kontekst, mål, delegering til arbejdsagenter, konsultation og valgfrie kladdemodeller. Vedvarende hukommelse er slået til som standard; slå den fra i indstillingerne, med `/memory off` eller for en enkelt kørsel med `--no-memory`.
 
 <!-- readme-unit:tools -->
 Værktøjerne dækker kodesøgning, målrettet læsning og rettelse af filer, billeder, ZIP-arkiver, DOCX/XLSX/PDF-dokumenter og afgrænset kontekstudførelse. Tilgængelige værktøjer afhænger af den valgte profil og model; brug værktøjssøgning til det aktuelle katalog.

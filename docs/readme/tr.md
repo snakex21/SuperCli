@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.33
+# SuperCli 1.0.34
 
 <!-- readme-unit:intro -->
 Go ile yazılmış; aynı motoru paylaşan terminal arayüzü (TUI), masaüstü/web arayüzü (GUI) ve toplu işlem modu sunan taşınabilir bir yapay zekâ kodlama ajanı.
 
 <!-- readme-unit:status -->
-Bu README `1.0.33` sürümünü açıklar. Taşınabilir sürüm paketleri [GitHub Releases](https://github.com/snakex21/SuperCli/releases) üzerinden dağıtılır; yerel derleme, ilgili sürümün zaten yayımlandığı anlamına gelmez.
+Bu README `1.0.34` sürümünü açıklar. Taşınabilir sürüm paketleri [GitHub Releases](https://github.com/snakex21/SuperCli/releases) üzerinden dağıtılır; yerel derleme, ilgili sürümün zaten yayımlandığı anlamına gelmez.
 
 <!-- readme-unit:h.screenshots -->
 ## Ekran görüntüleri
@@ -116,7 +116,7 @@ model = "qwen"
 GUI ve TUI aynı 27 arayüz dilini destekler. Akışlı sohbetler, oturum kurtarma, proje seçimi, model yönetimi, ekler ve kullanım görünümleri sunar. TUI fareyle kaydırma, sohbet araması ve daraltılabilir düşünme/araç çıktısını destekler.
 
 <!-- readme-unit:agent -->
-Motor; araç keşfi, doğrulanmış dosya düzenlemeleri, komut çalıştırma, oturum geçmişi, proje belleği, bağlam sıkıştırma, hedefler, işçi ajanlara görev devri, danışma ve isteğe bağlı taslak modellerini destekler.
+Motor; araç keşfi, doğrulanmış dosya düzenlemeleri, komut çalıştırma, oturum geçmişi, proje belleği, bağlam sıkıştırma, hedefler, işçi ajanlara görev devri, danışma ve isteğe bağlı taslak modellerini destekler. Kalıcı bellek varsayılan olarak açıktır; ayarlardan, `/memory off` komutuyla veya tek bir çalıştırma için `--no-memory` seçeneğiyle kapatabilirsiniz.
 
 <!-- readme-unit:tools -->
 Araçlar; kod araması, hedefli dosya okumaları ve yamalar, görüntüler, ZIP arşivleri, DOCX/XLSX/PDF belgeleri ve sınırlı bağlam yürütmeyi kapsar. Kullanılabilir araçlar seçilen profil ve modele bağlıdır; güncel katalog için araç keşfini kullanın.

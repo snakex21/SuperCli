@@ -1,6 +1,6 @@
 [
   "En bærbar AI-kodningsagent skrevet i Go, med en terminalgrænseflade (TUI), en skrivebords-/webgrænseflade (GUI) og batchtilstand, der deler én motor.",
-  "Denne README beskriver version `1.0.33`. Bærbare udgivelsespakker distribueres via [GitHub Releases]({releases}); en lokal bygning betyder ikke, at dens udgivelse allerede er offentliggjort.",
+  "Denne README beskriver version `1.0.34`. Bærbare udgivelsespakker distribueres via [GitHub Releases]({releases}); en lokal bygning betyder ikke, at dens udgivelse allerede er offentliggjort.",
   "Skærmbilleder",
   "![SuperClis webgrænseflade (GUI)]({guishot})",
   "![SuperClis handlingscenter i terminalen (TUI)]({tuishot})",
@@ -23,7 +23,7 @@
   "Udskift eksemplets endpoint og model med værdierne fra din server. Cloudtjenester kan kræve legitimationsoplysninger og opkræve betaling for brug. Modellens egenskaber bestemmer billedforståelse, værktøjer, ræsonnering og kontekstgrænser. Se [konfiguration]({config}).",
   "Funktioner",
   "GUI og TUI understøtter de samme 27 grænsefladesprog. De tilbyder streamede samtaler, gendannelse af sessioner, projektvalg, modelstyring, vedhæftninger og forbrugsoversigter. TUI understøtter rulning med musen, søgning i samtalen og sammenklappeligt output fra ræsonnering/værktøjer.",
-  "Motoren understøtter værktøjssøgning, verificerede filændringer, kommandoudførelse, sessionshistorik, projekthukommelse, komprimering af kontekst, mål, delegering til arbejdsagenter, konsultation og valgfrie kladdemodeller.",
+  "Motoren understøtter værktøjssøgning, verificerede filændringer, kommandoudførelse, sessionshistorik, projekthukommelse, komprimering af kontekst, mål, delegering til arbejdsagenter, konsultation og valgfrie kladdemodeller. Vedvarende hukommelse er slået til som standard; slå den fra i indstillingerne, med `/memory off` eller for en enkelt kørsel med `--no-memory`.",
   "Værktøjerne dækker kodesøgning, målrettet læsning og rettelse af filer, billeder, ZIP-arkiver, DOCX/XLSX/PDF-dokumenter og afgrænset kontekstudførelse. Tilgængelige værktøjer afhænger af den valgte profil og model; brug værktøjssøgning til det aktuelle katalog.",
   "Valgfrie MCP-pakker ligger i `supercli-data/mcp/` og starter, når de bruges. Arkivet med indbyggede færdigheder ligger i `supercli-data/skills/builtin-skills.zip`; mangler det, hindrer det ikke normal opstart. Udvidelser kan kræve egne kørselsmiljøer eller installerede værtsprogrammer.",
   "Darwin-kandidatgenerering, modelråd og delegering til arbejdsagenter er valgfrie arbejdsgange. Parallelle modelkald kan øge ressourceforbrug og omkostninger. Kerneprogrammet kræver ikke Node, Python, Docker eller CGO.",

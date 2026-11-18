@@ -1,6 +1,6 @@
 [
   "Prenosivi AI agent za programiranje napisan u Go jeziku, sa terminalskim interfejsom (TUI), desktop/veb interfejsom (GUI) i paketnim režimom koji dele jedan mehanizam.",
-  "Ovaj README opisuje verziju `1.0.33`. Prenosivi paketi izdanja distribuiraju se preko [GitHub Releases]({releases}); lokalno kompajliranje ne znači da je odgovarajuće izdanje već objavljeno.",
+  "Ovaj README opisuje verziju `1.0.34`. Prenosivi paketi izdanja distribuiraju se preko [GitHub Releases]({releases}); lokalno kompajliranje ne znači da je odgovarajuće izdanje već objavljeno.",
   "Snimci ekrana",
   "![Veb interfejs SuperCli (GUI)]({guishot})",
   "![Centar radnji u terminalu SuperCli (TUI)]({tuishot})",
@@ -23,7 +23,7 @@
   "Zamenite primer krajnje tačke i modela vrednostima svog servera. Usluge u oblaku mogu da zahtevaju akreditive i naplaćuju korišćenje. Mogućnosti modela određuju vid, alate, rezonovanje i ograničenja konteksta. Pogledajte [konfiguraciju]({config}).",
   "Mogućnosti",
   "GUI i TUI podržavaju istih 27 jezika interfejsa. Pružaju razgovore u strimu, oporavak sesija, izbor projekata, upravljanje modelima, priloge i prikaze korišćenja. TUI podržava skrolovanje mišem, pretragu razgovora i sklopivi izlaz razmišljanja/alata.",
-  "Mehanizam podržava otkrivanje alata, proverene izmene datoteka, izvršavanje komandi, istoriju sesija, memoriju projekta, sažimanje konteksta, ciljeve, delegiranje radnim agentima, konsultacije i opcione modele nacrta.",
+  "Mehanizam podržava otkrivanje alata, proverene izmene datoteka, izvršavanje komandi, istoriju sesija, memoriju projekta, sažimanje konteksta, ciljeve, delegiranje radnim agentima, konsultacije i opcione modele nacrta. Trajna memorija je podrazumevano uključena; isključite je u podešavanjima, komandom `/memory off` ili samo za jedno pokretanje opcijom `--no-memory`.",
   "Alati pokrivaju pretragu koda, ciljano čitanje i zakrpe datoteka, slike, ZIP arhive, DOCX/XLSX/PDF dokumente i ograničeno izvršavanje konteksta. Dostupni alati zavise od izabranog profila i modela; trenutni katalog potražite otkrivanjem alata.",
   "Opcioni MCP paketi nalaze se u `supercli-data/mcp/` i pokreću se pri korišćenju. Arhiva ugrađenih veština je u `supercli-data/skills/builtin-skills.zip`; njen izostanak ne sprečava normalno pokretanje. Proširenja mogu zahtevati sopstvena izvršna okruženja ili instalirane aplikacije domaćina.",
   "Darwin generisanje kandidata, saveti modela i delegiranje radnim agentima opcioni su tokovi rada. Paralelni pozivi modela mogu povećati potrošnju resursa i troškove. Glavna izvršna datoteka ne zahteva Node, Python, Docker ili CGO.",

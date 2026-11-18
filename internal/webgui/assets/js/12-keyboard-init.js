@@ -69,6 +69,7 @@ document.addEventListener("keydown", function (e) {
 	loadPromptQueue();
 	loadWorkers();
   renderStats();
+  if (typeof initMemoryIndicator === "function") initMemoryIndicator();
   if (typeof startSubscriptionUsageAutoRefresh === "function") startSubscriptionUsageAutoRefresh();
   setInterval(checkHealth, 30000);
 	setInterval(function () {

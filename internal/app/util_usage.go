@@ -31,6 +31,8 @@ Flags:
   --draft-model ID                F11 draft model id (required to enable F11; no auto-pick)
   --trace-jsonl                   with --batch, write tool/usage JSON lines to stdout (eval harness)
   --resume                        resume the most recent session on startup (also: /resume in the TUI)
+  --no-memory                     run without persistent memory (nothing read or saved; stored memory kept)
+  --memory                        force persistent memory on for this launch
   --check-update                  check for a newer stable release and exit
   --update                        download and install a verified update, then exit
   --version                       print version and exit
@@ -39,7 +41,8 @@ Flags:
 Env vars:
   SUPERCLI_LLM_PROVIDER, SUPERCLI_LLM_API_KEY, SUPERCLI_LLM_BASE_URL,
   SUPERCLI_LLM_MODEL, SUPERCLI_LLM_TEMPERATURE, SUPERCLI_LLM_STREAM,
-  SUPERCLI_LLM_TIMEOUT, SUPERCLI_DEBUG, SUPERCLI_HOME, SUPERCLI_DATA_DIR
+  SUPERCLI_LLM_TIMEOUT, SUPERCLI_DEBUG, SUPERCLI_HOME, SUPERCLI_DATA_DIR,
+  SUPERCLI_MEMORY (on/off)
 
 Data is stored in a single portable supercli-data/ directory next to
 this exact executable (override only with --data-dir or SUPERCLI_DATA_DIR).

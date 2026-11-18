@@ -95,6 +95,7 @@ var memoryPanelSignature = "";
 sections.memory = async function (opts) {
   var live = !!(opts && opts.live);
   var got;
+  if (!live) await refreshMemoryIndicator();
   try { got = await j("/api/memory?limit=100"); } catch (e) {
     if (live) return;
     panelContent.innerHTML = '<div class="note">' + escHtml(e.message) + "</div>";
@@ -112,6 +113,7 @@ function renderMemoryPanel(got) {
   panelContent.innerHTML = "";
   var g = el("div", "group");
   g.appendChild(i18nEl("div", "g-label", "panel.memory"));
+  if (memorySwitchState && !memorySwitchState.enabled) g.appendChild(i18nEl("div", "note memory-off-banner", "memory.offBanner"));
   var tools = el("div", "memory-tools");
   var dedupBtn = i18nEl("button", "btn", "mem.dedup");
   dedupBtn.type = "button";
@@ -150,6 +152,63 @@ function renderMemoryPanel(got) {
     g.appendChild(row);
   });
   panelContent.appendChild(g);
+}
+
+/* ── Persistent memory switch ([memory] enabled) ── */
+
+// Last effective state from /api/memory/status: {enabled, source}. Null until
+// the first answer arrives; the indicator stays hidden while unknown.
+var memorySwitchState = null;
+function memorySourceText(source) {
+  return t("memory.source." + (["flag", "env", "project", "config"].indexOf(source) >= 0 ? source : "default"));
+}
+async function refreshMemoryIndicator() {
+  var chip = $("#memory-off-chip");
+  try { memorySwitchState = await j("/api/memory/status"); } catch (e) { return memorySwitchState; }
+  if (chip) {
+    var off = !!memorySwitchState && memorySwitchState.enabled === false;
+    chip.hidden = !off;
+    if (off) {
+      chip.textContent = t("memory.offChip");
+      chip.title = t("memory.offChipTitle").replace("{source}", memorySourceText(memorySwitchState.source));
+      chip.setAttribute("aria-label", chip.title);
+    }
+  }
+  return memorySwitchState;
+}
+// Settings → Memory group: the effective state for the active project (a
+// project config, env var or launch flag can differ from the global toggle)
+// and the existing confirmed "clear memory" action.
+function appendMemoryExtras(group) {
+  var note = el("div", "note memory-status-note", "");
+  group.appendChild(note);
+  refreshMemoryIndicator().then(function (st) {
+    if (!st) return;
+    note.textContent = t("memory.effective")
+      .replace("{state}", t(st.enabled ? "memory.stateOn" : "memory.stateOff"))
+      .replace("{source}", memorySourceText(st.source));
+  });
+  var clear = el("button", "btn danger", t("data.clearMemory")); clear.type = "button";
+  clear.addEventListener("click", async function () {
+    if (!await appConfirm(t("data.confirmMemory"), { title: t("data.clearMemory"), danger: true, confirmLabel: t("common.remove") })) return;
+    clear.disabled = true;
+    try { await jpost("/api/data/clear", { action: "memory" }); toast(t("data.cleared")); }
+    catch (e) { toast(e.message); }
+    finally { clear.disabled = false; }
+  });
+  group.appendChild(clear);
+}
+function initMemoryIndicator() {
+  var chip = $("#memory-off-chip");
+  if (chip) chip.addEventListener("click", function () { openPanel("settings"); });
+  refreshMemoryIndicator();
+  // A project switch can carry its own [memory] override; config edits from
+  // the TUI land in the same file, so a slow poll keeps the chip honest.
+  var ws = $("#workspace");
+  if (ws && typeof MutationObserver === "function") {
+    new MutationObserver(function () { refreshMemoryIndicator(); }).observe(ws, { childList: true, characterData: true, subtree: true });
+  }
+  setInterval(refreshMemoryIndicator, 30000);
 }
 
 /* ── Goal ── */

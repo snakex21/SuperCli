@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.33
+# SuperCli 1.0.34
 
 <!-- readme-unit:intro -->
 Een draagbare AI-programmeeragent geschreven in Go, met een terminalinterface (TUI), desktop-/webinterface (GUI) en batchmodus die één engine delen.
 
 <!-- readme-unit:status -->
-Deze README beschrijft versie `1.0.33`. Draagbare releasepakketten worden via [GitHub Releases](https://github.com/snakex21/SuperCli/releases) verspreid; een lokale build betekent niet dat de bijbehorende release al gepubliceerd is.
+Deze README beschrijft versie `1.0.34`. Draagbare releasepakketten worden via [GitHub Releases](https://github.com/snakex21/SuperCli/releases) verspreid; een lokale build betekent niet dat de bijbehorende release al gepubliceerd is.
 
 <!-- readme-unit:h.screenshots -->
 ## Schermafbeeldingen
@@ -116,7 +116,7 @@ Vervang het voorbeeldendpoint en model door de waarden van uw server. Clouddiens
 GUI en TUI ondersteunen dezelfde 27 interfacetalen. Ze bieden gestreamde gesprekken, sessieherstel, projectkeuze, modelbeheer, bijlagen en gebruiksoverzichten. De TUI ondersteunt scrollen met de muis, zoeken in het gesprek en inklapbare denk-/tooluitvoer.
 
 <!-- readme-unit:agent -->
-De engine ondersteunt toolontdekking, gecontroleerde bestandswijzigingen, commando-uitvoering, sessiegeschiedenis, projectgeheugen, contextverdichting, doelen, delegatie aan werkagenten, consultatie en optionele conceptmodellen.
+De engine ondersteunt toolontdekking, gecontroleerde bestandswijzigingen, commando-uitvoering, sessiegeschiedenis, projectgeheugen, contextverdichting, doelen, delegatie aan werkagenten, consultatie en optionele conceptmodellen. Blijvend geheugen staat standaard aan; zet het uit in de instellingen, met `/memory off` of voor één run met `--no-memory`.
 
 <!-- readme-unit:tools -->
 Tools omvatten zoeken in code, gerichte bestandslezingen en patches, afbeeldingen, ZIP-archieven, DOCX/XLSX/PDF-documenten en begrensde contextuitvoering. Beschikbare tools hangen af van het gekozen profiel en model; gebruik toolontdekking voor de huidige catalogus.

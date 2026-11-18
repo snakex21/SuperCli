@@ -98,6 +98,12 @@ func Main() {
 	}
 	tomlCfg, tomlErr := ws.Toml, ws.TomlErr
 	activeProject, hasActiveProject := ws.ActiveProject, ws.HasActiveProject
+	// Persistent memory switch: --no-memory/--memory > SUPERCLI_MEMORY >
+	// project/global [memory] enabled > on. Off at startup = the memory
+	// stores are never opened in this process.
+	memoryEnabled, memorySource := config.EffectiveMemory(tomlCfg)
+	supercliMemoryAtStartup = memoryEnabled
+	memSwitch = &memorySwitch{dataDir: dataDir, cwd: cwd, configPath: flags.Config, opened: memoryEnabled}
 
 	initCodexAuth(dataDir, tomlCfg)
 	appLog := initAppLog(dataDir)
@@ -314,7 +320,21 @@ func Main() {
 
 	// Execution-profile-aware visibility + dual memory stack.
 	applyAlwaysOnToolProfile(registry, supercliCoordinatorMode, execProfile.ThinTools)
-	memBundle := openMemoryStack(dataDir, home, cfg.APIKey, smallTier, tomlCfg)
+	memBundle := memoryBundle{Progress: &memProgress{}}
+	if memoryEnabled {
+		memBundle = openMemoryStack(dataDir, home, cfg.APIKey, smallTier, tomlCfg)
+		if forRun := memBundle.BriefingForRun; forRun != nil {
+			// /memory off mid-session empties the live memory block at once.
+			memBundle.BriefingForRun = func() string {
+				if !memoryActive() {
+					return ""
+				}
+				return forRun()
+			}
+		}
+	} else {
+		log.Printf("memory: off (%s) — memory stores not opened, nothing read or saved", memorySource)
+	}
 	if memBundle.Global != nil {
 		defer memBundle.Global.Close()
 	}
@@ -560,7 +580,7 @@ func Main() {
 		reflector:            reflector,
 		reflectEvery:         reflectEvery,
 		adaptiveReflection:   adaptiveReflection,
-		injector:             injector,
+		injector:             gatedPatternInjector(injector),
 		tracker:              tracker,
 		sessWriter:           sessWriter,
 		draftPolicy:          draftPolicy,
@@ -786,7 +806,7 @@ func Main() {
 		// shutdown (or a normal exit — see finalizeMemorySession)
 		// are summarized first, once per process. A canceled pass
 		// keeps its raw entries and retries at the next idle.
-		if !rawSummarized.Load() {
+		if !rawSummarized.Load() && memoryActive() {
 			rctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 			completed := memAutoSaver.SummarizePendingRaw(rctx, providerSummarizer(p))
 			cancel()

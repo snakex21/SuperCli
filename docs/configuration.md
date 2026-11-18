@@ -227,6 +227,78 @@ The key is the configured provider name plus the exact model ID. Therefore
 continues to use automatic provider/catalog detection. These values are saved
 in the instance-local `model-context-windows.json`; the UI manages the file.
 
+## Persistent memory
+
+Memory is **on by default**. It covers everything SuperCli carries from one
+conversation to the next:
+
+| part | where it lives | used by |
+|---|---|---|
+| global memory (user preferences and facts, project cards) | `supercli-data/memory.db` + `memory/*.md` mirror | TUI, GUI |
+| project memory (facts, decisions, session summaries, learned error patterns) | `supercli-data/projects/<key>/memory.db` | TUI, GUI |
+| memory briefing in the request tail (`memory_briefing_tokens`) | built from both stores | TUI, GUI |
+| `remember` / `recall` tools | both stores | TUI, GUI, workers |
+| automatic saves: user facts from your own words, idle-time session summaries, raw tail on exit, project card | both stores | TUI |
+| automatic saves: user facts, one conversation capsule per chat | both stores | GUI |
+| cross-session recall of related earlier chats (FTS, no model call) | project memory, then `sessions.db` | GUI |
+| learned error patterns injected into the prompt (`/reflect`) | project memory | TUI |
+
+Switch it off with any of these (highest wins):
+
+| how | scope |
+|---|---|
+| `--no-memory` (and `--memory` to force it on) on `supercli` or `supercli-web` | this launch only |
+| `SUPERCLI_MEMORY=off` (`0`, `false`, `no`) or `on` (`1`, `true`, `yes`) | this process |
+| `[memory]` `enabled = false` in `<workspace>/.supercli/config.toml` | that project only (also `true` to re-enable one project) |
+| `[memory]` `enabled = false` in `supercli-data/config.toml` | everywhere |
+
+```toml
+[memory]
+enabled = false   # unset = on
+```
+
+The global value is what GUI **Settings → Memory** and TUI `/settings` →
+Memory edit, and what `/memory on` / `/memory off` write. `/memory status`
+(TUI) and the GUI settings row show the effective state for the current project
+and where it comes from (launch option, environment variable, project settings,
+settings or default). In the GUI a **memory off** chip next to the model button
+is visible while memory is off; it opens the settings.
+
+When memory is off:
+
+- nothing from memory is put into the prompt (the memory briefing block stays
+  in place but empty, cross-session recall is skipped);
+- nothing is saved: no user facts, summaries, capsules, raw tails, project-card
+  updates or learned patterns;
+- `remember` and `recall` are not offered to the model, and the stable system
+  prompt drops its memory hint and says that memory is off;
+- a session that **starts** with memory off does not open the memory databases
+  at all;
+- stored memory is **not deleted**. Switching memory back on restores it. To
+  delete it, use **Settings → Memory → Clear AI memory** or **Data → Clear AI
+  memory** (both ask for confirmation).
+
+Timing. The GUI reads the switch for every message, so a change applies to the
+next message. In the TUI `/memory off` (or the `/settings` row) applies to the
+next turn: the briefing becomes empty, saves stop, and `remember`/`recall` stay
+listed but refuse (the tool list is kept stable for the prompt cache). A TUI
+session started with memory off needs a restart after `/memory on`, because its
+memory databases were never opened. Turns made while memory was off are not
+saved later.
+
+Prompt cache. With memory on, prompts are byte-identical to 1.0.33. Turning
+memory off changes the stable system prefix once (memory hint removed, short
+off-note added) and, in the GUI, removes the two tool schemas, so the next
+request is a provider cache miss. `context_tail_pinning` keeps working: the
+memory briefing already lives in the per-request live context, so an emptied
+briefing is just one changed tail, appended like any other tail change. In a
+running TUI session the system prefix and the tool list do not change at all
+until the next start.
+
+Not affected: conversation history (`sessions.db`, `/resume`, the
+`search_history` tool used to recover earlier parts of the transcript after
+compaction), goals, user instructions and project instructions.
+
 ## Cache / prompt shape (see architecture.md, performance.md)
 
 | knob | default | touch when |

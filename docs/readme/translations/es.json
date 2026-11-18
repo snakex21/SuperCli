@@ -1,6 +1,6 @@
 [
   "Un agente de programación con IA portátil escrito en Go, con interfaz de terminal (TUI), interfaz de escritorio/web (GUI) y modo por lotes que comparten un motor.",
-  "Este README describe la versión `1.0.33`. Los paquetes portátiles se distribuyen mediante [GitHub Releases]({releases}); una compilación local no implica que su versión ya se haya publicado.",
+  "Este README describe la versión `1.0.34`. Los paquetes portátiles se distribuyen mediante [GitHub Releases]({releases}); una compilación local no implica que su versión ya se haya publicado.",
   "Capturas de pantalla",
   "![Interfaz web de SuperCli (GUI)]({guishot})",
   "![Centro de acciones del terminal de SuperCli (TUI)]({tuishot})",
@@ -23,7 +23,7 @@
   "Sustituya el endpoint y modelo de ejemplo por los valores de su servidor. Los servicios en la nube pueden exigir credenciales y cobrar por el uso. Las capacidades del modelo determinan visión, herramientas, razonamiento y límites de contexto. Consulte [configuración]({config}).",
   "Funciones",
   "GUI y TUI admiten los mismos 27 idiomas de interfaz. Ofrecen conversaciones en streaming, recuperación de sesiones, selección de proyectos, gestión de modelos, adjuntos y vistas de uso. La TUI admite desplazamiento con ratón, búsqueda en la conversación y salida de razonamiento/herramientas plegable.",
-  "El motor admite descubrimiento de herramientas, ediciones verificadas de archivos, ejecución de comandos, historial de sesiones, memoria de proyectos, compactación del contexto, objetivos, delegación a agentes trabajadores, consultas y modelos de borrador opcionales.",
+  "El motor admite descubrimiento de herramientas, ediciones verificadas de archivos, ejecución de comandos, historial de sesiones, memoria de proyectos, compactación del contexto, objetivos, delegación a agentes trabajadores, consultas y modelos de borrador opcionales. La memoria persistente está activada de forma predeterminada; desactívala en la configuración, con `/memory off` o solo para una ejecución con `--no-memory`.",
   "Las herramientas cubren búsqueda de código, lecturas y parches específicos de archivos, imágenes, archivos ZIP, documentos DOCX/XLSX/PDF y ejecución de contexto limitada. Las herramientas disponibles dependen del perfil y modelo elegidos; use el descubrimiento de herramientas para el catálogo actual.",
   "Los paquetes MCP opcionales están en `supercli-data/mcp/` y arrancan al usarse. El archivo de habilidades integradas está en `supercli-data/skills/builtin-skills.zip`; su ausencia no impide el inicio normal. Las extensiones pueden necesitar sus propios entornos de ejecución o aplicaciones anfitrionas instaladas.",
   "La generación de candidatos Darwin, los consejos y la delegación a trabajadores son flujos opcionales. Las llamadas paralelas a modelos pueden aumentar el consumo de recursos y el coste. El ejecutable principal no requiere Node, Python, Docker ni CGO.",

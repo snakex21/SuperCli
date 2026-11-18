@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.33
+# SuperCli 1.0.34
 
 <!-- readme-unit:intro -->
 Un agent de programmation IA portable écrit en Go, avec une interface terminal (TUI), une interface bureau/web (GUI) et un mode traitement par lots partageant le même moteur.
 
 <!-- readme-unit:status -->
-Ce README décrit la version `1.0.33`. Les paquets portables sont distribués via [GitHub Releases](https://github.com/snakex21/SuperCli/releases) ; une compilation locale ne signifie pas que sa version a déjà été publiée.
+Ce README décrit la version `1.0.34`. Les paquets portables sont distribués via [GitHub Releases](https://github.com/snakex21/SuperCli/releases) ; une compilation locale ne signifie pas que sa version a déjà été publiée.
 
 <!-- readme-unit:h.screenshots -->
 ## Captures d’écran
@@ -116,7 +116,7 @@ Remplacez le point d'accès et le modèle d'exemple par les valeurs de votre ser
 GUI et TUI prennent en charge les mêmes 27 langues d'interface. Elles proposent conversations en streaming, récupération de sessions, sélection de projets, gestion des modèles, pièces jointes et vues d'utilisation. La TUI permet le défilement à la souris, la recherche dans la conversation et le repli des sorties de raisonnement/outils.
 
 <!-- readme-unit:agent -->
-Le moteur prend en charge la découverte d'outils, les modifications de fichiers vérifiées, l'exécution de commandes, l'historique des sessions, la mémoire de projet, la compression du contexte, les objectifs, la délégation à des agents de travail, la consultation et des modèles de brouillon facultatifs.
+Le moteur prend en charge la découverte d'outils, les modifications de fichiers vérifiées, l'exécution de commandes, l'historique des sessions, la mémoire de projet, la compression du contexte, les objectifs, la délégation à des agents de travail, la consultation et des modèles de brouillon facultatifs. La mémoire persistante est activée par défaut ; désactivez-la dans les paramètres, avec `/memory off` ou pour un seul lancement avec `--no-memory`.
 
 <!-- readme-unit:tools -->
 Les outils couvrent recherche de code, lectures et correctifs ciblés, images, archives ZIP, documents DOCX/XLSX/PDF et exécution de contexte limitée. Les outils disponibles dépendent du profil et du modèle choisis ; utilisez la découverte d'outils pour le catalogue actuel.

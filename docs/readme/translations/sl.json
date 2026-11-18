@@ -1,6 +1,6 @@
 [
   "Prenosni AI agent za programiranje, napisan v Go, s terminalskim vmesnikom (TUI), namiznim/spletnim vmesnikom (GUI) in paketnim načinom, ki uporabljajo isti pogon.",
-  "Ta README opisuje različico `1.0.33`. Prenosni paketi izdaj se razširjajo prek [GitHub Releases]({releases}); lokalna gradnja ne pomeni, da je pripadajoča izdaja že objavljena.",
+  "Ta README opisuje različico `1.0.34`. Prenosni paketi izdaj se razširjajo prek [GitHub Releases]({releases}); lokalna gradnja ne pomeni, da je pripadajoča izdaja že objavljena.",
   "Posnetki zaslona",
   "![Spletni vmesnik SuperCli (GUI)]({guishot})",
   "![Središče dejanj v terminalu SuperCli (TUI)]({tuishot})",
@@ -23,7 +23,7 @@
   "Končno točko in model iz primera zamenjajte z vrednostmi svojega strežnika. Storitve v oblaku lahko zahtevajo poverilnice in zaračunavajo uporabo. Zmožnosti modela določajo vid, orodja, sklepanje in omejitve konteksta. Glejte [konfiguracijo]({config}).",
   "Funkcije",
   "GUI in TUI podpirata istih 27 jezikov vmesnika. Zagotavljata pretočne pogovore, obnovitev sej, izbiro projektov, upravljanje modelov, priloge in prikaze uporabe. TUI podpira pomikanje z miško, iskanje po pogovoru in zložljiv izhod razmišljanja/orodij.",
-  "Pogon podpira odkrivanje orodij, preverjene spremembe datotek, izvajanje ukazov, zgodovino sej, projektni pomnilnik, stiskanje konteksta, cilje, delegiranje delovnim agentom, posvetovanje in izbirne modele za osnutke.",
+  "Pogon podpira odkrivanje orodij, preverjene spremembe datotek, izvajanje ukazov, zgodovino sej, projektni pomnilnik, stiskanje konteksta, cilje, delegiranje delovnim agentom, posvetovanje in izbirne modele za osnutke. Trajni pomnilnik je privzeto vklopljen; izklopite ga v nastavitvah, z ukazom `/memory off` ali le za en zagon z možnostjo `--no-memory`.",
   "Orodja pokrivajo iskanje kode, ciljno branje in popravke datotek, slike, arhive ZIP, dokumente DOCX/XLSX/PDF in omejeno izvajanje konteksta. Razpoložljiva orodja so odvisna od izbranega profila in modela; trenutni katalog pridobite z odkrivanjem orodij.",
   "Izbirni paketi MCP so v `supercli-data/mcp/` in se zaženejo ob uporabi. Arhiv vgrajenih veščin je v `supercli-data/skills/builtin-skills.zip`; njegova odsotnost ne prepreči običajnega zagona. Razširitve lahko potrebujejo lastna izvajalna okolja ali nameščene gostiteljske aplikacije.",
   "Ustvarjanje kandidatov Darwin, sveti modelov in delegiranje delovnim agentom so izbirni postopki. Vzporedni klici modelov lahko povečajo porabo virov in stroške. Osnovna izvršljiva datoteka ne potrebuje Node, Python, Docker ali CGO.",

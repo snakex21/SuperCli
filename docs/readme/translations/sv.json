@@ -1,6 +1,6 @@
 [
   "En portabel AI-kodningsagent skriven i Go, med terminalgränssnitt (TUI), skrivbords-/webbgränssnitt (GUI) och batchläge som delar en motor.",
-  "Denna README beskriver version `1.0.33`. Portabla utgivningspaket distribueras via [GitHub Releases]({releases}); en lokal kompilering innebär inte att motsvarande version redan har publicerats.",
+  "Denna README beskriver version `1.0.34`. Portabla utgivningspaket distribueras via [GitHub Releases]({releases}); en lokal kompilering innebär inte att motsvarande version redan har publicerats.",
   "Skärmbilder",
   "![SuperClis webbgränssnitt (GUI)]({guishot})",
   "![SuperClis åtgärdscenter i terminalen (TUI)]({tuishot})",
@@ -23,7 +23,7 @@
   "Ersätt exemplets ändpunkt och modell med serverns värden. Molntjänster kan kräva inloggningsuppgifter och ta betalt för användning. Modellens förmågor bestämmer bildförståelse, verktyg, resonemang och kontextgränser. Se [konfiguration]({config}).",
   "Funktioner",
   "GUI och TUI stöder samma 27 gränssnittsspråk. De erbjuder strömmade samtal, sessionsåterställning, projektval, modellhantering, bilagor och användningsvyer. TUI stöder musrullning, sökning i samtalet och hopfällbara tanke-/verktygsutdata.",
-  "Motorn stöder verktygsupptäckt, verifierade filändringar, kommandokörning, sessionshistorik, projektminne, kontextkomprimering, mål, delegering till arbetsagenter, konsultation och valfria utkastmodeller.",
+  "Motorn stöder verktygsupptäckt, verifierade filändringar, kommandokörning, sessionshistorik, projektminne, kontextkomprimering, mål, delegering till arbetsagenter, konsultation och valfria utkastmodeller. Beständigt minne är på som standard; stäng av det i inställningarna, med `/memory off` eller för en enda körning med `--no-memory`.",
   "Verktygen omfattar kodsökning, riktad filläsning och rättning, bilder, ZIP-arkiv, DOCX/XLSX/PDF-dokument och avgränsad kontextkörning. Tillgängliga verktyg beror på vald profil och modell; använd verktygsupptäckt för den aktuella katalogen.",
   "Valfria MCP-paket finns i `supercli-data/mcp/` och startar när de används. Arkivet med inbyggda färdigheter finns i `supercli-data/skills/builtin-skills.zip`; frånvaro hindrar inte normal start. Tillägg kan behöva egna körmiljöer eller installerade värdprogram.",
   "Darwin-kandidatgenerering, modellråd och delegering till arbetsagenter är valfria arbetsflöden. Parallella modellanrop kan öka resursanvändning och kostnad. Kärnprogrammet kräver inte Node, Python, Docker eller CGO.",

@@ -1,6 +1,6 @@
 [
   "Go valodā rakstīts pārnēsājams AI programmēšanas aģents ar termināļa saskarni (TUI), darbvirsmas/tīmekļa saskarni (GUI) un pakešu režīmu, kas izmanto vienu dzinēju.",
-  "Šis README apraksta versiju `1.0.33`. Pārnēsājamos laidienu komplektus izplata caur [GitHub Releases]({releases}); lokāla būvēšana nenozīmē, ka attiecīgais laidiens jau ir publicēts.",
+  "Šis README apraksta versiju `1.0.34`. Pārnēsājamos laidienu komplektus izplata caur [GitHub Releases]({releases}); lokāla būvēšana nenozīmē, ka attiecīgais laidiens jau ir publicēts.",
   "Ekrānuzņēmumi",
   "![SuperCli tīmekļa saskarne (GUI)]({guishot})",
   "![SuperCli termināļa darbību centrs (TUI)]({tuishot})",
@@ -23,7 +23,7 @@
   "Aizstājiet piemēra galapunktu un modeli ar sava servera vērtībām. Mākoņpakalpojumi var pieprasīt akreditācijas datus un iekasēt maksu par lietošanu. Modeļa spējas nosaka attēlu izpratni, rīkus, spriešanu un konteksta ierobežojumus. Skatiet [konfigurāciju]({config}).",
   "Iespējas",
   "GUI un TUI atbalsta tās pašas 27 saskarnes valodas. Tās nodrošina straumētas sarunas, sesiju atjaunošanu, projektu izvēli, modeļu pārvaldību, pielikumus un lietojuma skatus. TUI atbalsta ritināšanu ar peli, meklēšanu sarunā un sakļaujamu domāšanas/rīku izvadi.",
-  "Dzinējs atbalsta rīku atklāšanu, pārbaudītus failu labojumus, komandu izpildi, sesiju vēsturi, projekta atmiņu, konteksta sablīvēšanu, mērķus, deleģēšanu darba aģentiem, konsultācijas un izvēles uzmetumu modeļus.",
+  "Dzinējs atbalsta rīku atklāšanu, pārbaudītus failu labojumus, komandu izpildi, sesiju vēsturi, projekta atmiņu, konteksta sablīvēšanu, mērķus, deleģēšanu darba aģentiem, konsultācijas un izvēles uzmetumu modeļus. Pastāvīgā atmiņa pēc noklusējuma ir ieslēgta; to var izslēgt iestatījumos, ar `/memory off` vai vienai palaišanai ar `--no-memory`.",
   "Rīki aptver koda meklēšanu, mērķētus failu lasījumus un ielāpus, attēlus, ZIP arhīvus, DOCX/XLSX/PDF dokumentus un ierobežotu konteksta izpildi. Pieejamie rīki atkarīgi no izvēlētā profila un modeļa; pašreizējo katalogu iegūstiet ar rīku atklāšanu.",
   "Izvēles MCP pakotnes atrodas `supercli-data/mcp/` un sāk darboties lietošanas brīdī. Iebūvēto prasmju arhīvs ir `supercli-data/skills/builtin-skills.zip`; tā trūkums netraucē parastai palaišanai. Paplašinājumiem var vajadzēt savas izpildvides vai instalētas saimnieklietotnes.",
   "Darwin kandidātu ģenerēšana, modeļu padomes un deleģēšana darba aģentiem ir izvēles darbplūsmas. Paralēli modeļu izsaukumi var palielināt resursu patēriņu un izmaksas. Pamata izpildāmais fails neprasa Node, Python, Docker vai CGO.",

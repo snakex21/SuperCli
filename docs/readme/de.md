@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.33
+# SuperCli 1.0.34
 
 <!-- readme-unit:intro -->
 Ein portabler KI-Programmieragent in Go mit Terminaloberfläche (TUI), Desktop-/Weboberfläche (GUI) und Stapelmodus, die dieselbe Engine nutzen.
 
 <!-- readme-unit:status -->
-Dieses README beschreibt Version `1.0.33`. Portable Veröffentlichungspakete werden über [GitHub Releases](https://github.com/snakex21/SuperCli/releases) verteilt; ein lokaler Build bedeutet nicht, dass seine Veröffentlichung bereits erfolgt ist.
+Dieses README beschreibt Version `1.0.34`. Portable Veröffentlichungspakete werden über [GitHub Releases](https://github.com/snakex21/SuperCli/releases) verteilt; ein lokaler Build bedeutet nicht, dass seine Veröffentlichung bereits erfolgt ist.
 
 <!-- readme-unit:h.screenshots -->
 ## Screenshots
@@ -116,7 +116,7 @@ Ersetzen Sie Beispielendpunkt und Modell durch die Werte Ihres Servers. Cloud-Di
 GUI und TUI unterstützen dieselben 27 Oberflächensprachen. Sie bieten gestreamte Gespräche, Sitzungswiederherstellung, Projektauswahl, Modellverwaltung, Anhänge und Nutzungsansichten. Die TUI unterstützt Mausscrollen, Gesprächssuche und einklappbare Denk-/Werkzeugausgaben.
 
 <!-- readme-unit:agent -->
-Die Engine unterstützt Werkzeugsuche, überprüfte Dateiänderungen, Befehlsausführung, Sitzungsverlauf, Projektgedächtnis, Kontextverdichtung, Ziele, Delegation an Arbeitsagenten, Konsultation und optionale Entwurfsmodelle.
+Die Engine unterstützt Werkzeugsuche, überprüfte Dateiänderungen, Befehlsausführung, Sitzungsverlauf, Projektgedächtnis, Kontextverdichtung, Ziele, Delegation an Arbeitsagenten, Konsultation und optionale Entwurfsmodelle. Das dauerhafte Gedächtnis ist standardmäßig an; Sie schalten es in den Einstellungen, mit `/memory off` oder für einen einzelnen Start mit `--no-memory` ab.
 
 <!-- readme-unit:tools -->
 Werkzeuge umfassen Codesuche, gezieltes Lesen und Ändern von Dateien, Bilder, ZIP-Archive, DOCX/XLSX/PDF-Dokumente und begrenzte Kontextausführung. Verfügbare Werkzeuge hängen vom gewählten Profil und Modell ab; verwenden Sie die Werkzeugsuche für den aktuellen Katalog.

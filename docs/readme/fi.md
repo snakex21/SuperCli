@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.33
+# SuperCli 1.0.34
 
 <!-- readme-unit:intro -->
 Go-kielellä kirjoitettu siirrettävä tekoälykoodausagentti, jonka päätekäyttöliittymä (TUI), työpöytä-/verkkokäyttöliittymä (GUI) ja eräajotila jakavat saman moottorin.
 
 <!-- readme-unit:status -->
-Tämä README kuvaa versiota `1.0.33`. Siirrettävät julkaisupaketit jaetaan [GitHub Releases](https://github.com/snakex21/SuperCli/releases) -palvelussa; paikallinen koonti ei tarkoita, että sen julkaisu olisi jo saatavilla.
+Tämä README kuvaa versiota `1.0.34`. Siirrettävät julkaisupaketit jaetaan [GitHub Releases](https://github.com/snakex21/SuperCli/releases) -palvelussa; paikallinen koonti ei tarkoita, että sen julkaisu olisi jo saatavilla.
 
 <!-- readme-unit:h.screenshots -->
 ## Kuvakaappaukset
@@ -116,7 +116,7 @@ Korvaa esimerkin päätepiste ja malli palvelimesi arvoilla. Pilvipalvelut voiva
 GUI ja TUI tukevat samoja 27 käyttöliittymäkieltä. Ne tarjoavat suoratoistetut keskustelut, istuntojen palautuksen, projektivalinnan, mallinhallinnan, liitteet ja käyttönäkymät. TUI tukee hiirivieritystä, keskusteluhakua ja kutistettavaa päättely-/työkalutulostetta.
 
 <!-- readme-unit:agent -->
-Moottori tukee työkalujen löytämistä, tarkistettuja tiedostomuutoksia, komentojen suorittamista, istuntohistoriaa, projektimuistia, kontekstin tiivistämistä, tavoitteita, delegointia työagenteille, konsultointia ja valinnaisia luonnosmalleja.
+Moottori tukee työkalujen löytämistä, tarkistettuja tiedostomuutoksia, komentojen suorittamista, istuntohistoriaa, projektimuistia, kontekstin tiivistämistä, tavoitteita, delegointia työagenteille, konsultointia ja valinnaisia luonnosmalleja. Pysyvä muisti on oletuksena päällä; sen voi poistaa käytöstä asetuksissa, komennolla `/memory off` tai yhdeksi ajoksi valitsimella `--no-memory`.
 
 <!-- readme-unit:tools -->
 Työkalut kattavat koodihaun, kohdistetut tiedostoluvut ja paikkaukset, kuvat, ZIP-arkistot, DOCX/XLSX/PDF-asiakirjat ja rajatun kontekstisuorituksen. Saatavilla olevat työkalut riippuvat valitusta profiilista ja mallista; löydä nykyinen luettelo työkaluhakutoiminnolla.

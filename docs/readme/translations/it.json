@@ -1,6 +1,6 @@
 [
   "Un agente di programmazione IA portatile scritto in Go, con interfaccia terminale (TUI), interfaccia desktop/web (GUI) e modalità batch che condividono un unico motore.",
-  "Questo README descrive la versione `1.0.33`. I pacchetti portatili vengono distribuiti tramite [GitHub Releases]({releases}); una compilazione locale non implica che la relativa versione sia già pubblicata.",
+  "Questo README descrive la versione `1.0.34`. I pacchetti portatili vengono distribuiti tramite [GitHub Releases]({releases}); una compilazione locale non implica che la relativa versione sia già pubblicata.",
   "Schermate",
   "![Interfaccia web di SuperCli (GUI)]({guishot})",
   "![Centro azioni del terminale di SuperCli (TUI)]({tuishot})",
@@ -23,7 +23,7 @@
   "Sostituisci endpoint e modello d'esempio con i valori del tuo server. I servizi cloud possono richiedere credenziali e addebitare l'utilizzo. Le capacità del modello determinano visione, strumenti, ragionamento e limiti del contesto. Vedi [configurazione]({config}).",
   "Funzionalità",
   "GUI e TUI supportano le stesse 27 lingue d'interfaccia. Offrono conversazioni in streaming, ripristino delle sessioni, scelta dei progetti, gestione dei modelli, allegati e viste dell'utilizzo. La TUI supporta scorrimento con mouse, ricerca nella conversazione e output di ragionamento/strumenti comprimibile.",
-  "Il motore supporta scoperta degli strumenti, modifiche ai file verificate, esecuzione di comandi, cronologia delle sessioni, memoria di progetto, compattazione del contesto, obiettivi, delega ad agenti operativi, consultazione e modelli di bozza opzionali.",
+  "Il motore supporta scoperta degli strumenti, modifiche ai file verificate, esecuzione di comandi, cronologia delle sessioni, memoria di progetto, compattazione del contesto, obiettivi, delega ad agenti operativi, consultazione e modelli di bozza opzionali. La memoria persistente è attiva per impostazione predefinita; puoi disattivarla nelle impostazioni, con `/memory off` o per un solo avvio con `--no-memory`.",
   "Gli strumenti coprono ricerca nel codice, letture e patch mirate, immagini, archivi ZIP, documenti DOCX/XLSX/PDF ed esecuzione del contesto limitata. Gli strumenti disponibili dipendono dal profilo e modello scelti; usa la scoperta degli strumenti per il catalogo attuale.",
   "I pacchetti MCP opzionali risiedono in `supercli-data/mcp/` e partono quando usati. L'archivio delle competenze integrate è in `supercli-data/skills/builtin-skills.zip`; la sua assenza non impedisce il normale avvio. Le estensioni possono richiedere propri runtime o applicazioni host installate.",
   "Generazione di candidati Darwin, consigli e delega ad agenti operativi sono flussi opzionali. Le chiamate parallele ai modelli possono aumentare consumo di risorse e costi. L'eseguibile principale non richiede Node, Python, Docker o CGO.",

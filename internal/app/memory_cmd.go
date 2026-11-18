@@ -10,24 +10,14 @@ import (
 	"strings"
 
 	"supercli/internal/storage/memory"
-	"supercli/internal/tools"
 )
-
-// storeOrNil converts a possibly-nil *memory.Store into a clean
-// nil interface so `keeper == nil` checks in the tools work
-// (a typed nil pointer inside a non-nil interface would not).
-func storeOrNil(s *memory.Store) tools.MemoryKeeper {
-	if s == nil {
-		return nil
-	}
-	return s
-}
 
 // memoryCommand implements /memory:
 //
 //	/memory             — overview (recent entries, DB sizes, embeddings)
 //	/memory search <q>  — hybrid search across project + global stores
 //	/memory forget <id> — delete an entry from whichever store has it
+//	/memory on|off|status — the persistent-memory switch (memory_switch.go)
 //	/memory tidy        — remove junk (non-facts) and consolidate
 //	                      near-identical preference/fact entries
 func memoryCommand(ctx context.Context, project, global *memory.Store, briefing, args string) (string, error) {
@@ -53,7 +43,7 @@ func memoryCommand(ctx context.Context, project, global *memory.Store, briefing,
 		}
 		return memoryForget(project, global, id), nil
 	default:
-		return "usage: /memory | /memory search <query> | /memory forget <id> | /memory tidy", nil
+		return "usage: /memory | /memory on|off|status | /memory search <query> | /memory forget <id> | /memory tidy", nil
 	}
 }
 
@@ -132,7 +122,7 @@ func memoryOverview(project, global *memory.Store, briefing string) string {
 			fmt.Fprintf(&b, "\nknown projects: %d\n", len(cards))
 		}
 	}
-	b.WriteString("\n/memory search <query> · /memory forget <id> · /memory tidy\n")
+	b.WriteString("\n/memory search <query> · /memory forget <id> · /memory tidy · /memory on|off|status\n")
 	return b.String()
 }
 

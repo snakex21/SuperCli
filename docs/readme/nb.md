@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.33
+# SuperCli 1.0.34
 
 <!-- readme-unit:intro -->
 En portabel KI-kodingsagent skrevet i Go, med terminalgrensesnitt (TUI), skrivebords-/nettgrensesnitt (GUI) og satsvis modus som deler én motor.
 
 <!-- readme-unit:status -->
-Denne README beskriver versjon `1.0.33`. Portable utgivelsespakker distribueres gjennom [GitHub Releases](https://github.com/snakex21/SuperCli/releases); en lokal bygging betyr ikke at tilhørende utgivelse allerede er publisert.
+Denne README beskriver versjon `1.0.34`. Portable utgivelsespakker distribueres gjennom [GitHub Releases](https://github.com/snakex21/SuperCli/releases); en lokal bygging betyr ikke at tilhørende utgivelse allerede er publisert.
 
 <!-- readme-unit:h.screenshots -->
 ## Skjermbilder
@@ -116,7 +116,7 @@ Bytt ut eksempelets endepunkt og modell med serverens verdier. Skytjenester kan 
 GUI og TUI støtter de samme 27 grensesnittspråkene. De tilbyr strømmede samtaler, øktgjenoppretting, prosjektvalg, modelladministrasjon, vedlegg og bruksoversikter. TUI støtter muserulling, søk i samtalen og sammenleggbar tenke-/verktøyutdata.
 
 <!-- readme-unit:agent -->
-Motoren støtter verktøyoppdagelse, verifiserte filendringer, kommandokjøring, økthistorikk, prosjektminne, kontekstkomprimering, mål, delegering til arbeidsagenter, konsultasjon og valgfrie utkastmodeller.
+Motoren støtter verktøyoppdagelse, verifiserte filendringer, kommandokjøring, økthistorikk, prosjektminne, kontekstkomprimering, mål, delegering til arbeidsagenter, konsultasjon og valgfrie utkastmodeller. Varig minne er slått på som standard; slå det av i innstillingene, med `/memory off` eller for én enkelt kjøring med `--no-memory`.
 
 <!-- readme-unit:tools -->
 Verktøyene dekker kodesøk, målrettet fillesing og retting, bilder, ZIP-arkiver, DOCX/XLSX/PDF-dokumenter og avgrenset kontekstkjøring. Tilgjengelige verktøy avhenger av valgt profil og modell; bruk verktøyoppdagelse for gjeldende katalog.

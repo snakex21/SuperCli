@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.33
+# SuperCli 1.0.34
 
 <!-- readme-unit:intro -->
 Prenosný AI agent na programovanie napísaný v Go, s terminálovým rozhraním (TUI), desktopovým/webovým rozhraním (GUI) a dávkovým režimom zdieľajúcimi jeden engine.
 
 <!-- readme-unit:status -->
-Tento README opisuje verziu `1.0.33`. Prenosné balíky vydaní sa distribuujú cez [GitHub Releases](https://github.com/snakex21/SuperCli/releases); lokálne zostavenie neznamená, že jeho vydanie už bolo zverejnené.
+Tento README opisuje verziu `1.0.34`. Prenosné balíky vydaní sa distribuujú cez [GitHub Releases](https://github.com/snakex21/SuperCli/releases); lokálne zostavenie neznamená, že jeho vydanie už bolo zverejnené.
 
 <!-- readme-unit:h.screenshots -->
 ## Snímky obrazovky
@@ -116,7 +116,7 @@ Nahraďte ukážkový endpoint a model hodnotami svojho servera. Cloudové služ
 GUI a TUI podporujú rovnakých 27 jazykov rozhrania. Ponúkajú streamované rozhovory, obnovu relácií, výber projektov, správu modelov, prílohy a prehľady využitia. TUI podporuje posúvanie myšou, vyhľadávanie v rozhovore a zbaliteľný výstup uvažovania/nástrojov.
 
 <!-- readme-unit:agent -->
-Engine podporuje objavovanie nástrojov, overené úpravy súborov, vykonávanie príkazov, históriu relácií, projektovú pamäť, kompakciu kontextu, ciele, delegovanie pracovným agentom, konzultácie a voliteľné modely návrhov.
+Engine podporuje objavovanie nástrojov, overené úpravy súborov, vykonávanie príkazov, históriu relácií, projektovú pamäť, kompakciu kontextu, ciele, delegovanie pracovným agentom, konzultácie a voliteľné modely návrhov. Trvalá pamäť je predvolene zapnutá; vypnete ju v nastaveniach, príkazom `/memory off` alebo len na jedno spustenie voľbou `--no-memory`.
 
 <!-- readme-unit:tools -->
 Nástroje pokrývajú vyhľadávanie kódu, cielené čítanie a opravy súborov, obrázky, archívy ZIP, dokumenty DOCX/XLSX/PDF a obmedzené vykonávanie v kontexte. Dostupné nástroje závisia od vybraného profilu a modelu; aktuálny katalóg získate objavovaním nástrojov.

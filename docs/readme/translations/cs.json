@@ -1,6 +1,6 @@
 [
   "Přenosný AI agent pro programování napsaný v Go, s terminálovým rozhraním (TUI), desktopovým/webovým rozhraním (GUI) a dávkovým režimem, které sdílejí jeden engine.",
-  "Tento README popisuje verzi `1.0.33`. Přenosné balíčky se distribuují prostřednictvím [GitHub Releases]({releases}); místní sestavení neznamená, že příslušná verze již byla zveřejněna.",
+  "Tento README popisuje verzi `1.0.34`. Přenosné balíčky se distribuují prostřednictvím [GitHub Releases]({releases}); místní sestavení neznamená, že příslušná verze již byla zveřejněna.",
   "Snímky obrazovky",
   "![Webové rozhraní SuperCli (GUI)]({guishot})",
   "![Centrum akcí v terminálu SuperCli (TUI)]({tuishot})",
@@ -23,7 +23,7 @@
   "Nahraďte ukázkový endpoint a model hodnotami svého serveru. Cloudové služby mohou vyžadovat přihlašovací údaje a účtovat používání. Schopnosti modelu určují vidění, nástroje, uvažování a limity kontextu. Viz [konfigurace]({config}).",
   "Funkce",
   "GUI a TUI podporují stejných 27 jazyků rozhraní. Nabízejí streamované konverzace, obnovu relací, výběr projektu, správu modelů, přílohy a přehledy využití. TUI podporuje posouvání myší, hledání v konverzaci a sbalitelný výstup uvažování/nástrojů.",
-  "Engine podporuje vyhledávání nástrojů, ověřené úpravy souborů, spouštění příkazů, historii relací, projektovou paměť, kompakci kontextu, cíle, delegování pracovním agentům, konzultace a volitelné modely pro návrhy.",
+  "Engine podporuje vyhledávání nástrojů, ověřené úpravy souborů, spouštění příkazů, historii relací, projektovou paměť, kompakci kontextu, cíle, delegování pracovním agentům, konzultace a volitelné modely pro návrhy. Trvalá paměť je ve výchozím stavu zapnutá; vypnete ji v nastavení, příkazem `/memory off` nebo jen pro jedno spuštění volbou `--no-memory`.",
   "Nástroje zahrnují hledání v kódu, cílené čtení a opravy souborů, obrázky, archivy ZIP, dokumenty DOCX/XLSX/PDF a omezené provádění v kontextu. Dostupné nástroje závisejí na zvoleném profilu a modelu; aktuální katalog získáte vyhledáním nástrojů.",
   "Volitelné balíčky MCP jsou v `supercli-data/mcp/` a spouštějí se při použití. Archiv vestavěných dovedností je v `supercli-data/skills/builtin-skills.zip`; jeho nepřítomnost nebrání běžnému spuštění. Rozšíření mohou potřebovat vlastní běhové prostředí nebo nainstalované hostitelské aplikace.",
   "Generování kandidátů Darwin, rady modelů a delegování pracovním agentům jsou volitelné postupy. Paralelní volání modelů může zvýšit spotřebu prostředků a náklady. Základní spustitelný soubor nevyžaduje Node, Python, Docker ani CGO.",

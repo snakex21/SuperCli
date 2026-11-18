@@ -8,6 +8,8 @@
 // of the core so every model follows it.
 package prompt
 
+import "strings"
+
 // Core is the always-injected layer. Keep it short: every
 // request pays for it, and small models get ONLY this. Simple
 // imperative sentences, no nested conditionals. Budget:
@@ -75,6 +77,23 @@ Text arguments have no JSON braces. Arrays/objects require native JSON tool call
 // lists simple read-only tools replaces it with its own header carrying the
 // same instruction, so the rule is not sent twice in the cached prefix.
 const ThinDirectToolHint = `Simple read-only catalog tools can skip tool_search: call invoke_tool with "tool: name" and one "arg.field: value" line per target argument.`
+
+// coreMemoryHint is the memory sentence of Core. WithoutMemoryHints removes it
+// when persistent memory is switched off, because remember/recall are then
+// not registered at all.
+const coreMemoryHint = " remember preferences; recall only for missing prior context."
+
+// MemoryOffGuidance replaces MemoryGuidance when persistent memory is switched
+// off ([memory] enabled = false, SUPERCLI_MEMORY=off or --no-memory).
+const MemoryOffGuidance = "Persistent memory is switched off by the user: nothing from earlier conversations is available and nothing is saved for later. " +
+	"If asked to remember something, say that memory is turned off in the settings."
+
+// WithoutMemoryHints strips the memory-tool hint from a system prompt built
+// from Core. It is applied only when memory is off, so the memory-on prompt
+// (and its provider cache prefix) stays byte-identical.
+func WithoutMemoryHints(system string) string {
+	return strings.Replace(system, coreMemoryHint, "", 1)
+}
 
 // MemoryGuidance keeps foreground memory tools proportional to missing context
 // and durable new facts. Session/task logging is handled by the memory runtime.

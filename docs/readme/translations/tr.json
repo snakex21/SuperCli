@@ -1,6 +1,6 @@
 [
   "Go ile yazılmış; aynı motoru paylaşan terminal arayüzü (TUI), masaüstü/web arayüzü (GUI) ve toplu işlem modu sunan taşınabilir bir yapay zekâ kodlama ajanı.",
-  "Bu README `1.0.33` sürümünü açıklar. Taşınabilir sürüm paketleri [GitHub Releases]({releases}) üzerinden dağıtılır; yerel derleme, ilgili sürümün zaten yayımlandığı anlamına gelmez.",
+  "Bu README `1.0.34` sürümünü açıklar. Taşınabilir sürüm paketleri [GitHub Releases]({releases}) üzerinden dağıtılır; yerel derleme, ilgili sürümün zaten yayımlandığı anlamına gelmez.",
   "Ekran görüntüleri",
   "![SuperCli web arayüzü (GUI)]({guishot})",
   "![SuperCli terminal eylem merkezi (TUI)]({tuishot})",
@@ -23,7 +23,7 @@
   "Örnek uç noktayı ve modeli sunucunuzun değerleriyle değiştirin. Bulut hizmetleri kimlik bilgileri isteyebilir ve kullanım ücreti alabilir. Model yetenekleri görüntü algılama, araçlar, akıl yürütme ve bağlam sınırlarını belirler. [Yapılandırmaya]({config}) bakın.",
   "Özellikler",
   "GUI ve TUI aynı 27 arayüz dilini destekler. Akışlı sohbetler, oturum kurtarma, proje seçimi, model yönetimi, ekler ve kullanım görünümleri sunar. TUI fareyle kaydırma, sohbet araması ve daraltılabilir düşünme/araç çıktısını destekler.",
-  "Motor; araç keşfi, doğrulanmış dosya düzenlemeleri, komut çalıştırma, oturum geçmişi, proje belleği, bağlam sıkıştırma, hedefler, işçi ajanlara görev devri, danışma ve isteğe bağlı taslak modellerini destekler.",
+  "Motor; araç keşfi, doğrulanmış dosya düzenlemeleri, komut çalıştırma, oturum geçmişi, proje belleği, bağlam sıkıştırma, hedefler, işçi ajanlara görev devri, danışma ve isteğe bağlı taslak modellerini destekler. Kalıcı bellek varsayılan olarak açıktır; ayarlardan, `/memory off` komutuyla veya tek bir çalıştırma için `--no-memory` seçeneğiyle kapatabilirsiniz.",
   "Araçlar; kod araması, hedefli dosya okumaları ve yamalar, görüntüler, ZIP arşivleri, DOCX/XLSX/PDF belgeleri ve sınırlı bağlam yürütmeyi kapsar. Kullanılabilir araçlar seçilen profil ve modele bağlıdır; güncel katalog için araç keşfini kullanın.",
   "İsteğe bağlı MCP paketleri `supercli-data/mcp/` içinde bulunur ve kullanıldığında başlar. Yerleşik beceri arşivi `supercli-data/skills/builtin-skills.zip` içindedir; yokluğu normal başlangıcı engellemez. Uzantılar kendi çalışma ortamlarını veya kurulu ana uygulamaları gerektirebilir.",
   "Darwin aday üretimi, model konseyleri ve işçi ajanlara görev devri isteğe bağlı iş akışlarıdır. Paralel model çağrıları kaynak kullanımını ve maliyeti artırabilir. Temel yürütülebilir dosya Node, Python, Docker veya CGO gerektirmez.",

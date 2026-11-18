@@ -1,6 +1,6 @@
 [
   "Go-kielellä kirjoitettu siirrettävä tekoälykoodausagentti, jonka päätekäyttöliittymä (TUI), työpöytä-/verkkokäyttöliittymä (GUI) ja eräajotila jakavat saman moottorin.",
-  "Tämä README kuvaa versiota `1.0.33`. Siirrettävät julkaisupaketit jaetaan [GitHub Releases]({releases}) -palvelussa; paikallinen koonti ei tarkoita, että sen julkaisu olisi jo saatavilla.",
+  "Tämä README kuvaa versiota `1.0.34`. Siirrettävät julkaisupaketit jaetaan [GitHub Releases]({releases}) -palvelussa; paikallinen koonti ei tarkoita, että sen julkaisu olisi jo saatavilla.",
   "Kuvakaappaukset",
   "![SuperClin verkkokäyttöliittymä (GUI)]({guishot})",
   "![SuperClin päätteen toimintokeskus (TUI)]({tuishot})",
@@ -23,7 +23,7 @@
   "Korvaa esimerkin päätepiste ja malli palvelimesi arvoilla. Pilvipalvelut voivat vaatia tunnistetietoja ja veloittaa käytöstä. Mallin ominaisuudet määrittävät kuvantunnistuksen, työkalut, päättelyn ja kontekstirajat. Katso [asetukset]({config}).",
   "Ominaisuudet",
   "GUI ja TUI tukevat samoja 27 käyttöliittymäkieltä. Ne tarjoavat suoratoistetut keskustelut, istuntojen palautuksen, projektivalinnan, mallinhallinnan, liitteet ja käyttönäkymät. TUI tukee hiirivieritystä, keskusteluhakua ja kutistettavaa päättely-/työkalutulostetta.",
-  "Moottori tukee työkalujen löytämistä, tarkistettuja tiedostomuutoksia, komentojen suorittamista, istuntohistoriaa, projektimuistia, kontekstin tiivistämistä, tavoitteita, delegointia työagenteille, konsultointia ja valinnaisia luonnosmalleja.",
+  "Moottori tukee työkalujen löytämistä, tarkistettuja tiedostomuutoksia, komentojen suorittamista, istuntohistoriaa, projektimuistia, kontekstin tiivistämistä, tavoitteita, delegointia työagenteille, konsultointia ja valinnaisia luonnosmalleja. Pysyvä muisti on oletuksena päällä; sen voi poistaa käytöstä asetuksissa, komennolla `/memory off` tai yhdeksi ajoksi valitsimella `--no-memory`.",
   "Työkalut kattavat koodihaun, kohdistetut tiedostoluvut ja paikkaukset, kuvat, ZIP-arkistot, DOCX/XLSX/PDF-asiakirjat ja rajatun kontekstisuorituksen. Saatavilla olevat työkalut riippuvat valitusta profiilista ja mallista; löydä nykyinen luettelo työkaluhakutoiminnolla.",
   "Valinnaiset MCP-paketit sijaitsevat kansiossa `supercli-data/mcp/` ja käynnistyvät käytettäessä. Sisäänrakennettujen taitojen arkisto on `supercli-data/skills/builtin-skills.zip`; sen puuttuminen ei estä normaalia käynnistystä. Laajennukset voivat tarvita omia suoritusympäristöjä tai asennettuja isäntäsovelluksia.",
   "Darwin-ehdokkaiden luonti, mallineuvostot ja delegointi työagenteille ovat valinnaisia työnkulkuja. Rinnakkaiset mallikutsut voivat kasvattaa resurssikulutusta ja kustannuksia. Ydinohjelma ei vaadi Nodea, Pythonia, Dockeria tai CGO:ta.",

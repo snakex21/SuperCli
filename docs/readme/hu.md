@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.33
+# SuperCli 1.0.34
 
 <!-- readme-unit:intro -->
 Go nyelven írt hordozható AI programozóügynök, közös motort használó terminálfelülettel (TUI), asztali/webes felülettel (GUI) és kötegelt móddal.
 
 <!-- readme-unit:status -->
-Ez a README az `1.0.33` verziót ismerteti. A hordozható kiadási csomagok a [GitHub Releases](https://github.com/snakex21/SuperCli/releases) oldalon terjeszthetők; a helyi fordítás nem jelenti, hogy a hozzá tartozó kiadás már megjelent.
+Ez a README az `1.0.34` verziót ismerteti. A hordozható kiadási csomagok a [GitHub Releases](https://github.com/snakex21/SuperCli/releases) oldalon terjeszthetők; a helyi fordítás nem jelenti, hogy a hozzá tartozó kiadás már megjelent.
 
 <!-- readme-unit:h.screenshots -->
 ## Képernyőképek
@@ -116,7 +116,7 @@ Cserélje le a példabeli végpontot és modellt a szerver értékeire. A felhő
 A GUI és TUI ugyanazt a 27 felületi nyelvet támogatja. Folyamatosan megjelenő beszélgetéseket, munkamenet-visszaállítást, projektválasztást, modellkezelést, mellékleteket és használati nézeteket kínálnak. A TUI támogatja az egérgörgetést, a beszélgetéskeresést és az összecsukható gondolkodási/eszközkimenetet.
 
 <!-- readme-unit:agent -->
-A motor támogatja az eszközfelderítést, ellenőrzött fájlszerkesztést, parancsvégrehajtást, munkamenet-előzményeket, projektmemóriát, kontextustömörítést, célokat, munkavégző ügynököknek delegálást, konzultációt és opcionális vázlatmodelleket.
+A motor támogatja az eszközfelderítést, ellenőrzött fájlszerkesztést, parancsvégrehajtást, munkamenet-előzményeket, projektmemóriát, kontextustömörítést, célokat, munkavégző ügynököknek delegálást, konzultációt és opcionális vázlatmodelleket. A tartós memória alapértelmezés szerint be van kapcsolva; kikapcsolható a beállításokban, a `/memory off` paranccsal vagy egyetlen futtatásra a `--no-memory` kapcsolóval.
 
 <!-- readme-unit:tools -->
 Az eszközök kódkeresést, célzott fájlolvasást és javítást, képeket, ZIP-archívumokat, DOCX/XLSX/PDF dokumentumokat és korlátozott kontextus-végrehajtást fednek le. Az elérhető eszközök a kiválasztott profiltól és modelltől függnek; az aktuális katalógust eszközfelderítéssel érheti el.

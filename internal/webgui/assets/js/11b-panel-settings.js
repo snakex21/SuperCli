@@ -43,6 +43,7 @@ sections.settings = async function () {
   var reset = i18nEl("button", "btn danger", "set.resetAll");
   reset.addEventListener("click", async function () {
     await jpost("/api/config", { reset_all: true }).catch(function (e) { toast(e.message); });
+    if (typeof refreshMemoryIndicator === "function") refreshMemoryIndicator();
     sections.settings();
     renderStats();
     refreshCostDetails();
@@ -61,6 +62,7 @@ function appendKnobGroups(parent, knobs, currencies, section) {
     var group = el("div", "group settings-group");
     group.appendChild(i18nEl("div", "g-label", label));
     rows.forEach(function (k) { placed[k.key] = true; group.appendChild(knobRow(k, currencies, section)); });
+    if (label === "set.group.memory" && typeof appendMemoryExtras === "function") appendMemoryExtras(group);
     parent.appendChild(group);
   }
   settingGroups.forEach(function (g) {
@@ -71,6 +73,7 @@ function appendKnobGroups(parent, knobs, currencies, section) {
 }
 var settingGroups = [
   ["set.group.display", ["show_generation_speed", "assistant_edit", "assistant_edit_model_sees", "cost_currency", "update_notify"]],
+  ["set.group.memory", ["memory"]],
   ["set.group.agent", ["queue_merge", "orchestrator", "navigator", "orchestrator_model", "task_model", "task_reasoning_effort",
     "task_parallel", "task_max_steps", "task_max_tokens", "advisor_model", "advisor_reasoning_effort", "review_model", "review_reasoning_effort"]],
   ["set.group.context", ["thinking", "discard_previous_reasoning", "context_policy", "context_window", "prune_protect_tokens",
@@ -156,6 +159,7 @@ function knobRow(k, currencyCodes, section) {
       .then(function () {
         if (!section || currentSection === section) sections[section || "settings"]();
         if (k.key === "cost_currency") { renderStats(); refreshCostDetails(); }
+        if (k.key === "memory" && typeof refreshMemoryIndicator === "function") refreshMemoryIndicator();
       })
       .catch(function (e) { toast(e.message); });
   }

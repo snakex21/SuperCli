@@ -98,6 +98,15 @@ func buildSystemPromptLayers(svc *goal.Service, instructions string, includeMemo
 	} else if supercliCoordinatorMode {
 		spec.Role = assembly.RoleCoordinator
 	}
+	if !supercliMemoryAtStartup {
+		// Memory off for this session: no memory hint, briefing or memory
+		// tool guidance in the frozen prefix (remember/recall are not
+		// registered), only a short note so the model does not promise to
+		// remember. The memory-on prompt below stays byte-identical.
+		spec.Base = prompt.WithoutMemoryHints(spec.Base)
+		spec.SurfaceLayers = append(spec.SurfaceLayers, prompt.MemoryOffGuidance)
+		return assembly.BuildSystemPrompt(spec)
+	}
 	if includeMemory {
 		spec.SurfaceLayers = append(spec.SurfaceLayers, memoryBriefing)
 	}

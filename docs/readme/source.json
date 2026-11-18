@@ -59,7 +59,7 @@
     ],
     [
       "status",
-      "This README describes version `1.0.33`. Portable release bundles are distributed through [GitHub Releases]({releases}); a local build does not imply that its release has already been published."
+      "This README describes version `1.0.34`. Portable release bundles are distributed through [GitHub Releases]({releases}); a local build does not imply that its release has already been published."
     ],
     [
       "h.screenshots",
@@ -151,7 +151,7 @@
     ],
     [
       "agent",
-      "The engine supports tool discovery, verified file edits, command execution, session history, project memory, context compaction, goals, worker delegation, consultation, and optional draft models."
+      "The engine supports tool discovery, verified file edits, command execution, session history, project memory, context compaction, goals, worker delegation, consultation, and optional draft models. Persistent memory is on by default; switch it off in the settings, with `/memory off`, or for a single run with `--no-memory`."
     ],
     [
       "tools",
@@ -289,7 +289,7 @@
   "blocks": [
     {
       "type": "title",
-      "text": "SuperCli 1.0.33"
+      "text": "SuperCli 1.0.34"
     },
     "intro",
     "status",

@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.33
+# SuperCli 1.0.34
 
 <!-- readme-unit:intro -->
 Un agente di programmazione IA portatile scritto in Go, con interfaccia terminale (TUI), interfaccia desktop/web (GUI) e modalità batch che condividono un unico motore.
 
 <!-- readme-unit:status -->
-Questo README descrive la versione `1.0.33`. I pacchetti portatili vengono distribuiti tramite [GitHub Releases](https://github.com/snakex21/SuperCli/releases); una compilazione locale non implica che la relativa versione sia già pubblicata.
+Questo README descrive la versione `1.0.34`. I pacchetti portatili vengono distribuiti tramite [GitHub Releases](https://github.com/snakex21/SuperCli/releases); una compilazione locale non implica che la relativa versione sia già pubblicata.
 
 <!-- readme-unit:h.screenshots -->
 ## Schermate
@@ -116,7 +116,7 @@ Sostituisci endpoint e modello d'esempio con i valori del tuo server. I servizi 
 GUI e TUI supportano le stesse 27 lingue d'interfaccia. Offrono conversazioni in streaming, ripristino delle sessioni, scelta dei progetti, gestione dei modelli, allegati e viste dell'utilizzo. La TUI supporta scorrimento con mouse, ricerca nella conversazione e output di ragionamento/strumenti comprimibile.
 
 <!-- readme-unit:agent -->
-Il motore supporta scoperta degli strumenti, modifiche ai file verificate, esecuzione di comandi, cronologia delle sessioni, memoria di progetto, compattazione del contesto, obiettivi, delega ad agenti operativi, consultazione e modelli di bozza opzionali.
+Il motore supporta scoperta degli strumenti, modifiche ai file verificate, esecuzione di comandi, cronologia delle sessioni, memoria di progetto, compattazione del contesto, obiettivi, delega ad agenti operativi, consultazione e modelli di bozza opzionali. La memoria persistente è attiva per impostazione predefinita; puoi disattivarla nelle impostazioni, con `/memory off` o per un solo avvio con `--no-memory`.
 
 <!-- readme-unit:tools -->
 Gli strumenti coprono ricerca nel codice, letture e patch mirate, immagini, archivi ZIP, documenti DOCX/XLSX/PDF ed esecuzione del contesto limitata. Gli strumenti disponibili dipendono dal profilo e modello scelti; usa la scoperta degli strumenti per il catalogo attuale.

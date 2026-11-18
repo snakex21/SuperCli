@@ -3,6 +3,8 @@ package app
 import (
 	"flag"
 	"fmt"
+
+	"supercli/internal/system/config"
 )
 
 // cliFlags holds every process-level flag SuperCli understands.
@@ -20,6 +22,7 @@ type cliFlags struct {
 	DraftMode, DraftModel, Batch             string
 	Coordinator, NoCoordinator, Unsandboxed  bool
 	TraceJSONL                               bool
+	Memory, NoMemory                         bool
 }
 
 // parseCLIFlags registers and parses flags. Side effects: sets
@@ -53,8 +56,11 @@ func parseCLIFlags() cliFlags {
 	flag.BoolVar(&f.Coordinator, "coordinator", false, "run main loop as a lightweight coordinator that delegates code work to isolated task workers (default on)")
 	flag.BoolVar(&f.NoCoordinator, "no-coordinator", false, "disable default coordinator mode and expose the normal tool set directly to the main loop")
 	flag.BoolVar(&f.Unsandboxed, "allow-all", false, "grant full filesystem access — file operations can reach any directory (sensitive system paths still blocked); same as allow_all = true in config.toml")
+	flag.BoolVar(&f.NoMemory, "no-memory", false, "run without persistent memory for this launch: no memory in the prompt, no remember/recall tools, nothing saved (stored memory is kept); overrides [memory] enabled and SUPERCLI_MEMORY")
+	flag.BoolVar(&f.Memory, "memory", false, "force persistent memory on for this launch, overriding [memory] enabled = false and SUPERCLI_MEMORY")
 	flag.Usage = usage
 	flag.Parse()
+	config.ApplyMemoryFlags(f.Memory, f.NoMemory)
 
 	supercliCoordinatorMode = true
 	if f.NoCoordinator || envFalsey("SUPERCLI_COORDINATOR") {

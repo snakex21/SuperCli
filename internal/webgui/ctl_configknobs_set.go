@@ -140,6 +140,8 @@ func knobSet(c *config.TomlConfig, key, val string) error {
 		return setInt(&c.ContextWindow)
 	case "prune_protect_tokens":
 		return setInt(&c.PruneProtectTokens)
+	case "memory":
+		return setTri(&c.Memory.Enabled)
 	case "memory_briefing_tokens":
 		return setInt(&c.MemoryBriefingTokens)
 	case "task_max_steps":

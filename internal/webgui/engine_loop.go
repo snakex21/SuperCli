@@ -100,15 +100,24 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 	systemPrompt, projectInstructions := webAgentSystemPromptLayers(home, e.dataDir, cfg.Model, execProfile.PromptSmall, orchestrator, delegation, nil, appProfile)
 	// Branded overlays keep their own adjacent data root. Retain the legacy
 	// NestCafe preference key while the overlay migrates to the shared key.
-	autoMemory := uiSettingBool(e.dataDir, "supercli.autoMemory", true, "nestcafe.autoMemory")
-	systemPrompt += "\n\n" + llmprompt.MemoryGuidance(autoMemory)
+	// [memory] enabled (global or project config.toml), SUPERCLI_MEMORY and
+	// --no-memory are resolved once per run. Off: no briefing, no recall, no
+	// remember/recall tools and no automatic saves; stored data is untouched.
+	memoryOn, _ := config.EffectiveMemory(tc)
+	if memoryOn {
+		autoMemory := uiSettingBool(e.dataDir, "supercli.autoMemory", true, "nestcafe.autoMemory")
+		systemPrompt += "\n\n" + llmprompt.MemoryGuidance(autoMemory)
+	} else {
+		systemPrompt = llmprompt.WithoutMemoryHints(systemPrompt) + "\n\n" + llmprompt.MemoryOffGuidance
+	}
 
 	reg := tools.NewRegistry()
-	projectMemory := webMemoryKeeper{engine: e, home: home}
-	globalMemory := webMemoryKeeper{engine: e, home: home, global: true}
-	provided := map[string]tools.Tool{
-		"remember": tools.NewRememberDual(projectMemory, globalMemory).Spec(),
-		"recall":   tools.NewRecallDual(projectMemory, globalMemory).Spec(),
+	provided := map[string]tools.Tool{}
+	if memoryOn {
+		projectMemory := webMemoryKeeper{engine: e, home: home}
+		globalMemory := webMemoryKeeper{engine: e, home: home, global: true}
+		provided["remember"] = tools.NewRememberDual(projectMemory, globalMemory).Spec()
+		provided["recall"] = tools.NewRecallDual(projectMemory, globalMemory).Spec()
 	}
 	if history, historyErr := e.sessionStore(); historyErr == nil {
 		provided["search_history"] = tools.NewSearchHistory(history).Spec()
@@ -159,7 +168,7 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 	// Pin the root and session, but refresh their state at safe model boundaries.
 	// Memory changes and goal completion within this run must not retain the
 	// snapshot from before the tool executed.
-	liveContextBlocks := e.webLiveContextBlocks(home, tc.MemoryBriefingTokens, currentSessionID, goalSvc, officeProfile)
+	liveContextBlocks := e.webLiveContextBlocksMemory(home, tc.MemoryBriefingTokens, currentSessionID, goalSvc, officeProfile, memoryOn)
 	compactResolver := e.compactProviderResolver(tc, cfg, prov)
 	loopCfg := assembly.BuildLoopConfig(assembly.LoopSpec{
 		Provider:            prov,

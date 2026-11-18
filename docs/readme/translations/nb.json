@@ -1,6 +1,6 @@
 [
   "En portabel KI-kodingsagent skrevet i Go, med terminalgrensesnitt (TUI), skrivebords-/nettgrensesnitt (GUI) og satsvis modus som deler én motor.",
-  "Denne README beskriver versjon `1.0.33`. Portable utgivelsespakker distribueres gjennom [GitHub Releases]({releases}); en lokal bygging betyr ikke at tilhørende utgivelse allerede er publisert.",
+  "Denne README beskriver versjon `1.0.34`. Portable utgivelsespakker distribueres gjennom [GitHub Releases]({releases}); en lokal bygging betyr ikke at tilhørende utgivelse allerede er publisert.",
   "Skjermbilder",
   "![SuperClis nettgrensesnitt (GUI)]({guishot})",
   "![SuperClis handlingssenter i terminalen (TUI)]({tuishot})",
@@ -23,7 +23,7 @@
   "Bytt ut eksempelets endepunkt og modell med serverens verdier. Skytjenester kan kreve påloggingsdata og ta betalt for bruk. Modellens egenskaper bestemmer bildeanalyse, verktøy, resonnering og kontekstgrenser. Se [konfigurasjon]({config}).",
   "Funksjoner",
   "GUI og TUI støtter de samme 27 grensesnittspråkene. De tilbyr strømmede samtaler, øktgjenoppretting, prosjektvalg, modelladministrasjon, vedlegg og bruksoversikter. TUI støtter muserulling, søk i samtalen og sammenleggbar tenke-/verktøyutdata.",
-  "Motoren støtter verktøyoppdagelse, verifiserte filendringer, kommandokjøring, økthistorikk, prosjektminne, kontekstkomprimering, mål, delegering til arbeidsagenter, konsultasjon og valgfrie utkastmodeller.",
+  "Motoren støtter verktøyoppdagelse, verifiserte filendringer, kommandokjøring, økthistorikk, prosjektminne, kontekstkomprimering, mål, delegering til arbeidsagenter, konsultasjon og valgfrie utkastmodeller. Varig minne er slått på som standard; slå det av i innstillingene, med `/memory off` eller for én enkelt kjøring med `--no-memory`.",
   "Verktøyene dekker kodesøk, målrettet fillesing og retting, bilder, ZIP-arkiver, DOCX/XLSX/PDF-dokumenter og avgrenset kontekstkjøring. Tilgjengelige verktøy avhenger av valgt profil og modell; bruk verktøyoppdagelse for gjeldende katalog.",
   "Valgfrie MCP-pakker ligger i `supercli-data/mcp/` og starter når de brukes. Arkivet med innebygde ferdigheter ligger i `supercli-data/skills/builtin-skills.zip`; mangler det, hindrer det ikke vanlig oppstart. Utvidelser kan kreve egne kjøremiljøer eller installerte vertsprogrammer.",
   "Darwin-kandidatgenerering, modellråd og delegering til arbeidsagenter er valgfrie arbeidsflyter. Parallelle modellkall kan øke ressursbruk og kostnader. Den sentrale kjørbare filen krever ikke Node, Python, Docker eller CGO.",

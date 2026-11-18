@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.33
+# SuperCli 1.0.34
 
 <!-- readme-unit:intro -->
 Prenosni AI agent za programiranje, napisan v Go, s terminalskim vmesnikom (TUI), namiznim/spletnim vmesnikom (GUI) in paketnim načinom, ki uporabljajo isti pogon.
 
 <!-- readme-unit:status -->
-Ta README opisuje različico `1.0.33`. Prenosni paketi izdaj se razširjajo prek [GitHub Releases](https://github.com/snakex21/SuperCli/releases); lokalna gradnja ne pomeni, da je pripadajoča izdaja že objavljena.
+Ta README opisuje različico `1.0.34`. Prenosni paketi izdaj se razširjajo prek [GitHub Releases](https://github.com/snakex21/SuperCli/releases); lokalna gradnja ne pomeni, da je pripadajoča izdaja že objavljena.
 
 <!-- readme-unit:h.screenshots -->
 ## Posnetki zaslona
@@ -116,7 +116,7 @@ Končno točko in model iz primera zamenjajte z vrednostmi svojega strežnika. S
 GUI in TUI podpirata istih 27 jezikov vmesnika. Zagotavljata pretočne pogovore, obnovitev sej, izbiro projektov, upravljanje modelov, priloge in prikaze uporabe. TUI podpira pomikanje z miško, iskanje po pogovoru in zložljiv izhod razmišljanja/orodij.
 
 <!-- readme-unit:agent -->
-Pogon podpira odkrivanje orodij, preverjene spremembe datotek, izvajanje ukazov, zgodovino sej, projektni pomnilnik, stiskanje konteksta, cilje, delegiranje delovnim agentom, posvetovanje in izbirne modele za osnutke.
+Pogon podpira odkrivanje orodij, preverjene spremembe datotek, izvajanje ukazov, zgodovino sej, projektni pomnilnik, stiskanje konteksta, cilje, delegiranje delovnim agentom, posvetovanje in izbirne modele za osnutke. Trajni pomnilnik je privzeto vklopljen; izklopite ga v nastavitvah, z ukazom `/memory off` ali le za en zagon z možnostjo `--no-memory`.
 
 <!-- readme-unit:tools -->
 Orodja pokrivajo iskanje kode, ciljno branje in popravke datotek, slike, arhive ZIP, dokumente DOCX/XLSX/PDF in omejeno izvajanje konteksta. Razpoložljiva orodja so odvisna od izbranega profila in modela; trenutni katalog pridobite z odkrivanjem orodij.

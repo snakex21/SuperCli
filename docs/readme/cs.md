@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.33
+# SuperCli 1.0.34
 
 <!-- readme-unit:intro -->
 Přenosný AI agent pro programování napsaný v Go, s terminálovým rozhraním (TUI), desktopovým/webovým rozhraním (GUI) a dávkovým režimem, které sdílejí jeden engine.
 
 <!-- readme-unit:status -->
-Tento README popisuje verzi `1.0.33`. Přenosné balíčky se distribuují prostřednictvím [GitHub Releases](https://github.com/snakex21/SuperCli/releases); místní sestavení neznamená, že příslušná verze již byla zveřejněna.
+Tento README popisuje verzi `1.0.34`. Přenosné balíčky se distribuují prostřednictvím [GitHub Releases](https://github.com/snakex21/SuperCli/releases); místní sestavení neznamená, že příslušná verze již byla zveřejněna.
 
 <!-- readme-unit:h.screenshots -->
 ## Snímky obrazovky
@@ -116,7 +116,7 @@ Nahraďte ukázkový endpoint a model hodnotami svého serveru. Cloudové služb
 GUI a TUI podporují stejných 27 jazyků rozhraní. Nabízejí streamované konverzace, obnovu relací, výběr projektu, správu modelů, přílohy a přehledy využití. TUI podporuje posouvání myší, hledání v konverzaci a sbalitelný výstup uvažování/nástrojů.
 
 <!-- readme-unit:agent -->
-Engine podporuje vyhledávání nástrojů, ověřené úpravy souborů, spouštění příkazů, historii relací, projektovou paměť, kompakci kontextu, cíle, delegování pracovním agentům, konzultace a volitelné modely pro návrhy.
+Engine podporuje vyhledávání nástrojů, ověřené úpravy souborů, spouštění příkazů, historii relací, projektovou paměť, kompakci kontextu, cíle, delegování pracovním agentům, konzultace a volitelné modely pro návrhy. Trvalá paměť je ve výchozím stavu zapnutá; vypnete ji v nastavení, příkazem `/memory off` nebo jen pro jedno spuštění volbou `--no-memory`.
 
 <!-- readme-unit:tools -->
 Nástroje zahrnují hledání v kódu, cílené čtení a opravy souborů, obrázky, archivy ZIP, dokumenty DOCX/XLSX/PDF a omezené provádění v kontextu. Dostupné nástroje závisejí na zvoleném profilu a modelu; aktuální katalog získáte vyhledáním nástrojů.

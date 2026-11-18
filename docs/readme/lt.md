@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.33
+# SuperCli 1.0.34
 
 <!-- readme-unit:intro -->
 Go kalba parašytas nešiojamasis AI programavimo agentas, kurio terminalo sąsaja (TUI), darbalaukio/žiniatinklio sąsaja (GUI) ir paketinis režimas naudoja vieną variklį.
 
 <!-- readme-unit:status -->
-Šis README aprašo versiją `1.0.33`. Nešiojamieji leidimų paketai platinami per [GitHub Releases](https://github.com/snakex21/SuperCli/releases); vietinis sukompiliavimas nereiškia, kad jo leidimas jau paskelbtas.
+Šis README aprašo versiją `1.0.34`. Nešiojamieji leidimų paketai platinami per [GitHub Releases](https://github.com/snakex21/SuperCli/releases); vietinis sukompiliavimas nereiškia, kad jo leidimas jau paskelbtas.
 
 <!-- readme-unit:h.screenshots -->
 ## Ekrano nuotraukos
@@ -116,7 +116,7 @@ Pavyzdžio galinį tašką ir modelį pakeiskite savo serverio reikšmėmis. Deb
 GUI ir TUI palaiko tas pačias 27 sąsajos kalbas. Jos teikia srautinius pokalbius, sesijų atkūrimą, projektų pasirinkimą, modelių valdymą, priedus ir naudojimo rodinius. TUI palaiko slinkimą pele, paiešką pokalbyje ir sutraukiamą mąstymo/įrankių išvestį.
 
 <!-- readme-unit:agent -->
-Variklis palaiko įrankių paiešką, patikrintus failų redagavimus, komandų vykdymą, sesijų istoriją, projekto atmintį, konteksto glaudinimą, tikslus, delegavimą darbo agentams, konsultacijas ir pasirenkamus juodraščių modelius.
+Variklis palaiko įrankių paiešką, patikrintus failų redagavimus, komandų vykdymą, sesijų istoriją, projekto atmintį, konteksto glaudinimą, tikslus, delegavimą darbo agentams, konsultacijas ir pasirenkamus juodraščių modelius. Nuolatinė atmintis pagal numatytuosius nustatymus įjungta; ją galima išjungti nustatymuose, komanda `/memory off` arba vienam paleidimui parinktimi `--no-memory`.
 
 <!-- readme-unit:tools -->
 Įrankiai apima kodo paiešką, tikslinius failų skaitymus ir pataisas, vaizdus, ZIP archyvus, DOCX/XLSX/PDF dokumentus ir ribotą konteksto vykdymą. Prieinami įrankiai priklauso nuo pasirinkto profilio ir modelio; dabartinį katalogą raskite įrankių paieška.

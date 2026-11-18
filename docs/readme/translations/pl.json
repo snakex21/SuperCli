@@ -1,6 +1,6 @@
 [
   "Przenośny agent AI do programowania napisany w Go, z interfejsem terminalowym (TUI), interfejsem desktopowym/webowym (GUI) i trybem wsadowym korzystającymi ze wspólnego silnika.",
-  "Ten README opisuje wersję `1.0.33`. Przenośne pakiety wydań są rozpowszechniane przez [GitHub Releases]({releases}); lokalna kompilacja nie oznacza, że odpowiadające jej wydanie zostało już opublikowane.",
+  "Ten README opisuje wersję `1.0.34`. Przenośne pakiety wydań są rozpowszechniane przez [GitHub Releases]({releases}); lokalna kompilacja nie oznacza, że odpowiadające jej wydanie zostało już opublikowane.",
   "Zrzuty ekranu",
   "![Interfejs webowy SuperCli (GUI)]({guishot})",
   "![Centrum działań w terminalu SuperCli (TUI)]({tuishot})",
@@ -23,7 +23,7 @@
   "Zastąp przykładowy endpoint i model wartościami swojego serwera. Usługi chmurowe mogą wymagać uwierzytelnienia i naliczać opłaty. Możliwości modelu określają obsługę obrazów, narzędzi, rozumowania i limity kontekstu. Zobacz [konfigurację]({config}).",
   "Funkcje",
   "GUI i TUI obsługują te same 27 języków interfejsu. Zapewniają strumieniowane rozmowy, odzyskiwanie sesji, wybór projektów, zarządzanie modelami, załączniki i widoki użycia. TUI obsługuje przewijanie myszą, wyszukiwanie w rozmowie oraz zwijanie rozumowania i wyników narzędzi.",
-  "Silnik obsługuje wyszukiwanie narzędzi, zweryfikowane edycje plików, wykonywanie poleceń, historię sesji, pamięć projektu, kompresję kontekstu, cele, delegowanie agentom roboczym, konsultacje i opcjonalne modele szkicujące.",
+  "Silnik obsługuje wyszukiwanie narzędzi, zweryfikowane edycje plików, wykonywanie poleceń, historię sesji, pamięć projektu, kompresję kontekstu, cele, delegowanie agentom roboczym, konsultacje i opcjonalne modele szkicujące. Trwała pamięć jest domyślnie włączona; można ją wyłączyć w ustawieniach, poleceniem `/memory off` albo na jedno uruchomienie opcją `--no-memory`.",
   "Narzędzia obejmują wyszukiwanie w kodzie, odczyt wybranych fragmentów i poprawki plików, obrazy, archiwa ZIP, dokumenty DOCX/XLSX/PDF oraz ograniczone wykonywanie w kontekście. Dostępne narzędzia zależą od wybranego profilu i modelu; użyj wyszukiwania narzędzi, aby poznać bieżący katalog.",
   "Opcjonalne pakiety MCP znajdują się w `supercli-data/mcp/` i uruchamiają się przy użyciu. Archiwum wbudowanych umiejętności jest w `supercli-data/skills/builtin-skills.zip`; jego brak nie blokuje normalnego uruchomienia. Rozszerzenia mogą wymagać własnych środowisk wykonawczych lub zainstalowanych aplikacji gospodarza.",
   "Generowanie kandydatów Darwin, rady modeli i delegowanie agentom roboczym to opcjonalne sposoby pracy. Równoległe wywołania modeli mogą zwiększać zużycie zasobów i koszt. Główny plik wykonywalny nie wymaga Node, Python, Docker ani CGO.",

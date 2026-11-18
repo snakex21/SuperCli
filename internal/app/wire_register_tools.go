@@ -65,10 +65,12 @@ func (ts *interactiveToolset) registerCore(mem memoryBundle, goals *goal.Service
 		// remember routes entries to the project or global store via its
 		// `scope` argument; recall searches both (FTS5 + vectors when an
 		// embedder was detected).
-		rememberTool := tools.NewRememberDual(storeOrNil(mem.Project), storeOrNil(mem.Global))
+		rememberTool := tools.NewRememberDual(gateMemoryKeeper(mem.Project), gateMemoryKeeper(mem.Global))
 		rememberTool.OnSave = mem.AutoSaver.NoteRemember
 		provided["remember"] = rememberTool.Spec()
-		provided["recall"] = tools.NewRecallDual(storeOrNil(mem.Project), storeOrNil(mem.Global)).Spec()
+		// The gated keepers refuse while /memory off is active mid-session;
+		// the tool list itself stays stable (see gatedKeeper).
+		provided["recall"] = tools.NewRecallDual(gateMemoryKeeper(mem.Project), gateMemoryKeeper(mem.Global)).Spec()
 	}
 	if darwin != nil {
 		provided["darwin"] = *darwin

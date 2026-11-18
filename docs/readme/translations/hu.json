@@ -1,6 +1,6 @@
 [
   "Go nyelven írt hordozható AI programozóügynök, közös motort használó terminálfelülettel (TUI), asztali/webes felülettel (GUI) és kötegelt móddal.",
-  "Ez a README az `1.0.33` verziót ismerteti. A hordozható kiadási csomagok a [GitHub Releases]({releases}) oldalon terjeszthetők; a helyi fordítás nem jelenti, hogy a hozzá tartozó kiadás már megjelent.",
+  "Ez a README az `1.0.34` verziót ismerteti. A hordozható kiadási csomagok a [GitHub Releases]({releases}) oldalon terjeszthetők; a helyi fordítás nem jelenti, hogy a hozzá tartozó kiadás már megjelent.",
   "Képernyőképek",
   "![A SuperCli webes felülete (GUI)]({guishot})",
   "![A SuperCli terminálos műveletközpontja (TUI)]({tuishot})",
@@ -23,7 +23,7 @@
   "Cserélje le a példabeli végpontot és modellt a szerver értékeire. A felhőszolgáltatások hitelesítő adatokat kérhetnek és használati díjat számíthatnak fel. A modell képességei határozzák meg a képfelismerést, eszközöket, következtetést és kontextuskorlátokat. Lásd a [konfigurációt]({config}).",
   "Funkciók",
   "A GUI és TUI ugyanazt a 27 felületi nyelvet támogatja. Folyamatosan megjelenő beszélgetéseket, munkamenet-visszaállítást, projektválasztást, modellkezelést, mellékleteket és használati nézeteket kínálnak. A TUI támogatja az egérgörgetést, a beszélgetéskeresést és az összecsukható gondolkodási/eszközkimenetet.",
-  "A motor támogatja az eszközfelderítést, ellenőrzött fájlszerkesztést, parancsvégrehajtást, munkamenet-előzményeket, projektmemóriát, kontextustömörítést, célokat, munkavégző ügynököknek delegálást, konzultációt és opcionális vázlatmodelleket.",
+  "A motor támogatja az eszközfelderítést, ellenőrzött fájlszerkesztést, parancsvégrehajtást, munkamenet-előzményeket, projektmemóriát, kontextustömörítést, célokat, munkavégző ügynököknek delegálást, konzultációt és opcionális vázlatmodelleket. A tartós memória alapértelmezés szerint be van kapcsolva; kikapcsolható a beállításokban, a `/memory off` paranccsal vagy egyetlen futtatásra a `--no-memory` kapcsolóval.",
   "Az eszközök kódkeresést, célzott fájlolvasást és javítást, képeket, ZIP-archívumokat, DOCX/XLSX/PDF dokumentumokat és korlátozott kontextus-végrehajtást fednek le. Az elérhető eszközök a kiválasztott profiltól és modelltől függnek; az aktuális katalógust eszközfelderítéssel érheti el.",
   "Az opcionális MCP-csomagok a `supercli-data/mcp/` alatt vannak, és használatkor indulnak. A beépített képességek archívuma a `supercli-data/skills/builtin-skills.zip`; hiánya nem akadályozza a normál indítást. A bővítmények saját futtatókörnyezetet vagy telepített gazdaalkalmazásokat igényelhetnek.",
   "A Darwin jelöltgenerálás, a tanácsok és a munkavégző ügynököknek delegálás opcionális folyamatok. A párhuzamos modellhívások növelhetik az erőforrásigényt és a költséget. Az alap futtatható fájl nem igényel Node, Python, Docker vagy CGO környezetet.",

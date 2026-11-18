@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.33
+# SuperCli 1.0.34
 
 <!-- readme-unit:intro -->
 Prenosivi AI agent za programiranje napisan u Go jeziku, sa terminalskim interfejsom (TUI), desktop/veb interfejsom (GUI) i paketnim režimom koji dele jedan mehanizam.
 
 <!-- readme-unit:status -->
-Ovaj README opisuje verziju `1.0.33`. Prenosivi paketi izdanja distribuiraju se preko [GitHub Releases](https://github.com/snakex21/SuperCli/releases); lokalno kompajliranje ne znači da je odgovarajuće izdanje već objavljeno.
+Ovaj README opisuje verziju `1.0.34`. Prenosivi paketi izdanja distribuiraju se preko [GitHub Releases](https://github.com/snakex21/SuperCli/releases); lokalno kompajliranje ne znači da je odgovarajuće izdanje već objavljeno.
 
 <!-- readme-unit:h.screenshots -->
 ## Snimci ekrana
@@ -116,7 +116,7 @@ Zamenite primer krajnje tačke i modela vrednostima svog servera. Usluge u oblak
 GUI i TUI podržavaju istih 27 jezika interfejsa. Pružaju razgovore u strimu, oporavak sesija, izbor projekata, upravljanje modelima, priloge i prikaze korišćenja. TUI podržava skrolovanje mišem, pretragu razgovora i sklopivi izlaz razmišljanja/alata.
 
 <!-- readme-unit:agent -->
-Mehanizam podržava otkrivanje alata, proverene izmene datoteka, izvršavanje komandi, istoriju sesija, memoriju projekta, sažimanje konteksta, ciljeve, delegiranje radnim agentima, konsultacije i opcione modele nacrta.
+Mehanizam podržava otkrivanje alata, proverene izmene datoteka, izvršavanje komandi, istoriju sesija, memoriju projekta, sažimanje konteksta, ciljeve, delegiranje radnim agentima, konsultacije i opcione modele nacrta. Trajna memorija je podrazumevano uključena; isključite je u podešavanjima, komandom `/memory off` ili samo za jedno pokretanje opcijom `--no-memory`.
 
 <!-- readme-unit:tools -->
 Alati pokrivaju pretragu koda, ciljano čitanje i zakrpe datoteka, slike, ZIP arhive, DOCX/XLSX/PDF dokumente i ograničeno izvršavanje konteksta. Dostupni alati zavise od izabranog profila i modela; trenutni katalog potražite otkrivanjem alata.

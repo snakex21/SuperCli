@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.33
+# SuperCli 1.0.34
 
 <!-- readme-unit:intro -->
 Przenośny agent AI do programowania napisany w Go, z interfejsem terminalowym (TUI), interfejsem desktopowym/webowym (GUI) i trybem wsadowym korzystającymi ze wspólnego silnika.
 
 <!-- readme-unit:status -->
-Ten README opisuje wersję `1.0.33`. Przenośne pakiety wydań są rozpowszechniane przez [GitHub Releases](https://github.com/snakex21/SuperCli/releases); lokalna kompilacja nie oznacza, że odpowiadające jej wydanie zostało już opublikowane.
+Ten README opisuje wersję `1.0.34`. Przenośne pakiety wydań są rozpowszechniane przez [GitHub Releases](https://github.com/snakex21/SuperCli/releases); lokalna kompilacja nie oznacza, że odpowiadające jej wydanie zostało już opublikowane.
 
 <!-- readme-unit:h.screenshots -->
 ## Zrzuty ekranu
@@ -116,7 +116,7 @@ Zastąp przykładowy endpoint i model wartościami swojego serwera. Usługi chmu
 GUI i TUI obsługują te same 27 języków interfejsu. Zapewniają strumieniowane rozmowy, odzyskiwanie sesji, wybór projektów, zarządzanie modelami, załączniki i widoki użycia. TUI obsługuje przewijanie myszą, wyszukiwanie w rozmowie oraz zwijanie rozumowania i wyników narzędzi.
 
 <!-- readme-unit:agent -->
-Silnik obsługuje wyszukiwanie narzędzi, zweryfikowane edycje plików, wykonywanie poleceń, historię sesji, pamięć projektu, kompresję kontekstu, cele, delegowanie agentom roboczym, konsultacje i opcjonalne modele szkicujące.
+Silnik obsługuje wyszukiwanie narzędzi, zweryfikowane edycje plików, wykonywanie poleceń, historię sesji, pamięć projektu, kompresję kontekstu, cele, delegowanie agentom roboczym, konsultacje i opcjonalne modele szkicujące. Trwała pamięć jest domyślnie włączona; można ją wyłączyć w ustawieniach, poleceniem `/memory off` albo na jedno uruchomienie opcją `--no-memory`.
 
 <!-- readme-unit:tools -->
 Narzędzia obejmują wyszukiwanie w kodzie, odczyt wybranych fragmentów i poprawki plików, obrazy, archiwa ZIP, dokumenty DOCX/XLSX/PDF oraz ograniczone wykonywanie w kontekście. Dostępne narzędzia zależą od wybranego profilu i modelu; użyj wyszukiwania narzędzi, aby poznać bieżący katalog.

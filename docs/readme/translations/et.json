@@ -1,6 +1,6 @@
 [
   "Go keeles kirjutatud kaasaskantav AI programmeerimisagent, mille terminaliliides (TUI), töölaua-/veebiliides (GUI) ja pakktöötlusrežiim kasutavad ühist mootorit.",
-  "See README kirjeldab versiooni `1.0.33`. Kaasaskantavaid väljalaskepakette levitatakse [GitHub Releases]({releases}) kaudu; kohalik ehitus ei tähenda, et vastav väljalase oleks juba avaldatud.",
+  "See README kirjeldab versiooni `1.0.34`. Kaasaskantavaid väljalaskepakette levitatakse [GitHub Releases]({releases}) kaudu; kohalik ehitus ei tähenda, et vastav väljalase oleks juba avaldatud.",
   "Kuvatõmmised",
   "![SuperCli veebiliides (GUI)]({guishot})",
   "![SuperCli terminali tegevuskeskus (TUI)]({tuishot})",
@@ -23,7 +23,7 @@
   "Asenda näite otspunkt ja mudel oma serveri väärtustega. Pilveteenused võivad nõuda autentimisandmeid ja kasutamise eest tasu võtta. Mudeli võimalused määravad pildimõistmise, tööriistad, arutlemise ja kontekstipiirid. Vaata [seadistamist]({config}).",
   "Funktsioonid",
   "GUI ja TUI toetavad samu 27 liidesekeelt. Need pakuvad voogedastatavaid vestlusi, seansitaastet, projektivalikut, mudelihaldust, manuseid ja kasutusvaateid. TUI toetab hiirega kerimist, vestlusotsingut ning kokkupandavat mõtlemise/tööriistade väljundit.",
-  "Mootor toetab tööriistade leidmist, kontrollitud failimuudatusi, käskude täitmist, seansiajalugu, projektimälu, konteksti tihendamist, eesmärke, tööagentidele delegeerimist, konsulteerimist ja valikulisi mustandimudeleid.",
+  "Mootor toetab tööriistade leidmist, kontrollitud failimuudatusi, käskude täitmist, seansiajalugu, projektimälu, konteksti tihendamist, eesmärke, tööagentidele delegeerimist, konsulteerimist ja valikulisi mustandimudeleid. Püsiv mälu on vaikimisi sees; selle saab välja lülitada seadetes, käsuga `/memory off` või ühe käivituse jaoks valikuga `--no-memory`.",
   "Tööriistad hõlmavad koodiotsingut, sihitud faililugemist ja paikamist, pilte, ZIP-arhiive, DOCX/XLSX/PDF-dokumente ja piiratud kontekstikäivitust. Saadaolevad tööriistad sõltuvad valitud profiilist ja mudelist; kasuta tööriistaotsingut kehtiva kataloogi leidmiseks.",
   "Valikulised MCP-paketid asuvad `supercli-data/mcp/` all ja käivituvad kasutamisel. Sisseehitatud oskuste arhiiv asub `supercli-data/skills/builtin-skills.zip` all; selle puudumine ei takista tavakäivitust. Laiendused võivad vajada oma käituskeskkondi või paigaldatud hostirakendusi.",
   "Darwini kandidaatide loomine, mudelinõukogud ja tööagentidele delegeerimine on valikulised töövood. Paralleelsed mudelikutsed võivad suurendada ressursikulu ja hinda. Põhikäivitatav fail ei vaja Node'i, Pythonit, Dockerit ega CGO-d.",

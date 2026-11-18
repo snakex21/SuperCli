@@ -411,6 +411,10 @@ type TomlConfig struct {
 	// (700 for normal tiers, 300 for the small tier).
 	MemoryBriefingTokens int `toml:"memory_briefing_tokens"`
 
+	// Memory is the [memory] section: the persistent-memory master switch
+	// (enabled, default on). See MemoryConf and EffectiveMemory.
+	Memory MemoryConf `toml:"memory,omitempty"`
+
 	// Debug logging.
 	Debug bool `toml:"debug"`
 

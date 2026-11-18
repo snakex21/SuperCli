@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.33
+# SuperCli 1.0.34
 
 <!-- readme-unit:intro -->
 Go keeles kirjutatud kaasaskantav AI programmeerimisagent, mille terminaliliides (TUI), töölaua-/veebiliides (GUI) ja pakktöötlusrežiim kasutavad ühist mootorit.
 
 <!-- readme-unit:status -->
-See README kirjeldab versiooni `1.0.33`. Kaasaskantavaid väljalaskepakette levitatakse [GitHub Releases](https://github.com/snakex21/SuperCli/releases) kaudu; kohalik ehitus ei tähenda, et vastav väljalase oleks juba avaldatud.
+See README kirjeldab versiooni `1.0.34`. Kaasaskantavaid väljalaskepakette levitatakse [GitHub Releases](https://github.com/snakex21/SuperCli/releases) kaudu; kohalik ehitus ei tähenda, et vastav väljalase oleks juba avaldatud.
 
 <!-- readme-unit:h.screenshots -->
 ## Kuvatõmmised
@@ -116,7 +116,7 @@ Asenda näite otspunkt ja mudel oma serveri väärtustega. Pilveteenused võivad
 GUI ja TUI toetavad samu 27 liidesekeelt. Need pakuvad voogedastatavaid vestlusi, seansitaastet, projektivalikut, mudelihaldust, manuseid ja kasutusvaateid. TUI toetab hiirega kerimist, vestlusotsingut ning kokkupandavat mõtlemise/tööriistade väljundit.
 
 <!-- readme-unit:agent -->
-Mootor toetab tööriistade leidmist, kontrollitud failimuudatusi, käskude täitmist, seansiajalugu, projektimälu, konteksti tihendamist, eesmärke, tööagentidele delegeerimist, konsulteerimist ja valikulisi mustandimudeleid.
+Mootor toetab tööriistade leidmist, kontrollitud failimuudatusi, käskude täitmist, seansiajalugu, projektimälu, konteksti tihendamist, eesmärke, tööagentidele delegeerimist, konsulteerimist ja valikulisi mustandimudeleid. Püsiv mälu on vaikimisi sees; selle saab välja lülitada seadetes, käsuga `/memory off` või ühe käivituse jaoks valikuga `--no-memory`.
 
 <!-- readme-unit:tools -->
 Tööriistad hõlmavad koodiotsingut, sihitud faililugemist ja paikamist, pilte, ZIP-arhiive, DOCX/XLSX/PDF-dokumente ja piiratud kontekstikäivitust. Saadaolevad tööriistad sõltuvad valitud profiilist ja mudelist; kasuta tööriistaotsingut kehtiva kataloogi leidmiseks.

@@ -1,6 +1,6 @@
 [
   "Een draagbare AI-programmeeragent geschreven in Go, met een terminalinterface (TUI), desktop-/webinterface (GUI) en batchmodus die één engine delen.",
-  "Deze README beschrijft versie `1.0.33`. Draagbare releasepakketten worden via [GitHub Releases]({releases}) verspreid; een lokale build betekent niet dat de bijbehorende release al gepubliceerd is.",
+  "Deze README beschrijft versie `1.0.34`. Draagbare releasepakketten worden via [GitHub Releases]({releases}) verspreid; een lokale build betekent niet dat de bijbehorende release al gepubliceerd is.",
   "Schermafbeeldingen",
   "![Webinterface van SuperCli (GUI)]({guishot})",
   "![Actiecentrum in de SuperCli-terminal (TUI)]({tuishot})",
@@ -23,7 +23,7 @@
   "Vervang het voorbeeldendpoint en model door de waarden van uw server. Clouddiensten kunnen inloggegevens vereisen en gebruikskosten rekenen. Modelmogelijkheden bepalen beeldbegrip, tools, redeneren en contextlimieten. Zie [configuratie]({config}).",
   "Functies",
   "GUI en TUI ondersteunen dezelfde 27 interfacetalen. Ze bieden gestreamde gesprekken, sessieherstel, projectkeuze, modelbeheer, bijlagen en gebruiksoverzichten. De TUI ondersteunt scrollen met de muis, zoeken in het gesprek en inklapbare denk-/tooluitvoer.",
-  "De engine ondersteunt toolontdekking, gecontroleerde bestandswijzigingen, commando-uitvoering, sessiegeschiedenis, projectgeheugen, contextverdichting, doelen, delegatie aan werkagenten, consultatie en optionele conceptmodellen.",
+  "De engine ondersteunt toolontdekking, gecontroleerde bestandswijzigingen, commando-uitvoering, sessiegeschiedenis, projectgeheugen, contextverdichting, doelen, delegatie aan werkagenten, consultatie en optionele conceptmodellen. Blijvend geheugen staat standaard aan; zet het uit in de instellingen, met `/memory off` of voor één run met `--no-memory`.",
   "Tools omvatten zoeken in code, gerichte bestandslezingen en patches, afbeeldingen, ZIP-archieven, DOCX/XLSX/PDF-documenten en begrensde contextuitvoering. Beschikbare tools hangen af van het gekozen profiel en model; gebruik toolontdekking voor de huidige catalogus.",
   "Optionele MCP-pakketten staan in `supercli-data/mcp/` en starten bij gebruik. Het archief met ingebouwde vaardigheden staat in `supercli-data/skills/builtin-skills.zip`; ontbreken ervan verhindert normaal opstarten niet. Uitbreidingen kunnen eigen runtimes of geïnstalleerde hosttoepassingen nodig hebben.",
   "Darwin-kandidaatgeneratie, modelraden en delegatie aan werkagenten zijn optionele workflows. Parallelle modelaanroepen kunnen het resourcegebruik en de kosten verhogen. Het kernprogramma vereist geen Node, Python, Docker of CGO.",

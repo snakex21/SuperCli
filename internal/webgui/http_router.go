@@ -58,6 +58,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/session/rewind", s.handleSessionRewind)
 	mux.HandleFunc("/api/session/message/edit", s.handleSessionMessageEdit)
 	mux.HandleFunc("/api/memory", s.handleMemory)
+	mux.HandleFunc("/api/memory/status", s.handleMemoryStatus)
 	mux.HandleFunc("/api/folder-indexing", s.handleFolderIndexing)
 	mux.HandleFunc("/api/vision/transcribe", s.handleVisionTranscribe)
 	mux.HandleFunc("/api/document/export", s.handleDocumentExport)

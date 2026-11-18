@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.33
+# SuperCli 1.0.34
 
 <!-- readme-unit:intro -->
 Go valodā rakstīts pārnēsājams AI programmēšanas aģents ar termināļa saskarni (TUI), darbvirsmas/tīmekļa saskarni (GUI) un pakešu režīmu, kas izmanto vienu dzinēju.
 
 <!-- readme-unit:status -->
-Šis README apraksta versiju `1.0.33`. Pārnēsājamos laidienu komplektus izplata caur [GitHub Releases](https://github.com/snakex21/SuperCli/releases); lokāla būvēšana nenozīmē, ka attiecīgais laidiens jau ir publicēts.
+Šis README apraksta versiju `1.0.34`. Pārnēsājamos laidienu komplektus izplata caur [GitHub Releases](https://github.com/snakex21/SuperCli/releases); lokāla būvēšana nenozīmē, ka attiecīgais laidiens jau ir publicēts.
 
 <!-- readme-unit:h.screenshots -->
 ## Ekrānuzņēmumi
@@ -116,7 +116,7 @@ Aizstājiet piemēra galapunktu un modeli ar sava servera vērtībām. Mākoņpa
 GUI un TUI atbalsta tās pašas 27 saskarnes valodas. Tās nodrošina straumētas sarunas, sesiju atjaunošanu, projektu izvēli, modeļu pārvaldību, pielikumus un lietojuma skatus. TUI atbalsta ritināšanu ar peli, meklēšanu sarunā un sakļaujamu domāšanas/rīku izvadi.
 
 <!-- readme-unit:agent -->
-Dzinējs atbalsta rīku atklāšanu, pārbaudītus failu labojumus, komandu izpildi, sesiju vēsturi, projekta atmiņu, konteksta sablīvēšanu, mērķus, deleģēšanu darba aģentiem, konsultācijas un izvēles uzmetumu modeļus.
+Dzinējs atbalsta rīku atklāšanu, pārbaudītus failu labojumus, komandu izpildi, sesiju vēsturi, projekta atmiņu, konteksta sablīvēšanu, mērķus, deleģēšanu darba aģentiem, konsultācijas un izvēles uzmetumu modeļus. Pastāvīgā atmiņa pēc noklusējuma ir ieslēgta; to var izslēgt iestatījumos, ar `/memory off` vai vienai palaišanai ar `--no-memory`.
 
 <!-- readme-unit:tools -->
 Rīki aptver koda meklēšanu, mērķētus failu lasījumus un ielāpus, attēlus, ZIP arhīvus, DOCX/XLSX/PDF dokumentus un ierobežotu konteksta izpildi. Pieejamie rīki atkarīgi no izvēlētā profila un modeļa; pašreizējo katalogu iegūstiet ar rīku atklāšanu.

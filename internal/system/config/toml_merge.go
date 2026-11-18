@@ -198,6 +198,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.MemoryBriefingTokens > 0 {
 		dst.MemoryBriefingTokens = src.MemoryBriefingTokens
 	}
+	if src.Memory.Enabled != nil {
+		dst.Memory.Enabled = src.Memory.Enabled
+	}
 	// Providers list: project overrides global entirely.
 	if len(src.Providers) > 0 {
 		dst.Providers = src.Providers

@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.33
+# SuperCli 1.0.34
 
 <!-- readme-unit:intro -->
 En portabel AI-kodningsagent skriven i Go, med terminalgränssnitt (TUI), skrivbords-/webbgränssnitt (GUI) och batchläge som delar en motor.
 
 <!-- readme-unit:status -->
-Denna README beskriver version `1.0.33`. Portabla utgivningspaket distribueras via [GitHub Releases](https://github.com/snakex21/SuperCli/releases); en lokal kompilering innebär inte att motsvarande version redan har publicerats.
+Denna README beskriver version `1.0.34`. Portabla utgivningspaket distribueras via [GitHub Releases](https://github.com/snakex21/SuperCli/releases); en lokal kompilering innebär inte att motsvarande version redan har publicerats.
 
 <!-- readme-unit:h.screenshots -->
 ## Skärmbilder
@@ -116,7 +116,7 @@ Ersätt exemplets ändpunkt och modell med serverns värden. Molntjänster kan k
 GUI och TUI stöder samma 27 gränssnittsspråk. De erbjuder strömmade samtal, sessionsåterställning, projektval, modellhantering, bilagor och användningsvyer. TUI stöder musrullning, sökning i samtalet och hopfällbara tanke-/verktygsutdata.
 
 <!-- readme-unit:agent -->
-Motorn stöder verktygsupptäckt, verifierade filändringar, kommandokörning, sessionshistorik, projektminne, kontextkomprimering, mål, delegering till arbetsagenter, konsultation och valfria utkastmodeller.
+Motorn stöder verktygsupptäckt, verifierade filändringar, kommandokörning, sessionshistorik, projektminne, kontextkomprimering, mål, delegering till arbetsagenter, konsultation och valfria utkastmodeller. Beständigt minne är på som standard; stäng av det i inställningarna, med `/memory off` eller för en enda körning med `--no-memory`.
 
 <!-- readme-unit:tools -->
 Verktygen omfattar kodsökning, riktad filläsning och rättning, bilder, ZIP-arkiv, DOCX/XLSX/PDF-dokument och avgränsad kontextkörning. Tillgängliga verktyg beror på vald profil och modell; använd verktygsupptäckt för den aktuella katalogen.

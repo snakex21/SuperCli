@@ -53,6 +53,8 @@ func TestFreshConfigDefaults(t *testing.T) {
 			"pay for the navigator model only on ambiguous prompts"},
 		{"thinking (nil = ON)", fresh.Thinking == nil || *fresh.Thinking, true,
 			"models without chain-of-thought are worse; /think off is the opt-out"},
+		{"memory.enabled (nil = ON)", config.MemoryConfigEnabled(fresh), true,
+			"persistent memory is a core feature; [memory] enabled = false, /memory off or --no-memory is the opt-out"},
 	}
 	for _, tc := range bools {
 		if tc.got != tc.want {

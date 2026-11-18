@@ -68,9 +68,12 @@ func run(crashDataDir *string) {
 	phoneAllowDownloadFlag := flag.Bool("phone-allow-download", false, "consent to downloading the pinned official cloudflared release (~55 MB)")
 	allowAllFlag := flag.Bool("allow-all", false, "allow file and search tools to use absolute paths outside the active workspace")
 	debugFlag := flag.Bool("debug", false, "verbose logging")
+	noMemoryFlag := flag.Bool("no-memory", false, "run this launch without persistent memory: no memory in the prompt, no remember/recall tools, nothing saved (stored memory is kept); overrides [memory] enabled and SUPERCLI_MEMORY")
+	memoryFlag := flag.Bool("memory", false, "force persistent memory on for this launch, overriding [memory] enabled = false and SUPERCLI_MEMORY")
 	previewFlag := flag.String("preview", "", "open only a lightweight site preview (HTTP(S) URL), without starting the agent")
 	previewLanguageFlag := flag.String("preview-language", "", "interface language for the site preview")
 	flag.Parse()
+	config.ApplyMemoryFlags(*memoryFlag, *noMemoryFlag)
 	if *phoneFlag {
 		*noWindowFlag = true
 		*addrFlag = "127.0.0.1:0"

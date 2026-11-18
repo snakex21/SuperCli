@@ -11,6 +11,7 @@ import (
 
 	"supercli/internal/storage/memory"
 	"supercli/internal/storage/session"
+	"supercli/internal/system/config"
 	"supercli/internal/ui/attachments"
 )
 
@@ -610,4 +611,16 @@ func explicitPastRecall(prompt string) bool {
 		}
 	}
 	return false
+}
+
+// memoryEnabledAt resolves the persistent-memory switch for a workspace:
+// --no-memory/--memory > SUPERCLI_MEMORY > project config.toml > global
+// config.toml > on. It reads the config fresh, so a GUI toggle applies to the
+// next message without a restart.
+func (e *Engine) memoryEnabledAt(home string) bool {
+	if e == nil {
+		return true
+	}
+	enabled, _ := config.EffectiveMemory(e.tomlConfigAt(home))
+	return enabled
 }

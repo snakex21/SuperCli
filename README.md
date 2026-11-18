@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.33
+# SuperCli 1.0.34
 
 <!-- readme-unit:intro -->
 A portable AI coding agent written in Go, with a terminal interface (TUI), a desktop/web interface (GUI), and batch mode sharing one engine.
 
 <!-- readme-unit:status -->
-This README describes version `1.0.33`. Portable release bundles are distributed through [GitHub Releases](https://github.com/snakex21/SuperCli/releases); a local build does not imply that its release has already been published.
+This README describes version `1.0.34`. Portable release bundles are distributed through [GitHub Releases](https://github.com/snakex21/SuperCli/releases); a local build does not imply that its release has already been published.
 
 <!-- readme-unit:h.screenshots -->
 ## Screenshots
@@ -116,7 +116,7 @@ Replace the example endpoint and model with your server's values. Cloud services
 GUI and TUI support the same 27 interface languages. They provide streaming conversations, session recovery, project selection, model management, attachments, and usage views. The TUI supports mouse scrolling, transcript search, and collapsible thinking/tool output.
 
 <!-- readme-unit:agent -->
-The engine supports tool discovery, verified file edits, command execution, session history, project memory, context compaction, goals, worker delegation, consultation, and optional draft models.
+The engine supports tool discovery, verified file edits, command execution, session history, project memory, context compaction, goals, worker delegation, consultation, and optional draft models. Persistent memory is on by default; switch it off in the settings, with `/memory off`, or for a single run with `--no-memory`.
 
 <!-- readme-unit:tools -->
 Tools cover code search, targeted file reads and patches, images, ZIP archives, DOCX/XLSX/PDF documents, and bounded context execution. Available tools depend on the selected profile and model; use tool discovery for the current catalog.

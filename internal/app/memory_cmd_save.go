@@ -167,6 +167,12 @@ func saveDeterministicMemoryFacts(saver *memory.AutoSaver, loop *agent.Loop, pro
 		prog.applyResumeBaseline()
 	}
 	msgs := loop.AllMessages()
+	if !memoryActive() {
+		// Memory off: turns made now are never saved, not even after
+		// /memory on later in this session.
+		prog.covered, prog.factsCovered = len(msgs), len(msgs)
+		return
+	}
 	if len(msgs) > prog.factsCovered {
 		saver.SaveDeterministicUserFacts(rawUserTexts(msgs[prog.factsCovered:]))
 		prog.factsCovered = len(msgs)
@@ -192,6 +198,12 @@ func incrementalMemorySave(ctx context.Context, saver *memory.AutoSaver, loop *a
 		prog.applyResumeBaseline()
 	}
 	msgs := loop.AllMessages()
+	if !memoryActive() {
+		// Memory off: turns made now are never saved, not even after
+		// /memory on later in this session.
+		prog.covered, prog.factsCovered = len(msgs), len(msgs)
+		return
+	}
 	// Deterministic safety net: normally already done right after
 	// the turn (saveDeterministicMemoryFacts), repeated here for
 	// call sites that reach this path first. Dedup makes it free.
@@ -238,7 +250,7 @@ func incrementalMemorySave(ctx context.Context, saver *memory.AutoSaver, loop *a
 // startup summarizes (AutoSaver.SummarizePendingRaw) and the next
 // briefing shows raw until then.
 func dumpRawMemoryTail(saver *memory.AutoSaver, loop *agent.Loop, prog *memProgress) {
-	if saver == nil || loop == nil {
+	if saver == nil || loop == nil || !memoryActive() {
 		return
 	}
 	if prog != nil {
@@ -275,7 +287,7 @@ func dumpRawMemoryTail(saver *memory.AutoSaver, loop *agent.Loop, prog *memProgr
 // summarizes it in its idle window. Nothing is lost, the exit is
 // instant.
 func finalizeMemorySession(saver *memory.AutoSaver, loop *agent.Loop, prog *memProgress) {
-	if saver == nil || loop == nil {
+	if saver == nil || loop == nil || !memoryActive() {
 		return
 	}
 	// Always bump the project card's last-session stamp.

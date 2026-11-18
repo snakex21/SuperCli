@@ -103,7 +103,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	// to its user-profile wiki page. Keep the same guarantee in the
 	// Go web runtime: this deterministic path does not depend on the
 	// model remembering to call a tool or on an end-of-task summary.
-	s.eng.saveWebUserFacts(req.Prompt)
+	// Memory off: no automatic user-fact capture either.
+	if s.eng.memoryEnabledAt(s.eng.Home()) {
+		s.eng.saveWebUserFacts(req.Prompt)
+	}
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {

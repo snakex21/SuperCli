@@ -76,6 +76,7 @@ func knobDefs() []knobDef {
 		{"context_policy", "context management policy (automatic)", knobReadonly, false},
 		{"context_window", "context window override in tokens; 0 = detected model limit", knobInt, true},
 		{"prune_protect_tokens", "recent tool-result tokens protected from pruning; 0 = default", knobInt, true},
+		{"memory", "persistent memory: briefing and recall in the prompt, remember/recall tools and automatic saves; off keeps stored memory untouched", knobTri, false},
 		{"memory_briefing_tokens", "hard token budget for the session-start memory briefing", knobInt, true},
 		{"task_max_steps", "cap on model turns a delegated worker may take", knobInt, true},
 		{"task_max_tokens", "cap on a delegated worker's total token spend", knobInt, true},
@@ -197,6 +198,9 @@ func knobValue(c *config.TomlConfig, key string) (value, source, raw string) {
 		return intKnob(c.ContextWindow, "auto")
 	case "prune_protect_tokens":
 		return intKnob(c.PruneProtectTokens, "40000")
+	case "memory":
+		v, s := triKnob(c.Memory.Enabled, "on")
+		return v, s, ""
 	case "memory_briefing_tokens":
 		return intKnob(c.MemoryBriefingTokens, "700/300 by tier")
 	case "task_max_steps":
@@ -344,6 +348,8 @@ func knobState(c *config.TomlConfig, key string) string {
 		return tri(c.ShowGenerationSpeed)
 	case "update_notify":
 		return tri(c.UpdateNotify)
+	case "memory":
+		return tri(c.Memory.Enabled)
 	case "assistant_edit":
 		return tri(c.AssistantEdit)
 	case "assistant_edit_model_sees":
@@ -388,7 +394,7 @@ func knobDefault(key string) string {
 		return "USD"
 	case "orchestrator", "navigator", "cache_prompt", "darwin_parallel", "task_parallel":
 		return "auto"
-	case "thinking", "stable_toolset", "preflight_repo", "show_generation_speed", "update_notify":
+	case "thinking", "stable_toolset", "preflight_repo", "show_generation_speed", "update_notify", "memory":
 		return "on"
 	case "allow_all", "noop_gate", "draft_verify", "discard_previous_reasoning", "darwin", "assistant_edit", "assistant_edit_model_sees", "retry_unknown_errors", "requests_per_minute":
 		return "off"

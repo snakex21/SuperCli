@@ -2,13 +2,13 @@
 
 <!-- Generated from docs/readme/source.json and translations/*.json; edit those files, then run go run ./scripts/readme -generate. -->
 
-# SuperCli 1.0.33
+# SuperCli 1.0.34
 
 <!-- readme-unit:intro -->
 Um agente de programação com IA portátil escrito em Go, com interface de terminal (TUI), interface desktop/web (GUI) e modo em lote que compartilham um único mecanismo.
 
 <!-- readme-unit:status -->
-Este README descreve a versão `1.0.33`. Os pacotes portáteis são distribuídos pelo [GitHub Releases](https://github.com/snakex21/SuperCli/releases); uma compilação local não significa que sua versão já foi publicada.
+Este README descreve a versão `1.0.34`. Os pacotes portáteis são distribuídos pelo [GitHub Releases](https://github.com/snakex21/SuperCli/releases); uma compilação local não significa que sua versão já foi publicada.
 
 <!-- readme-unit:h.screenshots -->
 ## Capturas de tela
@@ -116,7 +116,7 @@ Substitua o endpoint e modelo do exemplo pelos valores do seu servidor. Serviço
 GUI e TUI suportam os mesmos 27 idiomas de interface. Oferecem conversas em streaming, recuperação de sessões, seleção de projetos, gerenciamento de modelos, anexos e visualizações de uso. A TUI suporta rolagem com mouse, busca na conversa e saída de raciocínio/ferramentas recolhível.
 
 <!-- readme-unit:agent -->
-O mecanismo suporta descoberta de ferramentas, edições verificadas de arquivos, execução de comandos, histórico de sessões, memória de projeto, compactação de contexto, metas, delegação a agentes de trabalho, consulta e modelos de rascunho opcionais.
+O mecanismo suporta descoberta de ferramentas, edições verificadas de arquivos, execução de comandos, histórico de sessões, memória de projeto, compactação de contexto, metas, delegação a agentes de trabalho, consulta e modelos de rascunho opcionais. A memória persistente vem ativada por padrão; desative-a nas configurações, com `/memory off` ou apenas para uma execução com `--no-memory`.
 
 <!-- readme-unit:tools -->
 As ferramentas abrangem busca de código, leituras e patches direcionados de arquivos, imagens, arquivos ZIP, documentos DOCX/XLSX/PDF e execução de contexto limitada. As ferramentas disponíveis dependem do perfil e modelo escolhidos; use a descoberta de ferramentas para o catálogo atual.
