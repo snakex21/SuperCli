@@ -1213,5 +1213,7 @@
   "task.resume": "Reprendre",
   "task.resumeHint": "Reprendre cet agent avec sa conversation enregistrée",
   "task.resumePrompt": "Reprends {id} avec send_message et poursuis sa tâche là où elle s'est arrêtée ; sa conversation enregistrée est restaurée.",
+  "task.queued": "en file d'attente (attend le démarrage)",
+  "task.activityLive": "En cours. Les appels d'outils antérieurs au rechargement de la vue ne sont pas affichés ici ; les nouveaux apparaissent en direct.",
   "chat.jumpLatestNew": "{n} nouveaux"
 }

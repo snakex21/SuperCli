@@ -1213,5 +1213,7 @@
   "task.resume": "Resume",
   "task.resumeHint": "Continue this worker with its saved conversation",
   "task.resumePrompt": "Resume {id} with send_message and continue its task from where it stopped; its saved conversation is restored.",
+  "task.queued": "queued (waiting to start)",
+  "task.activityLive": "Working. Tool calls made before this view was reloaded are not shown here; new ones appear live.",
   "chat.jumpLatestNew": "{n} new"
 }

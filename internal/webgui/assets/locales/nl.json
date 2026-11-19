@@ -1213,5 +1213,7 @@
   "task.resume": "Hervatten",
   "task.resumeHint": "Deze agent hervatten met zijn opgeslagen gesprek",
   "task.resumePrompt": "Hervat {id} met send_message en zet zijn taak voort waar die stopte; zijn opgeslagen gesprek wordt hersteld.",
+  "task.queued": "in wachtrij (wacht op start)",
+  "task.activityLive": "Bezig. Toolaanroepen van vóór het herladen van de weergave staan hier niet; nieuwe verschijnen live.",
   "chat.jumpLatestNew": "{n} nieuw"
 }

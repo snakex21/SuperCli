@@ -27,6 +27,10 @@ type webWorker struct {
 	// Resumable: a saved, not-running worker that send_message can continue
 	// with its full transcript (also after an app restart).
 	Resumable bool `json:"resumable,omitempty"`
+	// Session is the conversation the worker belongs to. Worker ids are
+	// process-wide, so the GUI adopts a snapshot for a card restored from
+	// history (no run number) only when it is this conversation's worker.
+	Session string `json:"session,omitempty"`
 }
 
 func workerDTO(s agent.Snapshot) webWorker {
@@ -40,6 +44,7 @@ func workerDTO(s agent.Snapshot) webWorker {
 		Status: s.Status, LastError: s.LastError, TokensIn: s.TokensIn,
 		TokensOut: s.TokensOut, Steps: s.Steps, ToolNames: s.ToolNames,
 		Run: s.Runs, UpdatedAt: s.UpdatedAt.UnixMilli(), Activity: activity,
+		Session: s.SessionID,
 	}
 }
 
@@ -50,9 +55,15 @@ func (s *Server) handleWorkers(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		rows := []webWorker{}
 		seen := map[string]bool{}
+		sid := strings.TrimSpace(r.URL.Query().Get("session"))
 		if s.eng.workers != nil {
 			for _, worker := range s.eng.workers.List() {
 				dto := workerDTO(worker.Snapshot())
+				if sid != "" && dto.Session != "" && dto.Session != sid {
+					// Another conversation's worker with the same id must not
+					// settle (or hide the saved state of) this one's card.
+					continue
+				}
 				dto.Resumable = dto.Status != "created" && dto.Status != "running"
 				rows = append(rows, dto)
 				seen[dto.ID] = true
@@ -60,7 +71,7 @@ func (s *Server) handleWorkers(w http.ResponseWriter, r *http.Request) {
 		}
 		// Saved workers of this conversation without a live runner get a
 		// definite state (never "unconfirmed" forever) and stay resumable.
-		if sid := strings.TrimSpace(r.URL.Query().Get("session")); sid != "" {
+		if sid != "" {
 			rows = append(rows, s.eng.savedWorkerRows(r.Context(), sid, seen)...)
 		}
 		writeJSON(w, map[string]any{"workers": rows, "counts": s.eng.workers.Counts()})

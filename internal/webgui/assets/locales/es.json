@@ -1213,5 +1213,7 @@
   "task.resume": "Reanudar",
   "task.resumeHint": "Continuar este agente con su conversación guardada",
   "task.resumePrompt": "Reanuda {id} con send_message y continúa su tarea donde se detuvo; se restaura su conversación guardada.",
+  "task.queued": "en cola (esperando inicio)",
+  "task.activityLive": "Trabajando. Las llamadas a herramientas anteriores a recargar la vista no se muestran aquí; las nuevas aparecen en vivo.",
   "chat.jumpLatestNew": "{n} nuevos"
 }

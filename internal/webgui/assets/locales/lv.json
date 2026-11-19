@@ -1213,5 +1213,7 @@
   "task.resume": "Turpināt",
   "task.resumeHint": "Turpināt šo aģentu ar tā saglabāto sarunu",
   "task.resumePrompt": "Turpini {id} ar send_message no vietas, kur tas apstājās; tā saglabātā saruna tiek atjaunota.",
+  "task.queued": "rindā (gaida palaišanu)",
+  "task.activityLive": "Strādā. Rīku izsaukumi pirms skata pārlādes šeit netiek rādīti; jaunie parādīsies tiešraidē.",
   "chat.jumpLatestNew": "{n} jauni"
 }

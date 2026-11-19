@@ -1213,5 +1213,7 @@
   "task.resume": "Jatka",
   "task.resumeHint": "Jatka tätä agenttia sen tallennetulla keskustelulla",
   "task.resumePrompt": "Jatka agenttia {id} send_message-työkalulla siitä, mihin se jäi; sen tallennettu keskustelu palautetaan.",
+  "task.queued": "jonossa (odottaa käynnistystä)",
+  "task.activityLive": "Työskentelee. Ennen näkymän uudelleenlatausta tehtyjä työkalukutsuja ei näytetä tässä; uudet näkyvät reaaliajassa.",
   "chat.jumpLatestNew": "{n} uutta"
 }

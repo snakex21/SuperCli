@@ -1213,5 +1213,7 @@
   "task.resume": "Obnoviť",
   "task.resumeHint": "Pokračovať týmto agentom s jeho uloženou konverzáciou",
   "task.resumePrompt": "Obnov {id} cez send_message a pokračuj v jeho úlohe tam, kde skončil; jeho uložená konverzácia sa obnoví.",
+  "task.queued": "v poradí (čaká na spustenie)",
+  "task.activityLive": "Pracuje. Volania nástrojov pred opätovným načítaním zobrazenia tu nie sú; nové sa zobrazia naživo.",
   "chat.jumpLatestNew": "{n} nové"
 }

@@ -1213,5 +1213,7 @@
   "task.resume": "Genoptag",
   "task.resumeHint": "Fortsæt denne agent med dens gemte samtale",
   "task.resumePrompt": "Genoptag {id} med send_message og fortsæt dens opgave, hvor den stoppede; dens gemte samtale gendannes.",
+  "task.queued": "i kø (venter på start)",
+  "task.activityLive": "Arbejder. Værktøjskald fra før visningen blev genindlæst vises ikke her; nye vises live.",
   "chat.jumpLatestNew": "{n} nye"
 }

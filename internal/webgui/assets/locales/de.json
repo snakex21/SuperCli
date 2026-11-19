@@ -1213,5 +1213,7 @@
   "task.resume": "Fortsetzen",
   "task.resumeHint": "Diesen Agenten mit seiner gespeicherten Unterhaltung fortsetzen",
   "task.resumePrompt": "Setze {id} mit send_message fort und führe seine Aufgabe dort weiter, wo sie stoppte; seine gespeicherte Unterhaltung wird wiederhergestellt.",
+  "task.queued": "in Warteschlange (wartet auf Start)",
+  "task.activityLive": "Arbeitet. Werkzeugaufrufe vor dem Neuladen der Ansicht werden hier nicht gezeigt; neue erscheinen live.",
   "chat.jumpLatestNew": "{n} neu"
 }

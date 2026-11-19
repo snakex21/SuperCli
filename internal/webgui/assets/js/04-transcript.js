@@ -1293,17 +1293,29 @@ function applyWorkerStatusSnapshot(workers, bindings) {
     }
     row._workerMissing = 0;
     var run = Number(worker.run) || 0;
+    var adopted = false;
+    // run 0 + terminal: a worker that failed before its first run began.
+    if (!binding.run && worker.session && worker.session === activeSessionID && (run > 0 || workerStatusTerminal(worker.status))) {
+      adopted = true;
+      // A card restored from history carries no run number. The server's
+      // worker of THIS conversation (ids are process-wide, so the session must
+      // match) for the latest card of that id establishes it, so a worker that
+      // is working, or already finished, is never left "unconfirmed".
+      if (run > 0) row._taskRun = binding.run = run;
+      if (worker.status === "running" || worker.status === "created") markWorkerActivityLive(row);
+    }
     // A newer finished run proves this card's (older) run is over too.
     if (worker.status === "interrupted" || (binding.run && run > binding.run && workerStatusTerminal(worker.status))) {
       markWorkerInterrupted(binding, worker.last_error || t("task.interruptedNoRunner"), !!worker.resumable);
       return;
     }
-    if (!binding.run || run !== binding.run) {
+    if (!adopted && (!binding.run || run !== binding.run)) {
       // A retained global ID alone cannot establish an unversioned history run.
       markWorkerStatusUnconfirmed(binding, true);
       return;
     }
-    var status = worker.status === "created" ? "running" : worker.status;
+    var queued = worker.status === "created";
+    var status = queued ? "running" : worker.status;
     if (status !== "running" && !workerStatusTerminal(status)) { markWorkerStatusUnconfirmed(binding, false); return; }
     if (workerStatusTerminal(row._taskStatus)) return;
     row._workerSnapshotMismatch = false;
@@ -1315,8 +1327,8 @@ function applyWorkerStatusSnapshot(workers, bindings) {
     }
     // A confirmed live row keeps its ticking "label · elapsed" (dropping the
     // elapsed part for one tick made the task text visibly jump every poll).
-    if (status === "running" && row._clock && row._updateElapsed) row._updateElapsed();
-    else row._stat.textContent = taskStatusLabel(status);
+    if (status === "running" && row._clock && row._updateElapsed && !queued) row._updateElapsed();
+    else row._stat.textContent = taskStatusLabel(queued ? "created" : status);
     row.classList.toggle("running", status === "running");
     if (workerStatusTerminal(status)) {
       clearInterval(row._clock);
@@ -1325,6 +1337,9 @@ function applyWorkerStatusSnapshot(workers, bindings) {
       row.classList.toggle("failed", status === "failed");
       row.classList.add("done");
       row._stat.textContent = taskStatusLabel(status);
+      row._stat.title = status === "failed" ? (worker.last_error || "") : "";
+      // A failed (e.g. never started) or stopped worker can be retried.
+      if ((status === "failed" || status === "stopped") && worker.resumable) addWorkerResumeAction(row, binding.id);
     }
     updateWorkerOverview(binding.id, worker.agent || row._taskAgent, status, row._taskActivity || row._taskPrompt, row);
   });
@@ -1332,9 +1347,11 @@ function applyWorkerStatusSnapshot(workers, bindings) {
 function scheduleWorkerStatusSync() {
   clearTimeout(workerStatusTimer);
   workerStatusTimer = null;
-  if (!workerStatusArmed || document.hidden || workerStatusFailures >= 3 || !workerStatusBindings().length) return;
+  if (!workerStatusArmed || document.hidden || !workerStatusBindings().length) return;
   if (typeof streaming === "boolean" && streaming && !runFinishing) return;
-  workerStatusTimer = setTimeout(refreshWorkerStatusSnapshot, workerStatusFailures ? 5000 * workerStatusFailures : 3000);
+  // Failures back off (5 s, 10 s, ... up to 30 s) but never stop for good: a
+  // transient network error must not leave a card "unconfirmed" forever.
+  workerStatusTimer = setTimeout(refreshWorkerStatusSnapshot, workerStatusFailures ? Math.min(30000, 5000 * workerStatusFailures) : 3000);
 }
 function refreshWorkerStatusSnapshot() {
   clearTimeout(workerStatusTimer);
@@ -2087,8 +2104,18 @@ function parseTaskNotification(text) {
   };
 }
 
+// A live worker whose card was rebuilt from history: earlier tool calls of this
+// run are not in the saved transcript yet, new ones arrive live.
+function markWorkerActivityLive(row) {
+  var empty = row && row._activity && row._activity.querySelector(".task-activity-empty");
+  if (!empty || empty.dataset.i18nText === "task.activityLive") return;
+  empty.dataset.i18nText = "task.activityLive";
+  empty.textContent = t("task.activityLive");
+}
+
 function taskStatusLabel(status) {
-  if (status === "created" || status === "running") return t("tool.running");
+  if (status === "created") return t("task.queued");
+  if (status === "running") return t("tool.running");
   if (status === "failed") return t("task.failed");
   if (status === "stopped") return t("task.stopped");
   if (status === "interrupted") return t("task.interrupted");
@@ -2715,6 +2742,9 @@ function addWorkerProgress(ev) {
     if (!workerRows[ev.id] || (ev.kind === "started" && !row._taskRun && (ev.run || !workerRows[ev.id]._taskRun))) workerRows[ev.id] = row;
     row._taskID = ev.id;
   }
+  // Progress bound to this card's own call proves its run number (a card
+  // rebuilt from history has none); status sync can then confirm it.
+  if (ev.run > 0 && !row._taskRun && ev.parent_call_id && toolRows[ev.parent_call_id] === row) row._taskRun = ev.run;
   if (ev.kind === "started") {
     row._taskStatus = "running";
     row.classList.remove("done", "failed");

@@ -110,7 +110,14 @@ func (s *SendMessageTool) execute(ctx context.Context, raw json.RawMessage) (too
 		}
 		return tools.Result{Text: fmt.Sprintf("Steering queued for worker %s in its current run (receipt %s). Delivery or rejection will be reported in worker progress; no new run was started.", w.ID, id)}, nil
 	}
-	handoff, err := runWorkerInvocation(llm.WithCallReason(ctx, llm.ReasonResume), w, args.Message, s.Workers)
+	message := args.Message
+	if snap := w.Snapshot(); snap.Runs == 0 && snap.Status == "failed" && strings.HasPrefix(snap.LastError, "did not start") && strings.TrimSpace(w.Description) != "" {
+		// A worker that failed before its first run has no saved conversation:
+		// retrying it must carry the original task, not only the follow-up.
+		message = "Your original task (it never started: " + snap.LastError + "):\n" + w.Description +
+			"\n\nCoordinator follow-up:\n" + args.Message
+	}
+	handoff, err := runWorkerInvocation(llm.WithCallReason(ctx, llm.ReasonResume), w, message, s.Workers)
 	return handoff.result(w, err), nil
 }
 
@@ -126,11 +133,30 @@ func runWorkerLoopInRegistry(ctx context.Context, w *Worker, prompt string, work
 // runWorkerInvocation captures the completed invocation before allowing a new
 // run. Callers must deliver this handoff, not snapshot the mutable worker again.
 func runWorkerInvocation(ctx context.Context, w *Worker, prompt string, workers *WorkerRegistry) (workerHandoff, error) {
-	if !w.runMu.TryLock() {
+	firstRun := workers == nil && w.status() == "created"
+	if firstRun {
+		// The worker's own first run. A concurrent send_message may hold runMu
+		// only briefly (it refuses a not-yet-started worker), so wait for it
+		// instead of failing: a TryLock miss here used to leave the worker
+		// "created" forever, with no runner.
+		w.runMu.Lock()
+	} else if !w.runMu.TryLock() {
 		return prepareWorkerHandoff(w, ""), fmt.Errorf("worker %s is already running; its current task must finish before a follow-up", w.ID)
 	}
 	defer w.runMu.Unlock()
 	text, err := runWorkerLoopLocked(ctx, w, prompt, workers)
+	if firstRun && w.status() == "created" {
+		// Never started (canceled, checkpoint binding refused, ...): a definite
+		// failed state with its reason, resumable, and reported to the
+		// coordinator by the caller's notification path.
+		if err == nil {
+			err = fmt.Errorf("worker %s did not start", w.ID)
+		}
+		reason := workerNotStartedReason(err)
+		w.setState(func(w *Worker) {
+			w.Status, w.LastError, w.UpdatedAt = "failed", reason, time.Now()
+		})
+	}
 	// Save the worker's whole conversation after every run (still holding
 	// runMu, so the history is stable): it can be resumed by id later.
 	w.registry.persist(w)
@@ -206,6 +232,10 @@ func runWorkerLoopLocked(ctx context.Context, w *Worker, prompt string, workers 
 		w.Runs++
 		w.activity = WorkerActivity{}
 	})
+	// Save "running" now (the record said "created", runs=0 for the whole
+	// run before): a restart then reconciles it as interrupted, and the GUI
+	// reads a definite state even without live progress frames.
+	w.registry.persist(w)
 	emit := workerProgressSink(ctx, w, w.Runs)
 	defer func() {
 		s := w.Snapshot()

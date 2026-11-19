@@ -1213,5 +1213,7 @@
   "task.resume": "Wznów",
   "task.resumeHint": "Kontynuuj tego agenta z zapisaną rozmową",
   "task.resumePrompt": "Wznów {id} przez send_message i kontynuuj jego zadanie od miejsca przerwania; jego zapisana rozmowa zostanie przywrócona.",
+  "task.queued": "w kolejce (czeka na start)",
+  "task.activityLive": "Pracuje. Wywołania narzędzi sprzed odświeżenia widoku nie są tu pokazane; nowe pojawią się na żywo.",
   "chat.jumpLatestNew": "{n} nowe"
 }

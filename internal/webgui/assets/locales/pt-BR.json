@@ -1213,5 +1213,7 @@
   "task.resume": "Retomar",
   "task.resumeHint": "Continuar este agente com sua conversa salva",
   "task.resumePrompt": "Retome {id} com send_message e continue sua tarefa de onde parou; a conversa salva é restaurada.",
+  "task.queued": "na fila (aguardando início)",
+  "task.activityLive": "Trabalhando. Chamadas de ferramentas anteriores ao recarregamento da visualização não aparecem aqui; as novas aparecem ao vivo.",
   "chat.jumpLatestNew": "{n} novos"
 }

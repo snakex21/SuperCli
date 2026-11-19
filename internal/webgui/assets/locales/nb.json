@@ -1213,5 +1213,7 @@
   "task.resume": "Gjenoppta",
   "task.resumeHint": "Fortsett denne agenten med den lagrede samtalen",
   "task.resumePrompt": "Gjenoppta {id} med send_message og fortsett oppgaven der den stoppet; den lagrede samtalen gjenopprettes.",
+  "task.queued": "i kø (venter på start)",
+  "task.activityLive": "Arbeider. Verktøykall fra før visningen ble lastet på nytt vises ikke her; nye vises direkte.",
   "chat.jumpLatestNew": "{n} nye"
 }

@@ -1213,5 +1213,7 @@
   "task.resume": "Jätka",
   "task.resumeHint": "Jätka seda agenti selle salvestatud vestlusega",
   "task.resumePrompt": "Jätka agenti {id} send_message abil sealt, kus see pooleli jäi; selle salvestatud vestlus taastatakse.",
+  "task.queued": "järjekorras (ootab käivitust)",
+  "task.activityLive": "Töötab. Enne vaate uuesti laadimist tehtud tööriistakutseid siin ei näidata; uued ilmuvad reaalajas.",
   "chat.jumpLatestNew": "{n} uut"
 }

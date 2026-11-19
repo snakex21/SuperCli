@@ -132,6 +132,10 @@ type Snapshot struct {
 	ToolNames       []string
 	Runs            int
 	Activity        WorkerActivity
+	// SessionID names the conversation the worker belongs to ("" when not
+	// persisted). The registry is process-wide, so ids alone do not identify
+	// a conversation's worker.
+	SessionID string
 }
 
 // Snapshot returns the current reportable state. It takes stateMu (not
@@ -157,6 +161,7 @@ func (w *Worker) Snapshot() Snapshot {
 		ToolNames:       append([]string(nil), w.ToolNames...),
 		Runs:            w.Runs,
 		Activity:        w.activity,
+		SessionID:       w.sessionID,
 	}
 }
 

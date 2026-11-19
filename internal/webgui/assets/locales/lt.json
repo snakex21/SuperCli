@@ -1213,5 +1213,7 @@
   "task.resume": "Tęsti",
   "task.resumeHint": "Tęsti šį agentą su išsaugotu pokalbiu",
   "task.resumePrompt": "Tęsk {id} per send_message nuo ten, kur sustojo; jo išsaugotas pokalbis atkuriamas.",
+  "task.queued": "eilėje (laukia paleidimo)",
+  "task.activityLive": "Dirba. Įrankių iškvietimai iki rodinio perkrovimo čia nerodomi; nauji atsiras realiu laiku.",
   "chat.jumpLatestNew": "{n} nauji"
 }

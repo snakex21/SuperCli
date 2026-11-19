@@ -41,6 +41,12 @@ type WorkerStore interface {
 	SetWorkerStatus(ctx context.Context, sessionID, id, status, reason string) error
 }
 
+// workerNotStartedReason is the saved, user-visible reason of a worker whose
+// first run never began.
+func workerNotStartedReason(err error) string {
+	return fmt.Sprintf("did not start: %v; use Resume/send_message to retry it with its original task", err)
+}
+
 // Interrupted is the definite state of a saved worker whose runner is gone
 // (app restart, crash): it is not running and can be resumed.
 const WorkerStatusInterrupted = "interrupted"
@@ -246,7 +252,9 @@ func (r *WorkerRegistry) ReconcileSavedWorkers(ctx context.Context, sessionID st
 		if rec.Status != "created" && rec.Status != "running" {
 			continue
 		}
-		if w, ok := r.Get(rec.ID); ok {
+		if w, ok := r.Get(rec.ID); ok && w.Snapshot().SessionID == sessionID {
+			// The registry is process-wide: only this conversation's worker
+			// with the same id proves a live runner.
 			if s := w.status(); s == "created" || s == "running" {
 				continue // genuinely live in this process
 			}

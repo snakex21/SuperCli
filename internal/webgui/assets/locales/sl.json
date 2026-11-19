@@ -1213,5 +1213,7 @@
   "task.resume": "Nadaljuj",
   "task.resumeHint": "Nadaljuj tega agenta z njegovim shranjenim pogovorom",
   "task.resumePrompt": "Nadaljuj {id} s send_message tam, kjer se je ustavil; njegov shranjeni pogovor se obnovi.",
+  "task.queued": "v čakalni vrsti (čaka na zagon)",
+  "task.activityLive": "Dela. Klici orodij pred ponovnim nalaganjem pogleda tukaj niso prikazani; novi se prikažejo v živo.",
   "chat.jumpLatestNew": "{n} novo"
 }

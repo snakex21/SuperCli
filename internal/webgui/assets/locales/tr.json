@@ -1213,5 +1213,7 @@
   "task.resume": "Sürdür",
   "task.resumeHint": "Bu ajanı kayıtlı konuşmasıyla sürdür",
   "task.resumePrompt": "{id} ajanını send_message ile kaldığı yerden sürdür; kayıtlı konuşması geri yüklenir.",
+  "task.queued": "kuyrukta (başlamayı bekliyor)",
+  "task.activityLive": "Çalışıyor. Görünüm yeniden yüklenmeden önceki araç çağrıları burada gösterilmez; yenileri canlı görünür.",
   "chat.jumpLatestNew": "{n} yeni"
 }

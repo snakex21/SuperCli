@@ -160,7 +160,9 @@ check(workerOverview['worker-4'].status==='running'&&workerRows['worker-4']===to
 // Network uncertainty is not displayed as verified running, with bounded retries.
 reset();row=start('worker-5',1,'failure');j=function(){requests++;return Promise.reject(Error('offline'));};
 await resumeWorkerStatusSync();await refreshWorkerStatusSnapshot();await refreshWorkerStatusSnapshot();
-check(requests===3&&workerStatusFailures===3&&workerStatusTimer===null,'failed source polled without bound');
+check(requests===3&&workerStatusFailures===3,'failed source not retried');
+// Backoff is bounded in rate, never a permanent stop: the card must recover.
+check(workerStatusTimer!==null,'polling stopped for good after network errors');
 check(workerOverview['worker-5'].status==='unknown'&&workerOverview['worker-5'].state.textContent===t('task.statusUnconfirmed'),'network error falsely claims worker is active');
 check(!row.classList.contains('running')&&row._stat.textContent===t('task.statusUnconfirmed'),'unknown row still looks actively running');
 check(!$('#worker-overview').hidden&&$('#worker-overview').open,'uncertainty was hidden as if no work remained');
@@ -197,6 +199,35 @@ nextWorkers=[snapshot('worker-8',1,'done','history-live.go')];hiddenForTest=fals
 if(workerStatusRequest)await workerStatusRequest;
 check(workerOverview['worker-8'].status==='done'&&workerStatusTimer===null,'visible page did not reconcile completed worker');
 check(stream.querySelectorAll('.msg-user').length===0,'status/activity was injected as a human chat message');
+// Reported 1.0.35 bug: a card rebuilt from history (no run number) of a worker
+// that is really working stayed "Status unconfirmed" with "no tool activity".
+// This conversation's own snapshot establishes the run and the live state.
+reset();var rebuilt=addHistoryTask(parseTaskNotification(note('worker-18','running','Started in background')));
+toolRows['rebuilt-call']=rebuilt;
+nextWorkers=[Object.assign(snapshot('worker-18',1,'running','build.ps1'),{session:'fixture'})];await resumeWorkerStatusSync();
+check(workerOverview['worker-18'].status==='running'&&rebuilt._taskRun===1,'own running worker stayed unconfirmed: '+workerOverview['worker-18'].status);
+check(rebuilt._stat.textContent!==t('task.statusUnconfirmed')&&workerStatusTimer!==null,'live rebuilt card not monitored');
+check(rebuilt.querySelector('.task-activity-empty').textContent===t('task.activityLive'),'live card still claims no activity was recorded');
+nextWorkers=[Object.assign(snapshot('worker-18',1,'done','build.ps1'),{session:'fixture'})];await refreshWorkerStatusSnapshot();
+check(workerOverview['worker-18'].status==='done'&&rebuilt._stat.textContent===t('task.done')&&workerStatusTimer===null,'finished rebuilt card not settled');
+// Another conversation's worker with the same id is never adopted.
+reset();rebuilt=addHistoryTask(parseTaskNotification(note('worker-19','running','Started in background')));
+nextWorkers=[Object.assign(snapshot('worker-19',1,'running','x.go'),{session:'other-chat'})];await resumeWorkerStatusSync();
+check(workerOverview['worker-19'].status==='unknown'&&!(rebuilt._taskRun>0),'foreign conversation worker settled this card');
+// A never-started worker is failed with its reason and a Resume action.
+reset();rebuilt=addHistoryTask(parseTaskNotification(note('worker-20','running','Started in background')));
+nextWorkers=[Object.assign(snapshot('worker-20',0,'failed','x.go'),{session:'fixture',run:0,last_error:'did not start: checkpoint binding refused',resumable:true})];await resumeWorkerStatusSync();
+check(workerOverview['worker-20'].status==='failed'&&rebuilt._stat.textContent===t('task.failed'),'never-started worker not failed: '+workerOverview['worker-20'].status);
+check(rebuilt._stat.title.indexOf('did not start')>=0&&rebuilt.querySelector('.worker-resume'),'never-started worker lacks reason or Resume');
+// Progress bound to the card's own call establishes its run number.
+reset();rebuilt=addHistoryTask(parseTaskNotification(note('worker-21','running','Started in background')));toolRows['own-call']=rebuilt;
+progress('worker-21',3,'own-call','live-1','live.go');
+check(rebuilt._taskRun===3,'bound live progress did not establish the run');
+// Queued (created) workers are labelled as waiting, not as unknown.
+reset();row=start('worker-22',1,'queued-call');nextWorkers=[Object.assign(snapshot('worker-22',1,'created','q.go'),{session:'fixture'})];
+row._clock&&clearInterval(row._clock);row._clock=null;await resumeWorkerStatusSync();
+check(row._stat.textContent===t('task.queued')&&workerOverview['worker-22'].status==='running','queued worker not labelled: '+row._stat.textContent);
+
 // Activity explains what was recorded, without treating model steps as tool calls.
 reset();var activityRow=start('worker-50',1,'activity-call');
 check(activityRow.querySelector('.task-activity-empty').textContent===t('task.activityWaiting'),'new worker has an unexplained empty activity section');

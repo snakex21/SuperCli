@@ -1213,5 +1213,7 @@
   "task.resume": "Reia",
   "task.resumeHint": "Continuă acest agent cu conversația salvată",
   "task.resumePrompt": "Reia {id} cu send_message și continuă-i sarcina de unde s-a oprit; conversația salvată este restaurată.",
+  "task.queued": "în coadă (așteaptă pornirea)",
+  "task.activityLive": "Lucrează. Apelurile de unelte dinaintea reîncărcării vizualizării nu sunt afișate aici; cele noi apar în timp real.",
   "chat.jumpLatestNew": "{n} noi"
 }

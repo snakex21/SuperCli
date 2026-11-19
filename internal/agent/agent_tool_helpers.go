@@ -244,7 +244,7 @@ func (a *AgentTool) startBackgroundWorker(parentCtx context.Context, w *Worker, 
 	borrow, err := checkpoint.BorrowInvocation(parentCtx, mutatingCapable)
 	if err != nil {
 		w.setState(func(w *Worker) {
-			w.Status, w.LastError = "failed", err.Error()
+			w.Status, w.LastError = "failed", workerNotStartedReason(err)
 			w.UpdatedAt = time.Now()
 		})
 		return err

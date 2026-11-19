@@ -1213,5 +1213,7 @@
   "task.resume": "Folytatás",
   "task.resumeHint": "Az ügynök folytatása a mentett beszélgetésével",
   "task.resumePrompt": "Folytasd a(z) {id} ügynököt a send_message eszközzel onnan, ahol abbamaradt; a mentett beszélgetése visszaáll.",
+  "task.queued": "sorban áll (indulásra vár)",
+  "task.activityLive": "Dolgozik. A nézet újratöltése előtti eszközhívások itt nem látszanak; az újak élőben jelennek meg.",
   "chat.jumpLatestNew": "{n} új"
 }

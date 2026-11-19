@@ -284,7 +284,8 @@ func TestGUISavedOrphanWorkerIsInterruptedAndResumable(t *testing.T) {
 	for _, w := range got.Workers {
 		if w.ID == "worker-41" {
 			found = true
-			if w.Status != agent.WorkerStatusInterrupted || !w.Resumable || w.LastError == "" {
+			// Session lets the GUI settle a card restored from history (1.0.36).
+			if w.Status != agent.WorkerStatusInterrupted || !w.Resumable || w.LastError == "" || w.Session != sess.ID {
 				t.Fatalf("orphan row = %+v", w)
 			}
 		}

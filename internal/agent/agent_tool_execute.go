@@ -254,11 +254,17 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 		w.setState(func(w *Worker) { w.Model = prov.Name() })
 	}
 	// Resumable from here on, even if this process ends mid-run.
-	w.sessionID, w.baseDir = sessionIDOf(a.ParentLoop), baseDir
+	// Written under the state lock: the worker is already published and the
+	// GUI snapshot reads its conversation id.
+	sid := sessionIDOf(a.ParentLoop)
+	w.setState(func(w *Worker) { w.sessionID, w.baseDir = sid, baseDir })
 	workers.persist(w)
 	if ar.Async {
 		if err := a.startBackgroundWorker(ctx, w, workerPrompt, maxSteps); err != nil {
-			return tools.Result{Err: fmt.Errorf("task: background checkpoint binding: %w", err)}, nil
+			// Definite, saved state: the worker never started (never a
+			// permanent "created"). The tool error tells the coordinator.
+			workers.persist(w)
+			return tools.Result{Err: fmt.Errorf("task: %s did not start (background checkpoint binding): %w", w.ID, err)}, nil
 		}
 		return tools.Result{Text: fmt.Sprintf(`<task-notification>
 <task-id>%s</task-id>

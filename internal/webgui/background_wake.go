@@ -257,7 +257,7 @@ func (e *Engine) savedWorkerRows(ctx context.Context, sid string, seen map[strin
 			continue
 		}
 		rows = append(rows, webWorker{ID: rec.ID, Agent: rec.Agent, Description: rec.Description, Model: rec.Model,
-			Status: rec.Status, LastError: rec.LastError, Run: rec.Runs, UpdatedAt: rec.UpdatedAt.UnixMilli(), Resumable: true})
+			Status: rec.Status, LastError: rec.LastError, Run: rec.Runs, UpdatedAt: rec.UpdatedAt.UnixMilli(), Resumable: true, Session: sid})
 	}
 	return rows
 }

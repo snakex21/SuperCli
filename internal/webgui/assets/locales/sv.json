@@ -1213,5 +1213,7 @@
   "task.resume": "Återuppta",
   "task.resumeHint": "Fortsätt den här agenten med dess sparade konversation",
   "task.resumePrompt": "Återuppta {id} med send_message och fortsätt dess uppgift där den stannade; dess sparade konversation återställs.",
+  "task.queued": "i kö (väntar på start)",
+  "task.activityLive": "Arbetar. Verktygsanrop från före omladdningen av vyn visas inte här; nya visas live.",
   "chat.jumpLatestNew": "{n} nya"
 }

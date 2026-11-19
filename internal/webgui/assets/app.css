@@ -536,29 +536,30 @@ button.side-cost:focus-visible { outline: 2px solid var(--accent); outline-offse
   display: flex; justify-content: center; pointer-events: none;
 }
 .jump-latest {
-  pointer-events: auto; transform: translateY(calc(-100% - 18px));
-  display: inline-flex; align-items: center; gap: 8px;
-  min-height: 40px; padding: 8px 18px 8px 14px; border-radius: 999px;
-  /* Filled primary-action pill (same --accent-fill/--on-accent pair as the
-     composer's primary button, contrast >= 4.5:1 in every theme). */
+  pointer-events: auto; transform: translateY(calc(-100% - 14px));
+  display: inline-flex; align-items: center; gap: 6px;
+  /* Moderate filled pill: body-text size, ~30px tall. Clearly visible, but it
+     must not dominate the transcript (1.0.35 made it far too large). Uses the
+     composer's primary --accent-fill/--on-accent pair: contrast >= 4.5:1. */
+  min-height: 30px; padding: 4px 12px 4px 10px; border-radius: 999px;
   background: var(--accent-fill, var(--accent)); color: var(--on-accent, #101014);
   border: 1px solid color-mix(in srgb, var(--on-accent, #101014) 18%, var(--accent-fill, var(--accent)));
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-fill, var(--accent)) 22%, transparent), 0 8px 22px rgba(0, 0, 0, .35);
-  font: inherit; font-size: calc(var(--fs-md) * 1.2); font-weight: 600; line-height: 1.2;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .28);
+  font: inherit; font-size: var(--fs-md); font-weight: 600; line-height: 1.2;
   cursor: pointer; animation: jump-latest-in .18s ease-out;
 }
 .jump-latest[hidden] { display: none; }
 .jump-latest:hover { filter: brightness(1.08); }
 .jump-latest:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
-.jump-latest-arrow { color: inherit; font-size: 1.25em; line-height: 1; }
+.jump-latest-arrow { color: inherit; font-size: 1.1em; line-height: 1; }
 .jump-latest-count {
-  margin-left: 2px; padding: 1px 8px; border-radius: 999px; font-size: .85em;
+  margin-left: 2px; padding: 0 7px; border-radius: 999px; font-size: .85em;
   background: color-mix(in srgb, var(--on-accent, #101014) 16%, transparent); color: inherit;
 }
 .jump-latest-count:empty { display: none; }
 @keyframes jump-latest-in {
-  from { opacity: 0; transform: translateY(calc(-100% - 8px)); }
-  to { opacity: 1; transform: translateY(calc(-100% - 18px)); }
+  from { opacity: 0; transform: translateY(calc(-100% - 6px)); }
+  to { opacity: 1; transform: translateY(calc(-100% - 14px)); }
 }
 @media (prefers-reduced-motion: reduce) { .jump-latest { animation: none; } }
 .column { max-width: 46rem; margin: 0 auto; padding: 24px 20px 28px; }

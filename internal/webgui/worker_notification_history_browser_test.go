@@ -157,7 +157,8 @@ check(parsed&&parsed.status==='done'&&parsed.result===result,'nested report text
 check(parseTaskNotification(valid+'\n[Attached: worker tool observations (historical snapshots).]\nread_many')!==null,'historical observations suffix rejected');
 check(taskStatusLabel('')===t('task.statusUnconfirmed'),'missing status became done');
 check(taskStatusLabel('mystery')===t('task.statusUnconfirmed'),'unknown status became done');
-check(taskStatusLabel('created')===t('tool.running'),'created worker became done');
+check(taskStatusLabel('created')===t('task.queued'),'created (not yet started) worker not shown as queued');
+check(taskStatusLabel('running')===t('tool.running'),'running worker label changed');
 
 var absent=historyCase('task',valid,true);
 check(absent.querySelector('.task-activity-empty').textContent===t('task.activityUnavailable'),'missing history activity was silently omitted');

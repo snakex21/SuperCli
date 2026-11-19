@@ -132,10 +132,12 @@ const jumpLatestIntegration = `(async()=>{
  fixtureCheck(jumpLatestDock.getBoundingClientRect().height===0,'button dock adds layout height');
  var rect=jumpLatestBtn.getBoundingClientRect(),view=stage.getBoundingClientRect();
  fixtureCheck(rect.bottom<=view.bottom&&rect.top>=view.top,'button is outside the visible transcript');
- // Large, clearly separated pill: >=36px tall, larger than body text, focusable.
+ // Moderate, clearly separated pill: body-text size, 28-34px tall, focusable.
+ // 1.0.35 made it a huge pill that dominated the transcript.
  var bodySize=parseFloat(getComputedStyle(document.body).fontSize),btnStyle=getComputedStyle(jumpLatestBtn);
- fixtureCheck(rect.height>=36,'button too small: '+rect.height);
- fixtureCheck(parseFloat(btnStyle.fontSize)>=bodySize*1.1,'button text not larger than body text');
+ fixtureCheck(rect.height>=28&&rect.height<=34,'button height not moderate: '+rect.height);
+ fixtureCheck(Math.abs(parseFloat(btnStyle.fontSize)-bodySize)<=0.5,'button text not body size: '+btnStyle.fontSize+' vs '+bodySize);
+ fixtureCheck(rect.width<=320,'button too wide: '+rect.width);
  fixtureCheck(btnStyle.fontFamily===getComputedStyle(document.body).fontFamily,'button ignores the chosen font');
  fixtureCheck(btnStyle.boxShadow!=='none'&&btnStyle.backgroundColor!=='rgba(0, 0, 0, 0)','button has no solid backdrop');
  jumpLatestBtn.focus();fixtureCheck(document.activeElement===jumpLatestBtn,'button is not focusable');
