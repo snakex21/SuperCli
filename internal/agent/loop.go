@@ -66,7 +66,14 @@ type SessionReader interface {
 // tool calls, feeds the results back, and repeats until the model
 // emits a "stop" finish reason or MaxSteps is hit.
 type Loop struct {
-	sessionBusy        atomic.Bool
+	sessionBusy atomic.Bool
+	// Background wake-up (background_wake.go): reports appended after the
+	// model's latest request, running detached workers and the host scheduler.
+	unseenNotices      atomic.Int32
+	backgroundActive   atomic.Int32
+	wakeMu             sync.Mutex
+	wake               *WakeScheduler
+	wakeTurn           bool // current Run is an automatic wake-up (owner-only)
 	conversationEpoch  atomic.Uint64
 	backgroundMu       sync.Mutex
 	backgroundPending  atomic.Bool
@@ -360,7 +367,9 @@ type Loop struct {
 	// or a consult tool call). Set by main.go via
 	// SetExternalSink; never closed by the loop.
 	// Emit is non-blocking.
-	extOut chan<- Event
+	// Atomic: detached background workers Emit after their run ended while
+	// a host re-points the sink (GUI per-session pump).
+	extOut atomic.Pointer[chan<- Event]
 
 	// routeMap selects a cheap per-run provider view. Chat-only mode removes
 	// tool schemas and the full coordinator prompt for simple conversation.
@@ -848,12 +857,30 @@ func (l *Loop) Name() string { return "supercli-loop" }
 // Tool calls and their results are interleaved in the stream so
 // the TUI can render each step.
 func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
+	return l.runTurn(ctx, prompt, false)
+}
+
+// runTurn is Run's body. wake=true is an automatic turn for finished
+// background workers (RunWake): no user message is appended or persisted and
+// the prompt is only a placeholder that never reaches the model.
+func (l *Loop) runTurn(ctx context.Context, prompt string, wake bool) (<-chan Event, error) {
 	ctx = clearHostPower(ctx)
 	if prompt == "" {
 		return nil, fmt.Errorf("agent.Loop.Run: prompt is empty")
 	}
 	if !l.sessionBusy.CompareAndSwap(false, true) {
 		return nil, fmt.Errorf("agent is still finishing the previous run")
+	}
+	// Owned from here: the flag is read by run() on the goroutine below.
+	l.wakeTurn = wake
+	if _, delegated := ctx.Value(workerInvocationKey{}).(workerInvocation); !delegated {
+		if s := l.WakeScheduler(); s != nil {
+			if wake {
+				s.WakeStarted()
+			} else {
+				s.UserTurn()
+			}
+		}
 	}
 	var hostPowerErr error
 	ctx, hostPowerErr = l.beginHostPower(ctx)
@@ -908,7 +935,11 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 		l.releaseConversation()
 		return nil, fmt.Errorf("refresh run context: %w", err)
 	}
-	ctx, l.downloadExportContext = l.prepareUserDownloadExport(ctx, prompt)
+	if wake {
+		l.downloadExportContext = ""
+	} else {
+		ctx, l.downloadExportContext = l.prepareUserDownloadExport(ctx, prompt)
+	}
 	if hostPowerInvocationFrom(ctx) != nil {
 		// Stable request-only instruction; never persisted or copied via LoopConfig.
 		l.downloadExportContext += "\n\n" + hostPowerInstruction
@@ -921,7 +952,9 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 	}
 	// Keep only parsed metadata from raw input. Addons/provider projections
 	// must not become authorization for later output directories.
-	l.rememberUserDownloadRequest(prompt)
+	if !wake {
+		l.rememberUserDownloadRequest(prompt)
+	}
 	// F14: hidden flags deliberately SURVIVE across Runs. /clear,
 	// hide_messages and budget eviction all fire between or during
 	// Runs and express durable intent ("this content is out of the
@@ -948,7 +981,7 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 	// the answer is "not yet, here's why".
 	l.ultraworkMode = false
 	l.ultraworkReminder = ""
-	if l.ultraworkGates != nil && ultrawork.Detect(prompt) {
+	if !wake && l.ultraworkGates != nil && ultrawork.Detect(prompt) {
 		res := ultrawork.CheckGates(l.ultraworkGates.Goal, l.ultraworkGates.Credit)
 		if !res.OK {
 			errEvent := ErrorEvent{Err: fmt.Errorf("ultrawork gate failed: %s", res.Reason)}
@@ -970,6 +1003,17 @@ func (l *Loop) Run(ctx context.Context, prompt string) (<-chan Event, error) {
 		l.ultraworkMode = false
 	}
 
+	if wake {
+		// Reports are already in history (worker notifications). Deliver any
+		// still queued now, while this turn owns the conversation.
+		l.drainBackgroundMessages(ctx)
+		l.beginInvocationPersistence()
+		l.openInterjections(ctx)
+		handedOff = true
+		hostPowerHandedOff = true
+		go func() { defer endMaintenanceRun(); l.run(ctx, prompt, out) }()
+		return out, nil
+	}
 	invocationWriterReady := l.beginInvocationPersistence()
 	userText := prompt
 	// One-shot user-message addon (preflight repo context). Appended
@@ -1029,6 +1073,10 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	if _, delegated := ctx.Value(workerInvocationKey{}).(workerInvocation); delegated {
 		l.nextCallReason = llm.ReasonDelegation
 	}
+	wake := l.wakeTurn
+	if wake {
+		l.nextCallReason = llm.ReasonWorkerDelivery
+	}
 	if llm.CallReasonFromContext(ctx) == llm.ReasonResume {
 		l.nextCallReason = llm.ReasonResume
 	}
@@ -1058,7 +1106,11 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	l.checkCycles.reset()
 	l.emptyReplyNudges = 0
 	l.runawayRetries = 0
-	l.resetPostReview(prompt)
+	if wake {
+		l.resetPostReview("")
+	} else {
+		l.resetPostReview(prompt)
+	}
 	l.resetCompletionCheck()
 	l.finalReplyOnly = false
 	l.finalReplyFallback = ""
@@ -1088,7 +1140,11 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	// A1: navigator + one-shot coordinator addons (preflight, verification).
 	// Runs inside the background goroutine so Run() returns immediately.
 	l.restoreDiscoveredTools(ctx)
-	l.prepareRunRoute(ctx, prompt)
+	if wake {
+		l.prepareWakeRoute()
+	} else {
+		l.prepareRunRoute(ctx, prompt)
+	}
 	totalUsage := Usage{}
 	var reflectionProgress adaptiveReflectionProgress
 	var repeatProg repeatProgress

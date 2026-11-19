@@ -1198,5 +1198,20 @@
   "model.level.medium": "közepes",
   "model.level.high": "magas",
   "model.level.xhigh": "xhigh",
-  "model.level.max": "max"
+  "model.level.max": "max",
+  "background.agents": "{n} a háttérben",
+  "background.agentsHint": "A beszélgetés háttérügynökei még dolgoznak; eredményeik automatikus kört indítanak.",
+  "background.wake": "Automatikus kör — a háttérügynökök végeztek (nem az Ön üzenete)",
+  "background.held": "Háttéreredmények visszatartva: {n} jelentés várja a következő üzenetét (elérte az automatikus ébresztések korlátját).",
+  "prov.rename": "Átnevezés",
+  "prov.renameLabel": "Új szolgáltatónév",
+  "prov.renameHint": "Csak betűk, számjegyek, szóközök és . _ -. Az ezt a szolgáltatót használó beállítások, modellválasztások és mentett munkamenetek frissülnek.",
+  "prov.renamed": "Szolgáltató átnevezve erre: {n}.",
+  "prov.renameFailed": "Az átnevezés nem sikerült",
+  "task.interrupted": "megszakítva",
+  "task.interruptedNoRunner": "Az ügynök zárójelentés nélkül állt le (bezárt alkalmazás, összeomlás vagy megszakadt kapcsolat).",
+  "task.resume": "Folytatás",
+  "task.resumeHint": "Az ügynök folytatása a mentett beszélgetésével",
+  "task.resumePrompt": "Folytasd a(z) {id} ügynököt a send_message eszközzel onnan, ahol abbamaradt; a mentett beszélgetése visszaáll.",
+  "chat.jumpLatestNew": "{n} új"
 }

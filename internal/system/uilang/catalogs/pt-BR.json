@@ -1092,5 +1092,10 @@
   "approval.badge.irreversible": "Cannot be undone",
   "project.stopRun": "Pare a execução atual antes de alternar ou alterar projetos.",
   "tui.diff.summary": "Alterações de arquivos na sessão: %d",
-  "tui.diff.more_lines": "… (linhas ocultas: %d)"
+  "tui.diff.more_lines": "… (linhas ocultas: %d)",
+  "tui.status.background": "%d em segundo plano",
+  "tui.wake.started": "[turno automático — não é sua mensagem] chegaram %d resultado(s) de agentes em segundo plano",
+  "tui.wake.held": "[resultados em segundo plano retidos] %d relatório(s) aguardam sua próxima mensagem — limite de %d despertares automáticos atingido",
+  "tui.provider_rename.hint": "Altere o nome para renomear este provedor. Configurações, escolhas de modelo e sessões salvas que o usam são atualizadas.",
+  "tui.provider_rename.done": "Provedor %s renomeado para %s."
 }

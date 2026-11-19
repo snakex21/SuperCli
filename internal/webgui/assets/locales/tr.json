@@ -1198,5 +1198,20 @@
   "model.level.medium": "orta",
   "model.level.high": "yüksek",
   "model.level.xhigh": "xyüksek",
-  "model.level.max": "maksimum"
+  "model.level.max": "maksimum",
+  "background.agents": "arka planda {n}",
+  "background.agentsHint": "Bu konuşmanın arka plan ajanları hâlâ çalışıyor; sonuçları otomatik bir tur başlatacak.",
+  "background.wake": "Otomatik tur — arka plan ajanları bitti (sizin mesajınız değil)",
+  "background.held": "Arka plan sonuçları bekletiliyor: {n} rapor bir sonraki mesajınızı bekliyor (otomatik uyandırma sınırına ulaşıldı).",
+  "prov.rename": "Yeniden adlandır",
+  "prov.renameLabel": "Yeni sağlayıcı adı",
+  "prov.renameHint": "Yalnızca harf, rakam, boşluk ve . _ -. Bu sağlayıcıyı kullanan ayarlar, model seçimleri ve kayıtlı oturumlar güncellenir.",
+  "prov.renamed": "Sağlayıcının yeni adı: {n}.",
+  "prov.renameFailed": "Yeniden adlandırma başarısız",
+  "task.interrupted": "kesildi",
+  "task.interruptedNoRunner": "Ajan son rapor olmadan sona erdi (uygulama kapandı, çöktü veya bağlantı koptu).",
+  "task.resume": "Sürdür",
+  "task.resumeHint": "Bu ajanı kayıtlı konuşmasıyla sürdür",
+  "task.resumePrompt": "{id} ajanını send_message ile kaldığı yerden sürdür; kayıtlı konuşması geri yüklenir.",
+  "chat.jumpLatestNew": "{n} yeni"
 }

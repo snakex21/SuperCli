@@ -1198,5 +1198,20 @@
   "model.level.medium": "střední",
   "model.level.high": "vysoký",
   "model.level.xhigh": "xhigh",
-  "model.level.max": "max"
+  "model.level.max": "max",
+  "background.agents": "{n} na pozadí",
+  "background.agentsHint": "Agenti na pozadí této konverzace stále pracují; jejich výsledky spustí automatický tah.",
+  "background.wake": "Automatický tah — agenti na pozadí dokončili (není to vaše zpráva)",
+  "background.held": "Výsledky na pozadí pozdrženy: {n} zpráv čeká na vaši další zprávu (dosažen limit automatických probuzení).",
+  "prov.rename": "Přejmenovat",
+  "prov.renameLabel": "Nový název poskytovatele",
+  "prov.renameHint": "Pouze písmena, číslice, mezery a . _ -. Nastavení, volby modelů a uložené relace používající tohoto poskytovatele se aktualizují.",
+  "prov.renamed": "Poskytovatel přejmenován na {n}.",
+  "prov.renameFailed": "Přejmenování selhalo",
+  "task.interrupted": "přerušen",
+  "task.interruptedNoRunner": "Agent skončil bez závěrečné zprávy (aplikace zavřena, pád nebo ztráta spojení).",
+  "task.resume": "Obnovit",
+  "task.resumeHint": "Pokračovat tímto agentem s jeho uloženou konverzací",
+  "task.resumePrompt": "Obnov {id} přes send_message a pokračuj v jeho úkolu tam, kde skončil; jeho uložená konverzace se obnoví.",
+  "chat.jumpLatestNew": "{n} nové"
 }

@@ -1198,5 +1198,20 @@
   "model.level.medium": "moyen",
   "model.level.high": "haut",
   "model.level.xhigh": "xhaut",
-  "model.level.max": "maximum"
+  "model.level.max": "maximum",
+  "background.agents": "{n} en arrière-plan",
+  "background.agentsHint": "Des agents en arrière-plan de cette conversation travaillent encore ; leurs résultats lanceront un tour automatique.",
+  "background.wake": "Tour automatique — agents en arrière-plan terminés (pas votre message)",
+  "background.held": "Résultats en arrière-plan retenus : {n} rapport(s) attendent votre prochain message (limite de réveils automatiques atteinte).",
+  "prov.rename": "Renommer",
+  "prov.renameLabel": "Nouveau nom du fournisseur",
+  "prov.renameHint": "Lettres, chiffres, espaces et . _ - uniquement. Les paramètres, choix de modèles et sessions enregistrées utilisant ce fournisseur sont mis à jour.",
+  "prov.renamed": "Fournisseur renommé en {n}.",
+  "prov.renameFailed": "Échec du renommage",
+  "task.interrupted": "interrompu",
+  "task.interruptedNoRunner": "L'agent s'est arrêté sans rapport final (application fermée, plantage ou connexion perdue).",
+  "task.resume": "Reprendre",
+  "task.resumeHint": "Reprendre cet agent avec sa conversation enregistrée",
+  "task.resumePrompt": "Reprends {id} avec send_message et poursuis sa tâche là où elle s'est arrêtée ; sa conversation enregistrée est restaurée.",
+  "chat.jumpLatestNew": "{n} nouveaux"
 }

@@ -189,6 +189,9 @@ func (m Model) renderProviderForm() string {
 		if i == m.menu.formAt {
 			page.detailTitle = label
 			page.detail = []string{value}
+			if i == 0 && m.menu.editName != "" {
+				page.detail = []string{value, "", m.tr("tui.provider_rename.hint")}
+			}
 			if i == 1 {
 				page.detail = []string{m.tr("tui.menu_providers_render.7b79076801"),
 					"", m.tr("tui.menu_providers_render.fe86b310ec")}

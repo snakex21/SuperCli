@@ -1092,5 +1092,10 @@
   "approval.badge.irreversible": "Cannot be undone",
   "project.stopRun": "Pirms projektu pārslēgšanas vai mainīšanas apturiet pašreizējo izpildi.",
   "tui.diff.summary": "Failu izmaiņas sesijā: %d",
-  "tui.diff.more_lines": "… (paslēptās rindas: %d)"
+  "tui.diff.more_lines": "… (paslēptās rindas: %d)",
+  "tui.status.background": "%d fonā",
+  "tui.wake.started": "[automātisks gājiens — nav jūsu ziņa] saņemti %d fona aģentu rezultāti",
+  "tui.wake.held": "[fona rezultāti aizturēti] %d atskaites gaida jūsu nākamo ziņu — sasniegts %d automātisko pamodināšanu ierobežojums",
+  "tui.provider_rename.hint": "Mainiet nosaukumu, lai pārdēvētu šo pakalpojumu sniedzēju. Iestatījumi, modeļu izvēles un saglabātās sesijas, kas to izmanto, tiek atjauninātas.",
+  "tui.provider_rename.done": "Pakalpojumu sniedzējs %s pārdēvēts par %s."
 }

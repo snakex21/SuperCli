@@ -61,7 +61,9 @@ type Model struct {
 	version  string
 	language string
 	agent    agent.Agent
-	llm      llm.Provider
+	// backgroundAgents counts running task{async:true} workers (header badge).
+	backgroundAgents int
+	llm              llm.Provider
 
 	// commands is a map of slash command name -> handler.
 	// Set via New and used by handleKey to dispatch
@@ -594,6 +596,8 @@ type runStartMsg struct {
 	attachmentsSent   bool
 	attachmentWarning string
 	queueWarning      error
+	// quiet: an automatic wake-up found nothing left to do (not an error).
+	quiet bool
 }
 
 type runEventMsg struct {
@@ -725,6 +729,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.input.SetValue(msg.draft)
 				m.syncInputHeight()
 			}
+			if msg.quiet {
+				m.refreshTranscript()
+				return m, nil
+			}
 			m.appendLine(m.marker.Error(msg.err))
 			m.refreshTranscript()
 			return m, nil
@@ -757,6 +765,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleAgentEvent(msg.ev)
 
 	case runExtEventMsg:
+		if next, cmd, handled := m.handleBackgroundExternal(msg.ev); handled {
+			return next, tea.Batch(cmd, waitForExternalEvent(m.extCh))
+		}
 		newM, _ := m.handleAgentEvent(msg.ev)
 		return newM, waitForExternalEvent(m.extCh)
 
@@ -768,6 +779,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.onRunEnd != nil {
 			go m.onRunEnd()
 		}
+		m.resignalBackgroundWake()
 		m.refreshTranscript()
 		// Preserve a draft typed while the final provider delta was landing.
 		// Submitted interjections reset themselves; an unsent draft must not

@@ -1092,5 +1092,10 @@
   "approval.badge.irreversible": "Cannot be undone",
   "project.stopRun": "Pred prepnutím alebo zmenou projektov zastavte aktuálny chod.",
   "tui.diff.summary": "Zmeny súborov v relácii: %d",
-  "tui.diff.more_lines": "… (skryté riadky: %d)"
+  "tui.diff.more_lines": "… (skryté riadky: %d)",
+  "tui.status.background": "%d na pozadí",
+  "tui.wake.started": "[automatický ťah — nie je to vaša správa] prišlo %d výsledkov agentov na pozadí",
+  "tui.wake.held": "[výsledky na pozadí pozdržané] %d správ čaká na vašu ďalšiu správu — dosiahnutý limit %d automatických prebudení",
+  "tui.provider_rename.hint": "Zmeňte názov a poskytovateľ sa premenuje. Nastavenia, voľby modelov a uložené relácie, ktoré ho používajú, sa aktualizujú.",
+  "tui.provider_rename.done": "Poskytovateľ %s premenovaný na %s."
 }

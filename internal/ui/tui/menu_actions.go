@@ -91,10 +91,25 @@ func (m Model) menuEnter() (tea.Model, tea.Cmd) {
 			}
 			var saveErr error
 			if m.menu.editName != "" {
-				typ, url, key := f[1], f[2], f[3]
-				saveErr = m.providerMgr.Update(m.menu.editName, &typ, &url, &key, &model)
+				target := m.menu.editName
+				// A changed Name renames the provider (and every reference to
+				// it) before the remaining fields are saved under the new name.
+				if newName := strings.TrimSpace(f[0]); newName != target {
+					if saveErr = m.renameProvider(target, newName); saveErr == nil {
+						target = newName
+						m.menu.editName = newName
+						editName = newName
+						f[0] = newName
+					} else {
+						m.menu.formAt = 0
+					}
+				}
 				if saveErr == nil {
-					savedName = m.menu.editName
+					typ, url, key := f[1], f[2], f[3]
+					saveErr = m.providerMgr.Update(target, &typ, &url, &key, &model)
+				}
+				if saveErr == nil {
+					savedName = target
 				}
 			} else if strings.TrimSpace(f[0]) != "" {
 				saveErr = m.providerMgr.Add(f[0], f[1], f[2], f[3], model)

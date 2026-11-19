@@ -1092,5 +1092,10 @@
   "approval.badge.irreversible": "Cannot be undone",
   "project.stopRun": "Stop de huidige run voordat u van project wisselt of wijzigt.",
   "tui.diff.summary": "Bestandswijzigingen in sessie: %d",
-  "tui.diff.more_lines": "… (verborgen regels: %d)"
+  "tui.diff.more_lines": "… (verborgen regels: %d)",
+  "tui.status.background": "%d op de achtergrond",
+  "tui.wake.started": "[automatische beurt — niet uw bericht] %d resultaat/resultaten van achtergrondagenten ontvangen",
+  "tui.wake.held": "[achtergrondresultaten vastgehouden] %d rapport(en) wachten op uw volgende bericht — limiet van %d automatische activeringen bereikt",
+  "tui.provider_rename.hint": "Wijzig de naam om deze provider te hernoemen. Instellingen, modelkeuzes en opgeslagen sessies die hem gebruiken worden bijgewerkt.",
+  "tui.provider_rename.done": "Provider %s hernoemd naar %s."
 }

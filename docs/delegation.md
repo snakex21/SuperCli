@@ -79,6 +79,68 @@ on the next launch.
 plane and the work has many delegable chunks. AUTO is the general-purpose
 default. Use OFF only when no background/child worker may be created.
 
+## Background workers and automatic wake-up (`background_wake`, default `each`)
+
+`task{"async":true}` starts a worker in the background and returns its ID at
+once. Since 1.0.35 the coordinator's turn no longer blocks until such workers
+finish: it ends normally, the user can keep talking, and every finished (or
+failed / stopped) worker report is queued to the conversation as a
+task-notification message.
+
+- **Idle conversation:** after a short debounce (`background_wake_debounce_ms`,
+  default 1.5 s, so close completions share one turn) an **automatic turn**
+  starts. No user message is added; the reports are already in history and a
+  request-only line tells the model the turn is an automated event, not user
+  input. The TUI prints `[automatic turn — not your message]`, the GUI shows
+  the same marker on the live turn in every window.
+- **Busy conversation:** the running turn receives reports at its next tool
+  boundary or before its final answer; a report that arrives too late wakes
+  the conversation right after that turn.
+- **Policy:** `background_wake = "each" | "all" | "off"`. `all` waits until no
+  background worker of the conversation runs. `off` never wakes; reports wait
+  for the next message and the old in-turn wait is kept.
+- **Loop guard:** at most `background_wake_max_auto` (default 10) consecutive
+  automatic turns without user input; then reports are held (TUI line, GUI
+  toast) until you write again.
+- **Compact reports:** a long report is stored in full and enters the context
+  as a bounded preview with a `read_output` handle, so small local models
+  (e.g. 32k context) are not flooded; the model fetches the rest on demand.
+- **Indicators:** TUI header `N in background`; GUI composer badge per
+  conversation (sync frame `background_agents`, replayed in snapshots).
+
+Workers are independent of the main turn: they run on their own context
+(cancelled only by `task_stop`, the worker's Stop control in the GUI, its own
+limits, or app shutdown). Stopping/interrupting the main turn or sending a new
+message does not stop or pause them. In the GUI a finished run hands its loop
+to a per-conversation pump, so worker progress and completions of an earlier
+turn keep reaching every window (`background_event` frames) while a newer turn
+runs. Cloud workers stream truly in parallel; a single local server slot (LM
+Studio, llama.cpp with one slot) may serialize requests on the server side —
+SuperCli does not pause them, they simply queue at the backend. 429 retry/backoff
+applies to each request on its own: a worker waiting out a rate limit never
+holds the chat turn or other workers (only an explicit shared
+`requests_per_minute` budget can delay the next request to that endpoint).
+
+## Resumable workers and liveness
+
+Every worker's own conversation (briefing, tool calls and results, reports),
+identity and status are saved per conversation in the session store
+(`session_workers`) after creation and after every run. `send_message` to a
+worker that is not in memory — stopped, failed, interrupted, evicted, or from
+before an app restart — restores it from that transcript under the same id and
+appends the follow-up as a new turn; no context is lost and no new task is
+needed. New workers never reuse a saved id.
+
+A saved worker that claims to be running but has no live runner in this
+process (app closed or crashed) is reconciled to **interrupted** with a reason:
+when the conversation's next turn starts (the coordinator receives an
+interruption notice with the way to resume it) and whenever the GUI polls
+worker status (`/api/workers?session=…`). GUI cards therefore never stay
+"status unconfirmed": a card whose runner is missing twice in a row, or whose
+run was superseded by a finished newer run, becomes interrupted. Stopped,
+failed and interrupted cards show **Resume**, which asks the coordinator to
+continue that worker with `send_message`.
+
 ## Model-per-task (`task_model`, default empty)
 
 **What.** Workers run on a different model/host than the coordinator.

@@ -266,8 +266,16 @@ func (a *AgentTool) startBackgroundWorker(parentCtx context.Context, w *Worker, 
 		outputSource, outputPersistence = parent.registry, parent.toolOutputs
 	}
 	finishBackground := backgroundRunFrom(parentCtx).start()
+	if parent != nil {
+		parent.backgroundWorkerStarted()
+	}
 	go func() {
 		defer finishBackground()
+		if parent != nil {
+			// Runs after delivery: WakeAll sees the last worker finish with
+			// its report already in the conversation.
+			defer parent.backgroundWorkerFinished()
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		defer borrow.Close()

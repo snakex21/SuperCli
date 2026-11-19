@@ -1092,5 +1092,10 @@
   "approval.badge.irreversible": "Cannot be undone",
   "project.stopRun": "Állítsa le az aktuális futtatást, mielőtt projektet váltana vagy módosítana.",
   "tui.diff.summary": "Fájlmódosítások a munkamenetben: %d",
-  "tui.diff.more_lines": "… (rejtett sorok: %d)"
+  "tui.diff.more_lines": "… (rejtett sorok: %d)",
+  "tui.status.background": "%d a háttérben",
+  "tui.wake.started": "[automatikus kör — nem az Ön üzenete] %d háttérügynök-eredmény érkezett",
+  "tui.wake.held": "[háttéreredmények visszatartva] %d jelentés várja a következő üzenetét — elérte a(z) %d automatikus ébresztés korlátját",
+  "tui.provider_rename.hint": "Módosítsd a nevet a szolgáltató átnevezéséhez. Az azt használó beállítások, modellválasztások és mentett munkamenetek frissülnek.",
+  "tui.provider_rename.done": "%s szolgáltató átnevezve erre: %s."
 }

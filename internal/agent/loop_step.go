@@ -36,6 +36,10 @@ func (l *Loop) runStep(
 	}
 	background := backgroundRunFrom(ctx)
 	l.drainBackgroundMessages(ctx)
+	// This step's request carries every report delivered so far.
+	if l.unseenNotices.Swap(0) != 0 {
+		l.emitBackgroundAgents()
+	}
 	if err := l.refreshLiveContextBoundary(ctx, false); err != nil {
 		out <- ErrorEvent{Err: fmt.Errorf("refresh live context: %w", err), Usage: *totalUsage, Steps: step}
 		return stepAbort
@@ -328,6 +332,15 @@ func (l *Loop) runStep(
 
 	if len(toolCalls) == 0 {
 		l.drainBackgroundMessages(ctx)
+		if l.backgroundHandoff() {
+			// A host wake-up scheduler owns late reports: end this turn now so
+			// the user can keep talking while workers run; each report starts
+			// an automatic turn (background_wake.go) instead of blocking here.
+			background = nil
+			if n := l.backgroundActive.Load(); n > 0 {
+				out <- NoticeEvent{Text: fmt.Sprintf("%d background agent(s) still running; their results will start an automatic turn.", n)}
+			}
+		}
 		delegatedWaiting := false
 		resume, waitErr := background.wait(ctx, backgroundRevision, func() {
 			delegatedWaiting = true

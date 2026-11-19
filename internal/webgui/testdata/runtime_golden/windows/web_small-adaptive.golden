@@ -107,7 +107,7 @@ Do not repeat a worker's assigned investigation. Once the owner and relevant con
 Delegate independent tasks together; avoid overlapping writes. Use async=true only while useful work can proceed; completion arrives as a <task-notification>. Do not poll.
 Use independent review when risk or the request warrants it. Resolve worker failures with send_message. Report changes, checks and blockers; never end with promised work.
 
-Web GUI: call task synchronously; do not request async/background workers.
+Web GUI: use task with async=true for long or parallel work, then end your turn; reports start an automatic turn.
 
 For durable multi-step work, find and use the goal tool.
 
@@ -123,7 +123,7 @@ Golden user preset: reply in English.
 Provider: set
 Registry: set
 Caps: set
-System: len=3138 sha=e283c9c48c22
+System: len=3177 sha=e4015d86f170
 ProjectInstructions: len=184 sha=5fcf086fd695
 UserInstructions: len=213 sha=c8493814683a
 UserInstructionsForRun: set
@@ -231,7 +231,7 @@ Do not repeat a worker's assigned investigation. Once the owner and relevant con
 Delegate independent tasks together; avoid overlapping writes. Use async=true only while useful work can proceed; completion arrives as a <task-notification>. Do not poll.
 Use independent review when risk or the request warrants it. Resolve worker failures with send_message. Report changes, checks and blockers; never end with promised work.
 
-Web GUI: call task synchronously; do not request async/background workers.
+Web GUI: use task with async=true for long or parallel work, then end your turn; reports start an automatic turn.
 
 For durable multi-step work, find and use the goal tool.
 
@@ -306,7 +306,7 @@ Do not repeat a worker's assigned investigation. Once the owner and relevant con
 Delegate independent tasks together; avoid overlapping writes. Use async=true only while useful work can proceed; completion arrives as a <task-notification>. Do not poll.
 Use independent review when risk or the request warrants it. Resolve worker failures with send_message. Report changes, checks and blockers; never end with promised work.
 
-Web GUI: call task synchronously; do not request async/background workers.
+Web GUI: use task with async=true for long or parallel work, then end your turn; reports start an automatic turn.
 
 For durable multi-step work, find and use the goal tool.
 

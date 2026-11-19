@@ -3,6 +3,8 @@ package webgui
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -104,6 +106,11 @@ func TestWebStreamPersistsDeferredBindingOnFirstSummaryInsert(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer eng.Close()
+	// The in-turn report delivery this test counts is the blocking wait kept by
+	// background_wake = "off"; the default hand-off is covered elsewhere.
+	if err := os.WriteFile(filepath.Join(eng.DataDir(), "config.toml"), []byte("background_wake = \"off\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	provider := &deferredWireProvider{eng: eng, started: make(chan struct{}), done: make(chan deferredWireCompletion, 1)}
 	eng.prov = provider
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

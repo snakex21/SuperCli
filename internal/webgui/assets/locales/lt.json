@@ -1198,5 +1198,20 @@
   "model.level.medium": "vidutinis",
   "model.level.high": "aukštas",
   "model.level.xhigh": "x aukštas",
-  "model.level.max": "maks"
+  "model.level.max": "maks",
+  "background.agents": "{n} fone",
+  "background.agentsHint": "Šio pokalbio foniniai agentai vis dar dirba; jų rezultatai paleis automatinį ėjimą.",
+  "background.wake": "Automatinis ėjimas — foniniai agentai baigė (ne jūsų žinutė)",
+  "background.held": "Foniniai rezultatai sulaikyti: {n} ataskaitų laukia jūsų kitos žinutės (pasiektas automatinių pažadinimų limitas).",
+  "prov.rename": "Pervadinti",
+  "prov.renameLabel": "Naujas tiekėjo pavadinimas",
+  "prov.renameHint": "Tik raidės, skaitmenys, tarpai ir . _ -. Nustatymai, modelių pasirinkimai ir išsaugotos sesijos, naudojančios šį tiekėją, atnaujinami.",
+  "prov.renamed": "Tiekėjas pervadintas į {n}.",
+  "prov.renameFailed": "Pervadinti nepavyko",
+  "task.interrupted": "nutrauktas",
+  "task.interruptedNoRunner": "Agentas baigėsi be galutinės ataskaitos (programa uždaryta, sutriko arba nutrūko ryšys).",
+  "task.resume": "Tęsti",
+  "task.resumeHint": "Tęsti šį agentą su išsaugotu pokalbiu",
+  "task.resumePrompt": "Tęsk {id} per send_message nuo ten, kur sustojo; jo išsaugotas pokalbis atkuriamas.",
+  "chat.jumpLatestNew": "{n} nauji"
 }

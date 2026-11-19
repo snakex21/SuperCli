@@ -79,6 +79,10 @@ criteria; they cannot see this chat. Reuse their evidence and continue with
 send_message when their context helps. Repeat reads/checks only for missing
 details, failures or relevant changes. Report changes, checks and blockers.
 Do not repeat a worker's assigned investigation; use its report and captured evidence.
+After starting background workers (async), end your turn with a short status;
+never poll or wait: each report starts an automatic turn. Resume a stopped,
+failed or interrupted worker with send_message (its saved context is restored)
+instead of starting a new task.
 Use scratchpad for detailed evidence that should survive outside the chat.
 ##### project instructions
 Project instructions (AGENTS.md). Follow them for work in this repository; the current user request, safety rules, and tool rules take priority:
@@ -91,7 +95,7 @@ Golden user preset: reply in English.
 Provider: set
 Registry: set
 Caps: set
-System: len=2588 sha=564487070f26
+System: len=2853 sha=3175d96934b6
 ProjectInstructions: len=184 sha=5fcf086fd695
 UserInstructions: len=213 sha=c8493814683a
 UserInstructionsForRun: set
@@ -201,6 +205,10 @@ criteria; they cannot see this chat. Reuse their evidence and continue with
 send_message when their context helps. Repeat reads/checks only for missing
 details, failures or relevant changes. Report changes, checks and blockers.
 Do not repeat a worker's assigned investigation; use its report and captured evidence.
+After starting background workers (async), end your turn with a short status;
+never poll or wait: each report starts an automatic turn. Resume a stopped,
+failed or interrupted worker with send_message (its saved context is restored)
+instead of starting a new task.
 Use scratchpad for detailed evidence that should survive outside the chat.
 
 User instructions (enabled preset: Golden). Apply these preferences unless the current user request conflicts; the current request, safety rules, and tool rules take priority:
@@ -270,6 +278,10 @@ criteria; they cannot see this chat. Reuse their evidence and continue with
 send_message when their context helps. Repeat reads/checks only for missing
 details, failures or relevant changes. Report changes, checks and blockers.
 Do not repeat a worker's assigned investigation; use its report and captured evidence.
+After starting background workers (async), end your turn with a short status;
+never poll or wait: each report starts an automatic turn. Resume a stopped,
+failed or interrupted worker with send_message (its saved context is restored)
+instead of starting a new task.
 Use scratchpad for detailed evidence that should survive outside the chat.
 
 User instructions (enabled preset: Golden). Apply these preferences unless the current user request conflicts; the current request, safety rules, and tool rules take priority:

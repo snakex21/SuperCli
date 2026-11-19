@@ -1092,5 +1092,10 @@
   "approval.badge.irreversible": "Cannot be undone",
   "project.stopRun": "Stoppa den pågående körningen innan du byter projekt eller projektmapp.",
   "tui.diff.summary": "Filändringar i sessionen: %d",
-  "tui.diff.more_lines": "… (dolda rader: %d)"
+  "tui.diff.more_lines": "… (dolda rader: %d)",
+  "tui.status.background": "%d i bakgrunden",
+  "tui.wake.started": "[automatisk tur — inte ditt meddelande] %d resultat från bakgrundsagenter har kommit",
+  "tui.wake.held": "[bakgrundsresultat vilande] %d rapport(er) väntar på ditt nästa meddelande — gränsen på %d automatiska väckningar är nådd",
+  "tui.provider_rename.hint": "Ändra namnet för att byta namn på leverantören. Inställningar, modellval och sparade sessioner som använder den uppdateras.",
+  "tui.provider_rename.done": "Leverantören %s har bytt namn till %s."
 }

@@ -101,6 +101,21 @@ func (s *Store) migrate() error {
 			names_json BLOB NOT NULL,
 			FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 		)`,
+		`CREATE TABLE IF NOT EXISTS session_workers (
+			session_id TEXT NOT NULL,
+			worker_id TEXT NOT NULL,
+			agent TEXT NOT NULL,
+			description TEXT NOT NULL,
+			model TEXT NOT NULL DEFAULT '',
+			base_dir TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL,
+			last_error TEXT NOT NULL DEFAULT '',
+			runs INTEGER NOT NULL DEFAULT 0,
+			messages_json BLOB NOT NULL,
+			updated_at INTEGER NOT NULL,
+			PRIMARY KEY (session_id, worker_id),
+			FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+		)`,
 		`CREATE TABLE IF NOT EXISTS session_context_models (
 			session_id TEXT PRIMARY KEY,
 			provider TEXT NOT NULL,

@@ -1198,5 +1198,20 @@
   "model.level.medium": "medium",
   "model.level.high": "høj",
   "model.level.xhigh": "xhøj",
-  "model.level.max": "max"
+  "model.level.max": "max",
+  "background.agents": "{n} i baggrunden",
+  "background.agentsHint": "Baggrundsagenter i denne samtale arbejder stadig; deres resultater starter en automatisk tur.",
+  "background.wake": "Automatisk tur — baggrundsagenter færdige (ikke din besked)",
+  "background.held": "Baggrundsresultater tilbageholdt: {n} rapport(er) venter på din næste besked (grænsen for automatiske opvågninger er nået).",
+  "prov.rename": "Omdøb",
+  "prov.renameLabel": "Nyt udbydernavn",
+  "prov.renameHint": "Kun bogstaver, cifre, mellemrum og . _ -. Indstillinger, modelvalg og gemte sessioner, der bruger denne udbyder, opdateres.",
+  "prov.renamed": "Udbyder omdøbt til {n}.",
+  "prov.renameFailed": "Omdøbning mislykkedes",
+  "task.interrupted": "afbrudt",
+  "task.interruptedNoRunner": "Agenten sluttede uden slutrapport (app lukket, nedbrud eller mistet forbindelse).",
+  "task.resume": "Genoptag",
+  "task.resumeHint": "Fortsæt denne agent med dens gemte samtale",
+  "task.resumePrompt": "Genoptag {id} med send_message og fortsæt dens opgave, hvor den stoppede; dens gemte samtale gendannes.",
+  "chat.jumpLatestNew": "{n} nye"
 }

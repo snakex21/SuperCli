@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -85,6 +88,29 @@ func TestJumpToLatestNativeBrowser(t *testing.T) {
 	if _, err := page.Screenshot(ctx); err != nil {
 		t.Fatal(err)
 	}
+	// Optional visual check: SUPERCLI_JUMP_SHOT_DIR=<dir> saves the visible
+	// button in every theme (jump-latest-<theme>.png).
+	if dir := os.Getenv("SUPERCLI_JUMP_SHOT_DIR"); dir != "" {
+		var ok bool
+		if err := page.Eval(ctx, `(async()=>{await resumeSession('long');await fixtureSettle();stage.dispatchEvent(new WheelEvent('wheel'));stage.scrollTop=0;await fixtureSettle();return !jumpLatestBtn.hidden;})()`, &ok); err != nil || !ok {
+			t.Fatalf("screenshot setup: %v visible=%v", err, ok)
+		}
+		for _, theme := range []string{"dark", "light", "midnight"} {
+			var done bool
+			if err := page.Eval(ctx, `(async()=>{var th=`+strconvQuote(theme)+`;if(th==='dark')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=th;await new Promise(r=>setTimeout(r,250));return true;})()`, &done); err != nil {
+				t.Fatal(err)
+			}
+			shot, err := page.Screenshot(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "jump-latest-"+theme+".png"), shot, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var reset bool
+		_ = page.Eval(ctx, `(()=>{delete document.documentElement.dataset.theme;return true})()`, &reset)
+	}
 	var result json.RawMessage
 	if err := page.Eval(ctx, jumpLatestIntegration, &result); err != nil {
 		t.Fatal(err)
@@ -106,6 +132,28 @@ const jumpLatestIntegration = `(async()=>{
  fixtureCheck(jumpLatestDock.getBoundingClientRect().height===0,'button dock adds layout height');
  var rect=jumpLatestBtn.getBoundingClientRect(),view=stage.getBoundingClientRect();
  fixtureCheck(rect.bottom<=view.bottom&&rect.top>=view.top,'button is outside the visible transcript');
+ // Large, clearly separated pill: >=36px tall, larger than body text, focusable.
+ var bodySize=parseFloat(getComputedStyle(document.body).fontSize),btnStyle=getComputedStyle(jumpLatestBtn);
+ fixtureCheck(rect.height>=36,'button too small: '+rect.height);
+ fixtureCheck(parseFloat(btnStyle.fontSize)>=bodySize*1.1,'button text not larger than body text');
+ fixtureCheck(btnStyle.fontFamily===getComputedStyle(document.body).fontFamily,'button ignores the chosen font');
+ fixtureCheck(btnStyle.boxShadow!=='none'&&btnStyle.backgroundColor!=='rgba(0, 0, 0, 0)','button has no solid backdrop');
+ jumpLatestBtn.focus();fixtureCheck(document.activeElement===jumpLatestBtn,'button is not focusable');
+ // WCAG AA text contrast of the filled pill in every theme.
+ function lum(c){var m=c.match(/[\d.]+/g).slice(0,3).map(Number).map(function(v){v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});return 0.2126*m[0]+0.7152*m[1]+0.0722*m[2];}
+ var themes=['','light','midnight'],ratios=[];
+ themes.forEach(function(theme){
+   if(theme)document.documentElement.dataset.theme=theme;else delete document.documentElement.dataset.theme;
+   var st=getComputedStyle(jumpLatestBtn),a=lum(st.color),b=lum(st.backgroundColor);
+   var ratio=(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);ratios.push((theme||'dark')+'='+ratio.toFixed(2));
+   fixtureCheck(ratio>=4.5,'contrast below AA in '+(theme||'dark')+': '+ratio.toFixed(2)+' '+st.color+' on '+st.backgroundColor);
+ });
+ delete document.documentElement.dataset.theme;
+ console.log('jump contrast '+ratios.join(' '));
+ // New output while away shows a count.
+ var extra=document.createElement('div');extra.className='msg';extra.textContent='later';stream.appendChild(extra);
+ updateJumpLatest();
+ fixtureCheck(jumpLatestCount.textContent.indexOf('1')>=0,'new-message count missing: '+jumpLatestCount.textContent);
  jumpLatestBtn.click();
  await fixtureSettle();
  var gap=stage.scrollHeight-stage.clientHeight-stage.scrollTop;
@@ -114,5 +162,7 @@ const jumpLatestIntegration = `(async()=>{
  fixtureCheck(jumpLatestBtn.hidden,'button still visible at the tail');
  fixtureCheck(document.activeElement===promptEl,'composer focus not restored');
  fixtureCheck(fixtureErrors.length===0,'browser errors: '+fixtureErrors.join(';'));
- return {gap};
+ return {gap,contrast:ratios.join(" ")};
 })()`
+
+func strconvQuote(s string) string { return strconv.Quote(s) }

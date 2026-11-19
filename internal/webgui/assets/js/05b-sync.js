@@ -10,6 +10,25 @@ var syncRefreshPending = false, syncRefreshAgain = false, syncListPending = fals
 var syncFollowingTurn = "", syncRecoveryPending = false;
 var syncClockOffsetMS = 0;
 var syncProjectsPending = false;
+// Running background agents per conversation (server background_agents frames).
+var syncBackgroundCounts = Object.create(null);
+function renderBackgroundAgents() {
+  var badge = $("#background-agents");
+  if (!badge) return;
+  var n = (activeSessionID && syncBackgroundCounts[activeSessionID]) || 0;
+  var text = n > 0 ? t("background.agents").replace("{n}", String(n)) : "";
+  if (badge.textContent !== text) badge.textContent = text;
+  badge.hidden = n <= 0;
+  badge.title = n > 0 ? t("background.agentsHint") : "";
+}
+// A worker of a finished turn keeps running; its progress and report arrive
+// here (no live run carries them) and update the same task card.
+function syncBackgroundEvent(ev) {
+  if (!ev) return;
+  if (ev.type === "worker_progress" && typeof addWorkerProgress === "function") addWorkerProgress(ev);
+  else if (ev.type === "worker" && typeof handleEvent === "function") handleEvent(ev, null);
+  else if (ev.type === "background_held" && typeof toast === "function") toast(t("background.held").replace("{n}", String(ev.run || 0)));
+}
 function syncRenderElsewhere() {
   if (typeof renderRunningElsewhere === "function") renderRunningElsewhere();
 }
@@ -109,6 +128,7 @@ function syncRefreshView() {
 }
 function syncSessionOpened(id) {
   if (syncOpeningSession === id) syncOpeningSession = "";
+  renderBackgroundAgents();
   var run = syncRunFor(id);
   if (syncRefreshAgain && !syncRefreshPending) { syncRefreshAgain = false; syncRefreshView(); }
   else if (run && !run.attached && activeSessionID === id) syncRefreshView();
@@ -133,7 +153,7 @@ function syncRender(run, ev) {
 function syncMakeRun(info) {
   var run = {remote: true, sessionID: info.session_id, turnID: info.turn_id, prompt: info.prompt,
     project_path: info.project_path, project_name: info.project_name, title: info.title, state: info.state,
-    accepted: true, detached: true, attached: false, userSeq: 0, events: [], current: null, start: info.started_at_ms > 0 ? info.started_at_ms - syncClockOffsetMS : Date.now(), startedAtMS: info.started_at_ms || 0};
+    auto: !!info.auto, accepted: true, detached: true, attached: false, userSeq: 0, events: [], current: null, start: info.started_at_ms > 0 ? info.started_at_ms - syncClockOffsetMS : Date.now(), startedAtMS: info.started_at_ms || 0};
   run.abortCtl = {abort: function () {
     jpost("/api/sync/stop", {session_id: run.sessionID, turn_id: run.turnID}).catch(function (error) { toast(error.message); });
   }};
@@ -155,8 +175,13 @@ function syncMakeRun(info) {
     $("#interrupt-btn").hidden = false;
     $("#interrupt-btn").disabled = false;
     setRunState("running", t("composer.working"));
-    var node = addUserMsg(run.prompt, 0, []);
-    if (run.activity) bindLiveMessageReceipt(node, run.activity);
+    if (run.auto) {
+      // Server-started turn for finished background agents: not user input.
+      addEventLine(t("background.wake"), "auto-wake", "auto");
+    } else {
+      var node = addUserMsg(run.prompt, 0, []);
+      if (run.activity) bindLiveMessageReceipt(node, run.activity);
+    }
     syncStartRunTimer(run);
     run.events.forEach(function (ev) { syncRender(run, ev); });
   };
@@ -169,6 +194,16 @@ function syncHandleFrame(frame) {
     if (typeof loadPromptQueue === "function") loadPromptQueue();
     return;
   }
+  if (frame.type === "background_agents") {
+    if (frame.count > 0) syncBackgroundCounts[frame.session_id] = frame.count;
+    else delete syncBackgroundCounts[frame.session_id];
+    renderBackgroundAgents();
+    return;
+  }
+  if (frame.type === "background_event") {
+    if (frame.session_id === activeSessionID && !syncOpeningSession) syncBackgroundEvent(frame.event);
+    return;
+  }
   if (frame.type === "data_changed") {
     if (typeof panelLiveRefresh === "function") panelLiveRefresh(frame.kind);
     return;
@@ -177,6 +212,9 @@ function syncHandleFrame(frame) {
     if (activeRun && activeRun.remote) syncReleaseView(activeRun);
     Object.keys(detachedRuns).forEach(function (id) { if (detachedRuns[id].remote) delete detachedRuns[id]; });
     syncRuns = Object.create(null);
+    syncBackgroundCounts = Object.create(null);
+    Object.keys(frame.background || {}).forEach(function (id) { syncBackgroundCounts[id] = frame.background[id]; });
+    renderBackgroundAgents();
     (frame.runs || []).forEach(function (info) {
       if (syncFollowingTurn && info.turn_id === syncFollowingTurn && !syncSession) {
         activeSessionID = info.session_id;

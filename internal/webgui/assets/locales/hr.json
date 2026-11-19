@@ -1198,5 +1198,20 @@
   "model.level.medium": "srednji",
   "model.level.high": "visoka",
   "model.level.xhigh": "xvisoko",
-  "model.level.max": "max"
+  "model.level.max": "max",
+  "background.agents": "{n} u pozadini",
+  "background.agentsHint": "Pozadinski agenti ovog razgovora još rade; njihovi rezultati pokrenut će automatski potez.",
+  "background.wake": "Automatski potez — pozadinski agenti su završili (nije vaša poruka)",
+  "background.held": "Pozadinski rezultati zadržani: {n} izvješća čeka vašu sljedeću poruku (dosegnuto ograničenje automatskih buđenja).",
+  "prov.rename": "Preimenuj",
+  "prov.renameLabel": "Novi naziv pružatelja",
+  "prov.renameHint": "Samo slova, znamenke, razmaci i . _ -. Postavke, odabiri modela i spremljene sesije koje koriste ovog pružatelja ažuriraju se.",
+  "prov.renamed": "Pružatelj preimenovan u {n}.",
+  "prov.renameFailed": "Preimenovanje nije uspjelo",
+  "task.interrupted": "prekinut",
+  "task.interruptedNoRunner": "Agent je završio bez završnog izvješća (aplikacija zatvorena, rušenje ili prekid veze).",
+  "task.resume": "Nastavi",
+  "task.resumeHint": "Nastavi ovog agenta s njegovim spremljenim razgovorom",
+  "task.resumePrompt": "Nastavi {id} putem send_message od mjesta gdje je stao; njegov spremljeni razgovor se vraća.",
+  "chat.jumpLatestNew": "{n} novo"
 }

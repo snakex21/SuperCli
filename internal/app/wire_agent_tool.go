@@ -130,7 +130,7 @@ func wireAgentTool(w agentToolWiring) (*agent.AgentTool, error) {
 	var rows []assembly.Entry
 	if !w.delegationOff {
 		provided["task"] = at.Spec()
-		provided["send_message"] = agent.NewSendMessageTool(at.Workers).Spec()
+		provided["send_message"] = agent.NewSendMessageToolFor(at).Spec()
 		provided["task_stop"] = agent.NewTaskStopTool(at.Workers).Spec()
 		rows = assembly.Delegation(assembly.SurfaceTUI, w.coordinatorMode)
 	}

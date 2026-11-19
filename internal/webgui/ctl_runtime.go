@@ -24,6 +24,9 @@ type webWorker struct {
 	Run         int                   `json:"run"`
 	UpdatedAt   int64                 `json:"updated_at"`
 	Activity    *agent.WorkerActivity `json:"activity,omitempty"`
+	// Resumable: a saved, not-running worker that send_message can continue
+	// with its full transcript (also after an app restart).
+	Resumable bool `json:"resumable,omitempty"`
 }
 
 func workerDTO(s agent.Snapshot) webWorker {
@@ -46,10 +49,19 @@ func (s *Server) handleWorkers(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		rows := []webWorker{}
+		seen := map[string]bool{}
 		if s.eng.workers != nil {
 			for _, worker := range s.eng.workers.List() {
-				rows = append(rows, workerDTO(worker.Snapshot()))
+				dto := workerDTO(worker.Snapshot())
+				dto.Resumable = dto.Status != "created" && dto.Status != "running"
+				rows = append(rows, dto)
+				seen[dto.ID] = true
 			}
+		}
+		// Saved workers of this conversation without a live runner get a
+		// definite state (never "unconfirmed" forever) and stay resumable.
+		if sid := strings.TrimSpace(r.URL.Query().Get("session")); sid != "" {
+			rows = append(rows, s.eng.savedWorkerRows(r.Context(), sid, seen)...)
 		}
 		writeJSON(w, map[string]any{"workers": rows, "counts": s.eng.workers.Counts()})
 	case http.MethodPost:

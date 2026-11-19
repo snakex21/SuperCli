@@ -1092,5 +1092,10 @@
   "approval.badge.irreversible": "Cannot be undone",
   "project.stopRun": "Prieš perjungdami projektus arba juos keisdami, sustabdykite dabartinį vykdymą.",
   "tui.diff.summary": "Failų pakeitimai seanse: %d",
-  "tui.diff.more_lines": "… (paslėptos eilutės: %d)"
+  "tui.diff.more_lines": "… (paslėptos eilutės: %d)",
+  "tui.status.background": "%d fone",
+  "tui.wake.started": "[automatinis ėjimas — ne jūsų žinutė] gauta %d foninių agentų rezultatų",
+  "tui.wake.held": "[foniniai rezultatai sulaikyti] %d ataskaitų laukia jūsų kitos žinutės — pasiektas %d automatinių pažadinimų limitas",
+  "tui.provider_rename.hint": "Pakeiskite pavadinimą, kad pervadintumėte šį tiekėją. Jį naudojantys nustatymai, modelių pasirinkimai ir išsaugotos sesijos atnaujinami.",
+  "tui.provider_rename.done": "Tiekėjas %s pervadintas į %s."
 }

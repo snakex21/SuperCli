@@ -1092,5 +1092,10 @@
   "approval.badge.irreversible": "Cannot be undone",
   "project.stopRun": "Pysäytä käynnissä oleva ajo ennen projektin tai sen kansion vaihtamista.",
   "tui.diff.summary": "Tiedostomuutoksia istunnossa: %d",
-  "tui.diff.more_lines": "… (piilotettuja rivejä: %d)"
+  "tui.diff.more_lines": "… (piilotettuja rivejä: %d)",
+  "tui.status.background": "%d taustalla",
+  "tui.wake.started": "[automaattinen vuoro — ei sinun viestisi] taustalla toimivilta agenteilta saapui %d tulosta",
+  "tui.wake.held": "[taustatulokset pidätetty] %d raporttia odottaa seuraavaa viestiäsi — %d automaattisen herätyksen raja saavutettu",
+  "tui.provider_rename.hint": "Muuta nimeä nimetäksesi palveluntarjoajan uudelleen. Sitä käyttävät asetukset, mallivalinnat ja tallennetut istunnot päivitetään.",
+  "tui.provider_rename.done": "Palveluntarjoaja %s nimettiin uudelleen: %s."
 }

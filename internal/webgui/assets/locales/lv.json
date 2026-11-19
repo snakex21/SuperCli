@@ -1198,5 +1198,20 @@
   "model.level.medium": "vidējs",
   "model.level.high": "augsts",
   "model.level.xhigh": "xhigh",
-  "model.level.max": "maks"
+  "model.level.max": "maks",
+  "background.agents": "{n} fonā",
+  "background.agentsHint": "Šīs sarunas fona aģenti joprojām strādā; to rezultāti sāks automātisku gājienu.",
+  "background.wake": "Automātisks gājiens — fona aģenti pabeiguši (nav jūsu ziņa)",
+  "background.held": "Fona rezultāti aizturēti: {n} atskaites gaida jūsu nākamo ziņu (sasniegts automātisko pamodināšanu ierobežojums).",
+  "prov.rename": "Pārdēvēt",
+  "prov.renameLabel": "Jauns pakalpojumu sniedzēja nosaukums",
+  "prov.renameHint": "Tikai burti, cipari, atstarpes un . _ -. Iestatījumi, modeļu izvēles un saglabātās sesijas, kas izmanto šo pakalpojumu sniedzēju, tiek atjauninātas.",
+  "prov.renamed": "Pakalpojumu sniedzējs pārdēvēts par {n}.",
+  "prov.renameFailed": "Pārdēvēšana neizdevās",
+  "task.interrupted": "pārtraukts",
+  "task.interruptedNoRunner": "Aģents beidzās bez gala atskaites (lietotne aizvērta, avārija vai zaudēts savienojums).",
+  "task.resume": "Turpināt",
+  "task.resumeHint": "Turpināt šo aģentu ar tā saglabāto sarunu",
+  "task.resumePrompt": "Turpini {id} ar send_message no vietas, kur tas apstājās; tā saglabātā saruna tiek atjaunota.",
+  "chat.jumpLatestNew": "{n} jauni"
 }

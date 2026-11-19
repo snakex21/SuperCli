@@ -33,6 +33,35 @@ to the saved login. Missing or expired observations are shown as unavailable or
 stale, rather than assuming the subscription has refilled. Signing out removes
 both the credentials and that account's saved usage snapshot.
 
+## Renaming a provider
+
+A configured provider can be renamed after it was added:
+
+- **GUI**: Settings → Providers → **Rename** on the provider row (or change
+  *Name* in **Edit**).
+- **TUI**: `/providers` → **E** edit → change *Name* → Enter.
+- **Slash**: `/providers rename <name> <new_name>` (names with spaces: use the
+  menu).
+
+Allowed characters: letters, digits, spaces and `. _ -` (max. 64; no `/`,
+because `provider/model` references split on it, and no `:`). Names must be
+unique, compared case-insensitively; renaming to the same name does nothing.
+
+The rename rewrites every reference, in the global `supercli-data/config.toml`
+and in the active project `.supercli/config.toml`: the `[[providers]]` entry,
+`default_provider`, every `provider/model` setting (`task_model`,
+`advisor_model`, `review_model`, `orchestrator_model`, `compact_model`,
+`darwin_judge_model`, `fallback_models`, `darwin_models`, `[council] models`),
+provider-scoped `model_prices`, `hidden_models`, and
+`media_generation.*.api_key_provider`. Saved sessions (their last runtime
+provider and context-model binding), per-provider context budgets
+(`model-context-windows.json`), the GUI's last model and folder-index vision
+provider are updated too, and the live session keeps running on the renamed
+provider. The API key is stored in the provider entry, so it moves with it and
+is never shown or copied; a failed write restores the previous config files.
+Usage and billing history keep the name that was in effect at the time.
+Configs written before this feature load unchanged.
+
 ## Defaults and configuration layers
 
 **The rule: an empty config is the best config.** Every default below is
@@ -338,6 +367,9 @@ user instructions and project instructions.
 | `verify_commands` | empty | set to the project's objective sieve, e.g. `["go build ./...", "go test ./..."]` |
 | `draft_verify_max_rounds` | 0 = 2 | rarely; it is the anti-ping-pong cap |
 | `darwin_parallel` | unset = auto by host | same logic as task_parallel |
+| `background_wake` | `each` | what happens when a `task{async:true}` worker finishes after the coordinator's turn ended: `each` starts an automatic turn per completion (close completions batched), `all` waits until no background worker of the conversation is running, `off` keeps the report for your next message (and restores the old blocking wait at the end of a turn) |
+| `background_wake_debounce_ms` | 0 = 1500 | completions within this window share one automatic turn |
+| `background_wake_max_auto` | 0 = 10 | consecutive automatic turns without user input; further reports wait for your next message (loop guard) |
 
 ## Misc
 

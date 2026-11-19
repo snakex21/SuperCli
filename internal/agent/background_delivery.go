@@ -85,6 +85,9 @@ func (l *Loop) appendBackgroundMessages(ctx context.Context, pending []backgroun
 			continue
 		}
 		l.Messages = append(l.Messages, msg)
+		if message.scoped {
+			l.unseenNotices.Add(1)
+		}
 		l.recordContextAddition(msg)
 		l.liveContextDirty = true
 		l.recordWorkerContextAddition(msg)
@@ -101,7 +104,9 @@ func (l *Loop) appendBackgroundMessages(ctx context.Context, pending []backgroun
 
 // Releasing ownership and observing an empty inbox form one handshake. A report
 // arriving during shutdown is either consumed here or acquires idle ownership;
-// it cannot remain stranded until another user message. This never calls a model.
+// it cannot remain stranded until another user message. This never calls a
+// model itself; unseen reports signal the host's WakeScheduler, which may
+// start an automatic turn (background_wake.go).
 func (l *Loop) releaseConversation() {
 	var ctx context.Context
 	for {
@@ -109,6 +114,12 @@ func (l *Loop) releaseConversation() {
 		if len(l.backgroundMessages) == 0 {
 			l.sessionBusy.Store(false)
 			l.backgroundMu.Unlock()
+			// Idle with reports the model has not been asked about: a turn
+			// ended without seeing them, or they arrived while idle.
+			if l.unseenNotices.Load() > 0 {
+				l.emitBackgroundAgents()
+				l.signalWake()
+			}
 			return
 		}
 		pending := l.takeBackgroundMessagesLocked()

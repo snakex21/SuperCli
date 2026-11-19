@@ -1092,5 +1092,10 @@
   "approval.badge.irreversible": "Cannot be undone",
   "project.stopRun": "Projeleri değiştirmeden veya düzenlemeden önce devam eden işlemi durdurun.",
   "tui.diff.summary": "Oturumdaki dosya değişiklikleri: %d",
-  "tui.diff.more_lines": "… (gizli satırlar: %d)"
+  "tui.diff.more_lines": "… (gizli satırlar: %d)",
+  "tui.status.background": "arka planda %d",
+  "tui.wake.started": "[otomatik tur — sizin mesajınız değil] %d arka plan ajanı sonucu geldi",
+  "tui.wake.held": "[arka plan sonuçları bekletiliyor] %d rapor bir sonraki mesajınızı bekliyor — %d otomatik uyandırma sınırına ulaşıldı",
+  "tui.provider_rename.hint": "Bu sağlayıcıyı yeniden adlandırmak için adı değiştirin. Onu kullanan ayarlar, model seçimleri ve kayıtlı oturumlar güncellenir.",
+  "tui.provider_rename.done": "%s sağlayıcısının yeni adı: %s."
 }

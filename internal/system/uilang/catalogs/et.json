@@ -1092,5 +1092,10 @@
   "approval.badge.irreversible": "Cannot be undone",
   "project.stopRun": "Enne projektide vahetamist või muutmist peatage praegune käitamine.",
   "tui.diff.summary": "Failimuudatusi seansis: %d",
-  "tui.diff.more_lines": "… (peidetud ridu: %d)"
+  "tui.diff.more_lines": "… (peidetud ridu: %d)",
+  "tui.status.background": "%d taustal",
+  "tui.wake.started": "[automaatne käik — mitte sinu sõnum] taustaagentidelt saabus %d tulemust",
+  "tui.wake.held": "[taustatulemused peatatud] %d aruannet ootab sinu järgmist sõnumit — %d automaatse äratuse piir on täis",
+  "tui.provider_rename.hint": "Muuda nime, et teenusepakkuja ümber nimetada. Seda kasutavad seaded, mudelivalikud ja salvestatud seansid uuendatakse.",
+  "tui.provider_rename.done": "Teenusepakkuja %s uus nimi on %s."
 }

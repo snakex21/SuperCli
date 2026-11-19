@@ -52,7 +52,8 @@ func TestPersistPendingRecoveryReleasesPayloads(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			writer := &pendingRetentionWriter{failAll: true}
 			sink := make(chan Event, 8)
-			loop := &Loop{writer: writer, extOut: sink}
+			loop := &Loop{writer: writer}
+			loop.SetExternalSink(sink)
 			messages := pendingRetentionMessages()
 			for _, msg := range messages {
 				loop.persistAppend(context.Background(), msg)
@@ -94,7 +95,8 @@ func TestPersistPendingRecoveryReleasesPayloads(t *testing.T) {
 func TestPersistPendingPartialRecoveryKeepsUnwrittenPayloads(t *testing.T) {
 	writer := &pendingRetentionWriter{failAll: true}
 	sink := make(chan Event, 8)
-	loop := &Loop{writer: writer, extOut: sink}
+	loop := &Loop{writer: writer}
+	loop.SetExternalSink(sink)
 	messages := pendingRetentionMessages()
 	for _, msg := range messages {
 		loop.persistAppend(context.Background(), msg)
@@ -137,7 +139,8 @@ func TestPersistPendingPartialRecoveryKeepsUnwrittenPayloads(t *testing.T) {
 func TestPersistPendingOverflowClearsOnlyExistingEviction(t *testing.T) {
 	writer := &pendingRetentionWriter{failAll: true}
 	sink := make(chan Event, 8)
-	loop := &Loop{writer: writer, extOut: sink}
+	loop := &Loop{writer: writer}
+	loop.SetExternalSink(sink)
 	fixture := pendingRetentionMessages()
 	var messages []llm.Message
 	for i := 0; i < persistPendingMax; i++ {

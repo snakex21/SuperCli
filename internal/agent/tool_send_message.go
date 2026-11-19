@@ -15,6 +15,8 @@ import (
 
 type SendMessageTool struct {
 	Workers *WorkerRegistry
+	// Restore rebuilds a saved worker that is not in memory (optional).
+	Restore func(context.Context, string) (*Worker, error)
 }
 
 func NewSendMessageTool(workers *WorkerRegistry) *SendMessageTool {
@@ -22,6 +24,14 @@ func NewSendMessageTool(workers *WorkerRegistry) *SendMessageTool {
 		workers = NewWorkerRegistry()
 	}
 	return &SendMessageTool{Workers: workers}
+}
+
+// NewSendMessageToolFor binds continuation to an AgentTool, which can also
+// resume saved workers (after eviction, interruption or an app restart).
+func NewSendMessageToolFor(a *AgentTool) *SendMessageTool {
+	s := NewSendMessageTool(a.Workers)
+	s.Restore = a.restoreWorker
+	return s
 }
 
 func (s *SendMessageTool) Spec() tools.Tool {
@@ -65,6 +75,13 @@ func (s *SendMessageTool) execute(ctx context.Context, raw json.RawMessage) (too
 		return tools.Result{Err: fmt.Errorf("send_message: message is required")}, nil
 	}
 	w, ok := s.Workers.Get(args.To)
+	if !ok && s.Restore != nil {
+		// Saved transcript: an interrupted, evicted or previous-process worker
+		// resumes with its full context under the same id.
+		if restored, err := s.Restore(ctx, args.To); err == nil {
+			w, ok = restored, true
+		}
+	}
 	if !ok {
 		// An evicted worker's Loop (its conversation) is gone, but the kept
 		// summary lets the coordinator learn what it did instead of a dead
@@ -114,6 +131,9 @@ func runWorkerInvocation(ctx context.Context, w *Worker, prompt string, workers 
 	}
 	defer w.runMu.Unlock()
 	text, err := runWorkerLoopLocked(ctx, w, prompt, workers)
+	// Save the worker's whole conversation after every run (still holding
+	// runMu, so the history is stable): it can be resumed by id later.
+	w.registry.persist(w)
 	// All locked-run defers (including evidence finalization and event drain)
 	// have completed. Formatting and delivery can safely happen after unlock.
 	return prepareWorkerHandoff(w, text), err

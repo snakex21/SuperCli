@@ -370,6 +370,9 @@ func (m Model) handleSlashProviders(cmd SlashCommand) (tea.Model, tea.Cmd) {
 	mgr := m.providerMgr
 	dm := m.marker
 	args := cmd.Args
+	if fields := strings.Fields(args); len(fields) > 0 && (fields[0] == "rename" || fields[0] == "mv") {
+		return m.handleSlashProviderRename(fields[1:])
+	}
 	return m, func() tea.Msg {
 		if mgr == nil {
 			return slashResultMsg{Body: dm.Diff(m.tr("tui.slash.77ae580bb6"))}

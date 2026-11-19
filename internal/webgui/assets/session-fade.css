@@ -29,13 +29,9 @@
   will-change: transform;
 }
 
+/* Shared marquee: keyframes marquee-scroll (app.css), JS syncMarquee(). */
 #session-list .side-item.title-overflow:hover .t-scroll {
-  animation: session-title-marquee var(--session-marquee-duration, 4s) linear infinite alternate;
-}
-
-@keyframes session-title-marquee {
-  0%, 2% { transform: translate3d(0, 0, 0); }
-  98%, 100% { transform: translate3d(calc(-1 * var(--session-marquee-distance, 0px)), 0, 0); }
+  animation: marquee-scroll var(--marquee-duration, 4s) linear infinite alternate;
 }
 
 #session-list .side-item .s,

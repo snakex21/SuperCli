@@ -117,6 +117,7 @@ func (r *WorkerRegistry) add(agentName, description string, loop *Loop, enforceL
 		CreatedAt:   now,
 		UpdatedAt:   now,
 		Status:      "created",
+		registry:    r,
 	}
 	r.workers[id] = w
 	r.evictLocked()

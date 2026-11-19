@@ -26,6 +26,7 @@ import (
 	"supercli/internal/account/pricing"
 	"supercli/internal/account/usagecost"
 	"supercli/internal/agent"
+	"supercli/internal/agent/workerstore"
 	"supercli/internal/checkpoint"
 	"supercli/internal/housekeeping"
 	"supercli/internal/llm"
@@ -55,13 +56,18 @@ type Engine struct {
 	hostPower       *systemhostpower.Controller
 	hostPowerClosed bool
 	syncHub         syncHub
-	chatLifetime    chatLifetime
-	subUsage        llm.SubscriptionUsageRefresher
-	mu              sync.RWMutex
-	cfg             config.Config
-	dataDir         string
-	home            string
-	appProfile      string
+	// Per-conversation background-agent pumps and wake-up schedulers
+	// (background_wake.go).
+	bgMu         sync.Mutex
+	bg           map[string]*sessionBackground
+	bgClosed     bool
+	chatLifetime chatLifetime
+	subUsage     llm.SubscriptionUsageRefresher
+	mu           sync.RWMutex
+	cfg          config.Config
+	dataDir      string
+	home         string
+	appProfile   string
 	// explicitEcho is enabled only by the command-line --echo flag. It keeps
 	// deterministic bridge/dev tests available while branded apps reject an
 	// accidental echo fallback caused by unreadable configuration.
@@ -438,6 +444,10 @@ func (e *Engine) sessionStore() (*session.Store, error) {
 		}
 		housekeeping.Start(store)
 		e.sessions = store
+		// Delegated workers are saved per conversation and resumable by id.
+		if err := workerstore.Attach(context.Background(), e.workers, store); err != nil {
+			log.Printf("webgui: worker persistence: %v", err)
+		}
 	}
 	return e.sessions, nil
 }
@@ -583,6 +593,7 @@ func (e *Engine) Close() error {
 	if e == nil {
 		return nil
 	}
+	e.closeBackground()
 	e.stopChatRuns()
 	e.chatLifetime.wg.Wait()
 	e.costMu.Lock()

@@ -1092,5 +1092,10 @@
   "approval.badge.irreversible": "Nie da się cofnąć",
   "project.stopRun": "Zatrzymaj bieżące zadanie przed przełączeniem lub zmianą projektu.",
   "tui.diff.summary": "Zmiany plików w sesji: %d",
-  "tui.diff.more_lines": "… (ukryte wiersze: %d)"
+  "tui.diff.more_lines": "… (ukryte wiersze: %d)",
+  "tui.status.background": "%d w tle",
+  "tui.wake.started": "[automatyczna tura — to nie Twoja wiadomość] dotarły wyniki agentów w tle: %d",
+  "tui.wake.held": "[wyniki w tle wstrzymane] %d raport(ów) czeka na Twoją następną wiadomość — osiągnięto limit %d automatycznych wybudzeń",
+  "tui.provider_rename.hint": "Zmień nazwę, aby przemianować tego dostawcę. Ustawienia, wybory modeli i zapisane sesje, które go używają, zostaną zaktualizowane.",
+  "tui.provider_rename.done": "Zmieniono nazwę dostawcy %s na %s."
 }

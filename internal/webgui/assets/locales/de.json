@@ -1198,5 +1198,20 @@
   "model.level.medium": "Medium",
   "model.level.high": "hoch",
   "model.level.xhigh": "xhoch",
-  "model.level.max": "max"
+  "model.level.max": "max",
+  "background.agents": "{n} im Hintergrund",
+  "background.agentsHint": "Hintergrund-Agenten dieser Unterhaltung arbeiten noch; ihre Ergebnisse starten einen automatischen Zug.",
+  "background.wake": "Automatischer Zug — Hintergrund-Agenten fertig (nicht Ihre Nachricht)",
+  "background.held": "Hintergrundergebnisse zurückgehalten: {n} Bericht(e) warten auf Ihre nächste Nachricht (Limit automatischer Weckvorgänge erreicht).",
+  "prov.rename": "Umbenennen",
+  "prov.renameLabel": "Neuer Anbietername",
+  "prov.renameHint": "Nur Buchstaben, Ziffern, Leerzeichen und . _ -. Einstellungen, Modellauswahlen und gespeicherte Sitzungen, die diesen Anbieter verwenden, werden aktualisiert.",
+  "prov.renamed": "Anbieter in {n} umbenannt.",
+  "prov.renameFailed": "Umbenennen fehlgeschlagen",
+  "task.interrupted": "unterbrochen",
+  "task.interruptedNoRunner": "Der Agent endete ohne Abschlussbericht (App geschlossen, abgestürzt oder Verbindung verloren).",
+  "task.resume": "Fortsetzen",
+  "task.resumeHint": "Diesen Agenten mit seiner gespeicherten Unterhaltung fortsetzen",
+  "task.resumePrompt": "Setze {id} mit send_message fort und führe seine Aufgabe dort weiter, wo sie stoppte; seine gespeicherte Unterhaltung wird wiederhergestellt.",
+  "chat.jumpLatestNew": "{n} neu"
 }

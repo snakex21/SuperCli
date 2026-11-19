@@ -1198,5 +1198,20 @@
   "model.level.medium": "medium",
   "model.level.high": "high",
   "model.level.xhigh": "xhigh",
-  "model.level.max": "max"
+  "model.level.max": "max",
+  "background.agents": "{n} in background",
+  "background.agentsHint": "Background agents of this conversation are still working; their results start an automatic turn.",
+  "background.wake": "Automatic turn — background agents finished (not your message)",
+  "background.held": "Background results held: {n} report(s) wait for your next message (automatic wake-up limit reached).",
+  "prov.rename": "Rename",
+  "prov.renameLabel": "New provider name",
+  "prov.renameHint": "Letters, digits, spaces and . _ - only. Settings, model choices and saved sessions that use this provider are updated.",
+  "prov.renamed": "Provider renamed to {n}.",
+  "prov.renameFailed": "Rename failed",
+  "task.interrupted": "interrupted",
+  "task.interruptedNoRunner": "The worker's runner ended without a final report (app closed, crashed or lost).",
+  "task.resume": "Resume",
+  "task.resumeHint": "Continue this worker with its saved conversation",
+  "task.resumePrompt": "Resume {id} with send_message and continue its task from where it stopped; its saved conversation is restored.",
+  "chat.jumpLatestNew": "{n} new"
 }

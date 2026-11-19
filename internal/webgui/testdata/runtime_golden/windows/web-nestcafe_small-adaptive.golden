@@ -103,7 +103,7 @@ Do not repeat a worker's assigned investigation. Once the owner and relevant con
 Delegate independent tasks together; avoid overlapping writes. Use async=true only while useful work can proceed; completion arrives as a <task-notification>. Do not poll.
 Use independent review when risk or the request warrants it. Resolve worker failures with send_message. Report changes, checks and blockers; never end with promised work.
 
-Web GUI: call task synchronously; do not request async/background workers.
+Web GUI: use task with async=true for long or parallel work, then end your turn; reports start an automatic turn.
 
 NestCafe office mode:
 - Act as a general desktop and office assistant, not primarily as a programming agent.
@@ -127,7 +127,7 @@ Golden user preset: reply in English.
 Provider: set
 Registry: set
 Caps: set
-System: len=10408 sha=a8c19a88974a
+System: len=10447 sha=4642d5f7c58c
 ProjectInstructions: ""
 UserInstructions: len=213 sha=c8493814683a
 UserInstructionsForRun: set
@@ -231,7 +231,7 @@ Do not repeat a worker's assigned investigation. Once the owner and relevant con
 Delegate independent tasks together; avoid overlapping writes. Use async=true only while useful work can proceed; completion arrives as a <task-notification>. Do not poll.
 Use independent review when risk or the request warrants it. Resolve worker failures with send_message. Report changes, checks and blockers; never end with promised work.
 
-Web GUI: call task synchronously; do not request async/background workers.
+Web GUI: use task with async=true for long or parallel work, then end your turn; reports start an automatic turn.
 
 NestCafe office mode:
 - Act as a general desktop and office assistant, not primarily as a programming agent.
@@ -312,7 +312,7 @@ Do not repeat a worker's assigned investigation. Once the owner and relevant con
 Delegate independent tasks together; avoid overlapping writes. Use async=true only while useful work can proceed; completion arrives as a <task-notification>. Do not poll.
 Use independent review when risk or the request warrants it. Resolve worker failures with send_message. Report changes, checks and blockers; never end with promised work.
 
-Web GUI: call task synchronously; do not request async/background workers.
+Web GUI: use task with async=true for long or parallel work, then end your turn; reports start an automatic turn.
 
 NestCafe office mode:
 - Act as a general desktop and office assistant, not primarily as a programming agent.

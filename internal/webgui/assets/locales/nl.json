@@ -1198,5 +1198,20 @@
   "model.level.medium": "medium",
   "model.level.high": "hoog",
   "model.level.xhigh": "xhoog",
-  "model.level.max": "maximaal"
+  "model.level.max": "maximaal",
+  "background.agents": "{n} op de achtergrond",
+  "background.agentsHint": "Achtergrondagenten van dit gesprek werken nog; hun resultaten starten een automatische beurt.",
+  "background.wake": "Automatische beurt — achtergrondagenten klaar (niet uw bericht)",
+  "background.held": "Achtergrondresultaten vastgehouden: {n} rapport(en) wachten op uw volgende bericht (limiet voor automatische activeringen bereikt).",
+  "prov.rename": "Hernoemen",
+  "prov.renameLabel": "Nieuwe providernaam",
+  "prov.renameHint": "Alleen letters, cijfers, spaties en . _ -. Instellingen, modelkeuzes en opgeslagen sessies die deze provider gebruiken worden bijgewerkt.",
+  "prov.renamed": "Provider hernoemd naar {n}.",
+  "prov.renameFailed": "Hernoemen mislukt",
+  "task.interrupted": "onderbroken",
+  "task.interruptedNoRunner": "De agent stopte zonder eindrapport (app gesloten, gecrasht of verbinding verloren).",
+  "task.resume": "Hervatten",
+  "task.resumeHint": "Deze agent hervatten met zijn opgeslagen gesprek",
+  "task.resumePrompt": "Hervat {id} met send_message en zet zijn taak voort waar die stopte; zijn opgeslagen gesprek wordt hersteld.",
+  "chat.jumpLatestNew": "{n} nieuw"
 }

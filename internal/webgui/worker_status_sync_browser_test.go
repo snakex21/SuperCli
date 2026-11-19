@@ -76,7 +76,7 @@ function clockOff(){Object.values(toolRows).forEach(function(r){clearInterval(r.
 function reset(){
   pauseWorkerStatusSync();clockOff();stream.innerHTML='';toolRows={};workerRows={};openToolOrder=[];resetWorkerOverview();
   streaming=false;runFinishing=false;activeSessionID=transcriptSessionID='fixture';projectEpoch=1;requests=0;nextWorkers=[];
-  j=function(url){check(url==='/api/workers','status sync called unrelated endpoint '+url);requests++;return Promise.resolve({workers:nextWorkers});};
+  j=function(url){check(/^\/api\/workers(\?session=[^&]+)?$/.test(url),'status sync called unrelated endpoint '+url);requests++;return Promise.resolve({workers:nextWorkers});};
 }
 function start(id,run,call){
   emit({type:'tool_call',name:'task',args:JSON.stringify({agent:'code',prompt:'Fixture job '+id}),id:call});
@@ -131,7 +131,7 @@ check(workerOverview['worker-2'].status==='failed'&&workerStatusTimer===null,'fa
 
 // Pending requests are single-flight and cannot overwrite newer live activity.
 reset();row=start('worker-3',1,'single');progress('worker-3',1,'single','old','old.go');var resolveSnapshot;
-j=function(url){check(url==='/api/workers','wrong endpoint');requests++;return new Promise(function(resolve){resolveSnapshot=resolve;});};
+j=function(url){check(/^\/api\/workers(\?session=[^&]+)?$/.test(url),'wrong endpoint');requests++;return new Promise(function(resolve){resolveSnapshot=resolve;});};
 var pending=resumeWorkerStatusSync();var same=refreshWorkerStatusSnapshot();check(pending===same,'snapshot request duplicated');await Promise.resolve();
 progress('worker-3',1,'single','new','fresh.go');resolveSnapshot({workers:[snapshot('worker-3',1,'running','old.go')]});await pending;
 check(requests===1&&workerOverview['worker-3'].activity.includes('fresh.go'),'late snapshot regressed live activity');

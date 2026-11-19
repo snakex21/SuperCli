@@ -1198,5 +1198,20 @@
   "model.level.medium": "keskikokoinen",
   "model.level.high": "korkea",
   "model.level.xhigh": "xkorkea",
-  "model.level.max": "max"
+  "model.level.max": "max",
+  "background.agents": "{n} taustalla",
+  "background.agentsHint": "Tämän keskustelun taustaagentit työskentelevät yhä; niiden tulokset käynnistävät automaattisen vuoron.",
+  "background.wake": "Automaattinen vuoro — taustaagentit valmiit (ei sinun viestisi)",
+  "background.held": "Taustatulokset pidätetty: {n} raporttia odottaa seuraavaa viestiäsi (automaattisten herätysten raja saavutettu).",
+  "prov.rename": "Nimeä uudelleen",
+  "prov.renameLabel": "Palveluntarjoajan uusi nimi",
+  "prov.renameHint": "Vain kirjaimia, numeroita, välilyöntejä ja . _ -. Tätä palveluntarjoajaa käyttävät asetukset, mallivalinnat ja tallennetut istunnot päivitetään.",
+  "prov.renamed": "Palveluntarjoaja nimettiin uudelleen: {n}.",
+  "prov.renameFailed": "Uudelleennimeäminen epäonnistui",
+  "task.interrupted": "keskeytetty",
+  "task.interruptedNoRunner": "Agentti päättyi ilman loppuraporttia (sovellus suljettu, kaatui tai yhteys katkesi).",
+  "task.resume": "Jatka",
+  "task.resumeHint": "Jatka tätä agenttia sen tallennetulla keskustelulla",
+  "task.resumePrompt": "Jatka agenttia {id} send_message-työkalulla siitä, mihin se jäi; sen tallennettu keskustelu palautetaan.",
+  "chat.jumpLatestNew": "{n} uutta"
 }

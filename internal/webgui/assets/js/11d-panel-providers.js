@@ -88,6 +88,9 @@ async function renderProvidersList() {
       renderProvidersList();
     });
     act.appendChild(bs);
+    var br = i18nEl("button", "", "prov.rename");
+    br.addEventListener("click", function () { startProviderRename(row, main, act, p); });
+    act.appendChild(br);
     var be = i18nEl("button", "", "common.edit");
     be.addEventListener("click", function () {
       if (p.Type === "claude") renderClaudeLogin(got.templates || []);
@@ -106,6 +109,65 @@ async function renderProvidersList() {
     g.appendChild(row);
   });
   panelContent.appendChild(g);
+}
+
+// renameProvider asks the backend to rename a provider and rewrite every
+// reference (settings, "provider/model" choices, saved sessions). The API key
+// stays inside the provider entry; it is never sent or returned here.
+async function renameProvider(oldName, newName) {
+  var res = await j("/api/provider/rename", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: oldName, new_name: newName }),
+  });
+  if (res.warnings && res.warnings.length) toast(res.warnings.join(" · "));
+  return res;
+}
+
+// startProviderRename swaps a provider row's title for an inline name editor.
+function startProviderRename(row, main, act, p) {
+  if (row.querySelector(".provider-rename")) return;
+  var box = el("form", "provider-rename");
+  box.style.display = "flex";
+  box.style.gap = "6px";
+  box.style.alignItems = "center";
+  box.style.flexWrap = "wrap";
+  var inp = document.createElement("input");
+  inp.className = "field-input";
+  inp.type = "text";
+  inp.value = p.Name;
+  inp.maxLength = 64;
+  inp.setAttribute("aria-label", t("prov.renameLabel"));
+  inp.title = t("prov.renameHint");
+  var ok = i18nEl("button", "btn primary", "common.save");
+  ok.type = "submit";
+  var cancel = i18nEl("button", "btn", "common.cancel");
+  cancel.type = "button";
+  var note = el("div", "note", t("prov.renameHint"));
+  note.style.flexBasis = "100%";
+  box.appendChild(inp); box.appendChild(ok); box.appendChild(cancel); box.appendChild(note);
+  main.style.display = "none";
+  act.style.display = "none";
+  row.insertBefore(box, act);
+  function close() { box.remove(); main.style.display = ""; act.style.display = ""; }
+  cancel.addEventListener("click", close);
+  inp.addEventListener("keydown", function (e) { if (e.key === "Escape") close(); });
+  box.addEventListener("submit", async function (e) {
+    e.preventDefault();
+    var next = inp.value.trim();
+    if (!next || next === p.Name) { close(); return; }
+    ok.disabled = true;
+    try {
+      await renameProvider(p.Name, next);
+      toast(t("prov.renamed").replace("{n}", next));
+      await loadModels();
+      await renderProvidersList();
+    } catch (err) {
+      ok.disabled = false;
+      note.textContent = t("prov.renameFailed") + ": " + err.message;
+    }
+  });
+  inp.focus();
+  inp.select();
 }
 
 function normalizeProviderSearch(value) {
@@ -276,7 +338,9 @@ function renderProviderForm(templates, existing, selectedTemplate) {
   form.appendChild(status);
 
   if (existing) {
-    nameI.value = existing.Name; nameI.disabled = true;
+    nameI.value = existing.Name;
+    nameI.maxLength = 64;
+    nameI.title = t("prov.renameHint");
     typeI.value = existing.Type || "openai";
     urlI.value = existing.BaseURL || "";
     modelI.value = existing.Model || "";
@@ -321,6 +385,13 @@ function renderProviderForm(templates, existing, selectedTemplate) {
     status.textContent = "…";
     try {
       if (existing) {
+        var newName = nameI.value.trim();
+        if (newName && newName !== existing.Name) {
+          // Rename first so the field update below targets the new name.
+          await renameProvider(existing.Name, newName);
+          existing.Name = newName;
+          lbl.firstChild.textContent = t("prov.save") + ": " + newName;
+        }
         var body = { name: existing.Name, type: typeI.value, base_url: urlI.value.trim(), model: modelI.value.trim() };
         if (clearI && clearI.checked) body.api_key = "";
         else if (keyI.value && keyI.value !== initialKey) body.api_key = keyI.value;

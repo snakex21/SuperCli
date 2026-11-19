@@ -116,10 +116,11 @@ func PlatformText() string {
 	}
 }
 
-// WebSyncTaskNote: an HTTP/SSE run ends with the parent turn, so background
-// task notifications cannot be delivered; web coordinators delegate
-// synchronously.
-const WebSyncTaskNote = "Web GUI: call task synchronously; do not request async/background workers."
+// WebSyncTaskNote: since 1.0.35 a web run hands its background workers to the
+// conversation's pump, and their reports start an automatic turn
+// (webgui/background_wake.go), so long or parallel work should not hold the
+// user's turn open. (The name is kept for the surface-layer wiring.)
+const WebSyncTaskNote = "Web GUI: use task with async=true for long or parallel work, then end your turn; reports start an automatic turn."
 
 // GoalDiscoveryHint is cheaper than carrying the goal schema every turn; when
 // a goal is active its open steps are injected directly.

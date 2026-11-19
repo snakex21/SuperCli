@@ -1198,5 +1198,20 @@
   "model.level.medium": "medium",
   "model.level.high": "hög",
   "model.level.xhigh": "xhög",
-  "model.level.max": "max"
+  "model.level.max": "max",
+  "background.agents": "{n} i bakgrunden",
+  "background.agentsHint": "Bakgrundsagenter i den här konversationen arbetar fortfarande; deras resultat startar en automatisk tur.",
+  "background.wake": "Automatisk tur — bakgrundsagenter klara (inte ditt meddelande)",
+  "background.held": "Bakgrundsresultat vilande: {n} rapport(er) väntar på ditt nästa meddelande (gränsen för automatiska väckningar är nådd).",
+  "prov.rename": "Byt namn",
+  "prov.renameLabel": "Nytt leverantörsnamn",
+  "prov.renameHint": "Endast bokstäver, siffror, mellanslag och . _ -. Inställningar, modellval och sparade sessioner som använder leverantören uppdateras.",
+  "prov.renamed": "Leverantören har bytt namn till {n}.",
+  "prov.renameFailed": "Namnbytet misslyckades",
+  "task.interrupted": "avbruten",
+  "task.interruptedNoRunner": "Agenten avslutades utan slutrapport (appen stängd, krasch eller förlorad anslutning).",
+  "task.resume": "Återuppta",
+  "task.resumeHint": "Fortsätt den här agenten med dess sparade konversation",
+  "task.resumePrompt": "Återuppta {id} med send_message och fortsätt dess uppgift där den stannade; dess sparade konversation återställs.",
+  "chat.jumpLatestNew": "{n} nya"
 }

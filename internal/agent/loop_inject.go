@@ -20,7 +20,11 @@ import (
 // — SetExternalSink must be called before any
 // goroutine that may Emit.
 func (l *Loop) SetExternalSink(ch chan<- Event) {
-	l.extOut = ch
+	if ch == nil {
+		l.extOut.Store(nil)
+		return
+	}
+	l.extOut.Store(&ch)
 }
 
 // Emit sends an event to the external sink if
@@ -36,11 +40,12 @@ func (l *Loop) SetExternalSink(ch chan<- Event) {
 // otherwise. Currently informational; the only
 // caller (the consult tool's OnResult) ignores it.
 func (l *Loop) Emit(ev Event) bool {
-	if l.extOut == nil {
+	sink := l.extOut.Load()
+	if sink == nil {
 		return false
 	}
 	select {
-	case l.extOut <- ev:
+	case *sink <- ev:
 		return true
 	default:
 		return false

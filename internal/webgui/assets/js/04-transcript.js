@@ -162,6 +162,8 @@ stage.addEventListener("scroll", function () {
 // sticky dock keeps the button over the visible bottom of the transcript
 // column without adding layout height or moving any message.
 var jumpLatestDock = null, jumpLatestBtn = null, jumpLatestFrame = null;
+// Transcript blocks present when the reader left the tail; later ones are "new".
+var jumpLatestBaseline = 0, jumpLatestCount = null;
 // Created lazily so embedders and isolated renderer harnesses that load this
 // file without the full shell are unaffected.
 function ensureJumpLatest() {
@@ -183,8 +185,11 @@ function createJumpLatest() {
   var label = document.createElement("span");
   label.setAttribute("data-i18n", "chat.jumpLatest");
   label.textContent = typeof t === "function" ? t("chat.jumpLatest") : "";
+  jumpLatestCount = document.createElement("span");
+  jumpLatestCount.className = "jump-latest-count";
   jumpLatestBtn.appendChild(arrow);
   jumpLatestBtn.appendChild(label);
+  jumpLatestBtn.appendChild(jumpLatestCount);
   jumpLatestBtn.addEventListener("click", jumpToLatest);
   jumpLatestDock.appendChild(jumpLatestBtn);
   stage.appendChild(jumpLatestDock);
@@ -197,6 +202,13 @@ function updateJumpLatest() {
   // Hide while restoring/settling: those owners scroll programmatically.
   var away = stage.scrollHeight - stage.scrollTop - stage.clientHeight > Math.max(240, stage.clientHeight * 0.5);
   var show = away && !initialTranscriptTail && !!stream.firstElementChild;
+  var blocks = stream.children ? stream.children.length : 0;
+  if (show && button.hidden) jumpLatestBaseline = blocks;
+  if (show && jumpLatestCount) {
+    var fresh = Math.max(0, blocks - jumpLatestBaseline);
+    var text = fresh > 0 ? t("chat.jumpLatestNew").replace("{n}", String(fresh)) : "";
+    if (jumpLatestCount.textContent !== text) jumpLatestCount.textContent = text;
+  }
   if (button.hidden === !show) return;
   if (!show && document.activeElement === button && typeof promptEl !== "undefined" && promptEl) promptEl.focus({ preventScroll: true });
   button.hidden = !show;
@@ -1128,7 +1140,7 @@ function pruneWorkerOverview() {
   });
   renderWorkerOverview();
 }
-function workerStatusTerminal(status) { return status === "done" || status === "failed" || status === "stopped"; }
+function workerStatusTerminal(status) { return status === "done" || status === "failed" || status === "stopped" || status === "interrupted"; }
 function updateWorkerOverview(id, agentName, status, activity, row) {
   if (!id) return;
   var item = workerOverview[id];
@@ -1228,14 +1240,64 @@ function markWorkerStatusUnconfirmed(binding, mismatch) {
   row._stat.textContent = t("task.statusUnconfirmed");
   updateWorkerOverview(binding.id, row._taskAgent, "unknown", row._taskActivity || row._taskPrompt, row);
 }
+// A row whose runner is gone gets a definite state with its reason and, when
+// the server kept the worker's conversation, a Resume action — never an
+// indefinite "unconfirmed".
+function markWorkerInterrupted(binding, reason, resumable) {
+  var row = binding.row;
+  if (workerRows[binding.id] !== row || workerStatusTerminal(row._taskStatus)) return;
+  clearInterval(row._clock);
+  row._clock = null;
+  row._workerStatusUnconfirmed = false;
+  row._workerSnapshotMismatch = false;
+  row._taskStatus = "interrupted";
+  row.classList.remove("running");
+  row.classList.add("failed", "done");
+  row._stat.textContent = taskStatusLabel("interrupted");
+  row._stat.title = reason || "";
+  if (resumable) addWorkerResumeAction(row, binding.id);
+  updateWorkerOverview(binding.id, row._taskAgent, "interrupted", row._taskActivity || row._taskPrompt, row);
+}
+function addWorkerResumeAction(row, id) {
+  if (!id || !row || !row._body || row._resumeButton) return;
+  var button = el("button", "worker-resume", t("task.resume"));
+  button.type = "button";
+  button.title = t("task.resumeHint");
+  button.addEventListener("click", function (event) {
+    if (event && event.preventDefault) event.preventDefault();
+    resumeWorkerFromCard(id);
+  });
+  row._resumeButton = button;
+  row._body.appendChild(button);
+}
+// The coordinator resumes the worker with send_message; its saved
+// transcript is restored, so no context is lost.
+function resumeWorkerFromCard(id) {
+  var text = t("task.resumePrompt").replace("{id}", id);
+  if (typeof streaming === "boolean" && streaming && typeof enqueuePrompt === "function") return enqueuePrompt(text, []);
+  if (typeof sendPrompt === "function") return sendPrompt(text, []);
+}
 function applyWorkerStatusSnapshot(workers, bindings) {
   var snapshots = Object.create(null);
   (workers || []).forEach(function (worker) { if (worker && worker.id) snapshots[worker.id] = worker; });
   bindings.forEach(function (binding) {
     var row = binding.row, worker = snapshots[binding.id];
     if (workerRows[binding.id] !== row || !row.isConnected || (row._taskRun || 0) !== binding.run) return;
-    if (!worker) { markWorkerStatusUnconfirmed(binding, true); return; }
+    if (!worker) {
+      // Missing twice in a row: no runner exists for this card any more.
+      row._workerMissing = (row._workerMissing || 0) + 1;
+      if (row._workerMissing >= 2) markWorkerInterrupted(binding, t("task.interruptedNoRunner"), false);
+      // Not a mismatch: the next poll must still look at this card.
+      else markWorkerStatusUnconfirmed(binding, false);
+      return;
+    }
+    row._workerMissing = 0;
     var run = Number(worker.run) || 0;
+    // A newer finished run proves this card's (older) run is over too.
+    if (worker.status === "interrupted" || (binding.run && run > binding.run && workerStatusTerminal(worker.status))) {
+      markWorkerInterrupted(binding, worker.last_error || t("task.interruptedNoRunner"), !!worker.resumable);
+      return;
+    }
     if (!binding.run || run !== binding.run) {
       // A retained global ID alone cannot establish an unversioned history run.
       markWorkerStatusUnconfirmed(binding, true);
@@ -1251,7 +1313,10 @@ function applyWorkerStatusSnapshot(workers, bindings) {
       var activity = workerActivityText(worker.activity);
       if (activity) row._taskActivity = activity;
     }
-    row._stat.textContent = taskStatusLabel(status);
+    // A confirmed live row keeps its ticking "label · elapsed" (dropping the
+    // elapsed part for one tick made the task text visibly jump every poll).
+    if (status === "running" && row._clock && row._updateElapsed) row._updateElapsed();
+    else row._stat.textContent = taskStatusLabel(status);
     row.classList.toggle("running", status === "running");
     if (workerStatusTerminal(status)) {
       clearInterval(row._clock);
@@ -1282,7 +1347,7 @@ function refreshWorkerStatusSnapshot() {
   var epoch = workerStatusEpoch, scope = workerStatusScope();
   var request = Promise.resolve().then(function () {
     if (epoch !== workerStatusEpoch || scope !== workerStatusScope() || document.hidden) return null;
-    return j("/api/workers");
+    return j("/api/workers" + (typeof activeSessionID === "string" && activeSessionID ? "?session=" + encodeURIComponent(activeSessionID) : ""));
   }).then(function (got) {
     if (epoch !== workerStatusEpoch || scope !== workerStatusScope() || document.hidden) return;
     if (!got || !Array.isArray(got.workers)) throw new Error("Invalid worker snapshot");
@@ -1359,6 +1424,117 @@ function taskRowTitle(row, agentName, id) {
   return (id ? workerLabel(id) : t("task.delegation")) +
     (agentName ? " · " + agentName : "") +
     (row._toolName === "send_message" ? " · " + t("task.continue") : "");
+}
+
+/* Stable tool/task summaries. Clock ticks, status polls and replayed worker
+   events used to rewrite whole summary cells; a tstat without its elapsed part
+   (or a rebuilt title) reflowed the grid, so the truncated task text jumped
+   between two cut points. Each helper keeps its DOM and only writes changes. */
+function setNodeText(node, text) {
+  text = String(text == null ? "" : text);
+  if (node.textContent !== text) node.textContent = text;
+}
+// label · elapsed[extra]; only the elapsed span changes on a tick.
+function setRowClock(row, label, ms, extra) {
+  var stat = row._stat, clock = stat._clockNode;
+  var text = (ms == null ? label : label + " · " + fmtDuration(ms)) + (extra || "");
+  if (!stat.childNodes || typeof stat.appendChild !== "function") { setNodeText(stat, text); return; }
+  if (!clock || clock.parentNode !== stat || stat.childNodes.length !== 1) {
+    clock = stat._clockNode = el("span", "tstat-clock");
+    clock._label = el("span", "tstat-label");
+    clock._time = el("span", "tstat-time");
+    clock._extra = el("span", "tstat-extra");
+    clock.appendChild(clock._label); clock.appendChild(clock._time); clock.appendChild(clock._extra);
+    stat.textContent = "";
+    stat.appendChild(clock);
+  }
+  setNodeText(clock._label, ms == null ? label : label + " · ");
+  setNodeText(clock._time, ms == null ? "" : fmtDuration(ms));
+  setNodeText(clock._extra, extra || "");
+}
+// Worker title text plus the persistent model label (never detached per event).
+function setTaskRowTitle(row, text) {
+  var name = row._tname, node = row._tnameText;
+  if (!node || name.firstChild !== node) {
+    name.textContent = "";
+    node = row._tnameText = el("span", "tname-text");
+    name.appendChild(node);
+    row._modelLabel = null;
+  }
+  setNodeText(node, text);
+}
+// Task text in the summary: full (whitespace-collapsed) text in one stable
+// span, scrolled by the shared marquee when it overflows; full text on hover.
+function setTaskHint(row, text) {
+  var hint = row._thint, inner = row._thintText;
+  var full = String(text || "").replace(/\s+/g, " ").trim();
+  if (!inner || inner.parentNode !== hint || hint.childNodes.length !== 1) {
+    hint.textContent = "";
+    inner = row._thintText = el("span", "marquee-text");
+    hint.appendChild(inner);
+  }
+  var shown = clip(full, 240), changed = inner.textContent !== shown;
+  setNodeText(inner, shown);
+  if (hint.title !== full) hint.title = full;
+  if (changed || hint._marqueeText !== inner) watchMarquee(hint, inner);
+}
+
+/* Shared single-line marquee (sidebar session titles, worker task text).
+   The host gets `className` only while the text is wider than its viewport;
+   CSS owns the motion (keyframes marquee-scroll, reduced-motion fallback). */
+function syncMarquee(viewport, text, host, className, maxSeconds) {
+  host = host || viewport;
+  className = className || "marquee-overflow";
+  viewport._marqueeWidth = viewport.clientWidth;
+  var overflow = text.parentNode === viewport ? text.offsetWidth - viewport._marqueeWidth : 0;
+  if (overflow > 2) {
+    var distance = overflow + 64;
+    var travel = Math.max(2.8, Math.min(maxSeconds || 8, distance / 50 + 1.6));
+    // marquee-scroll moves for 76% of its cycle (12% holds at each end).
+    var duration = (travel * 0.96 / 0.76).toFixed(2) + "s";
+    if (!host.classList.contains(className)) host.classList.add(className);
+    if (viewport.style.getPropertyValue("--marquee-distance") !== distance.toFixed(1) + "px") viewport.style.setProperty("--marquee-distance", distance.toFixed(1) + "px");
+    if (viewport.style.getPropertyValue("--marquee-duration") !== duration) viewport.style.setProperty("--marquee-duration", duration);
+    return true;
+  }
+  if (host.classList.contains(className)) host.classList.remove(className);
+  if (viewport.style.getPropertyValue("--marquee-distance")) {
+    viewport.style.removeProperty("--marquee-distance");
+    viewport.style.removeProperty("--marquee-duration");
+  }
+  return false;
+}
+// Auto marquees re-measure after resizes and text changes, batched per frame.
+var marqueeObserver = null, marqueePending = new Set(), marqueeFrame = 0;
+function queueMarquee(viewport) {
+  if (typeof requestAnimationFrame !== "function") return; // no layout (tests, hidden hosts)
+  marqueePending.add(viewport);
+  if (!marqueeFrame) marqueeFrame = requestAnimationFrame(flushMarquees);
+}
+function flushMarquees() {
+  marqueeFrame = 0;
+  var pending = Array.from(marqueePending);
+  marqueePending.clear();
+  pending.forEach(function (viewport) {
+    if (viewport.isConnected && viewport._marqueeText) syncMarquee(viewport, viewport._marqueeText, viewport, "marquee-overflow", 30);
+  });
+}
+function watchMarquee(viewport, text) {
+  viewport._marqueeText = text;
+  // Only real, laid-out elements can overflow (DOM-less test fakes cannot).
+  if (typeof Element === "undefined" || !(viewport instanceof Element)) return;
+  if (!marqueeObserver && typeof ResizeObserver === "function") {
+    marqueeObserver = new ResizeObserver(function (entries) {
+      entries.forEach(function (entry) {
+        // Removed rows report once with no box; release them.
+        if (!entry.target.isConnected) { marqueeObserver.unobserve(entry.target); return; }
+        // Height-only changes (and the initial report) never alter overflow.
+        if (Math.round(entry.contentRect.width) !== entry.target._marqueeWidth) queueMarquee(entry.target);
+      });
+    });
+  }
+  if (marqueeObserver) marqueeObserver.observe(viewport);
+  queueMarquee(viewport);
 }
 
 var openToolOrder = []; // ids without results yet
@@ -1915,6 +2091,7 @@ function taskStatusLabel(status) {
   if (status === "created" || status === "running") return t("tool.running");
   if (status === "failed") return t("task.failed");
   if (status === "stopped") return t("task.stopped");
+  if (status === "interrupted") return t("task.interrupted");
   if (status === "done" || status === "completed") return t("task.done");
   return t("task.statusUnconfirmed");
 }
@@ -2007,22 +2184,27 @@ function renderTaskResult(row, note, elapsed, prompt, err, history) {
   row.classList.add("task-row");
   row.classList.remove("running", "done", "failed");
   row.classList.add(err || note.status === "failed" ? "failed" : (note.status === "running" ? "running" : "done"));
-  row._tname.textContent = taskRowTitle(row, note.agent, note.id);
+  setTaskRowTitle(row, taskRowTitle(row, note.agent, note.id));
   row._tname.title = note.id || "";
-  row._modelLabel = null;
   applyWorkerModelInfo(row, note.model ? note : {model: row._workerModel, reasoning_effort: row._workerEffort});
   if (row._t0 != null) updateWorkerOverview(note.id, note.agent, err ? "failed" : note.status, row._taskActivity || row._taskPrompt, row);
-  row._thint.textContent = taskMetrics(note);
-  row._stat.textContent = taskStatusLabel(err ? "failed" : note.status) + (elapsed != null ? " · " + fmtDuration(elapsed) : "");
-  row._stat.classList.toggle("err", !!err || note.status === "failed");
+  if (prompt) row._taskPrompt = prompt;
+  // A running acknowledgement keeps the task text the started event showed;
+  // metrics replace it only once the worker has settled.
+  function taskHintText(n) {
+    var running = row._taskStatus === "running" || row._taskStatus === "created";
+    return running && row._taskPrompt ? row._taskPrompt : taskMetrics(n);
+  }
   row._taskSummary = note.summary || "";
   row._taskElapsed = elapsed;
+  setTaskHint(row, taskHintText(note));
+  setRowClock(row, taskStatusLabel(err ? "failed" : note.status), elapsed != null ? elapsed : null);
+  row._stat.classList.toggle("err", !!err || note.status === "failed");
   if (typeof registerLanguageRefresh === "function") registerLanguageRefresh(row, function () {
-    row._tname.textContent = taskRowTitle(row, row._taskAgent, row._taskID);
-    row._modelLabel = null;
+    setTaskRowTitle(row, taskRowTitle(row, row._taskAgent, row._taskID));
     applyWorkerModelInfo(row, {model: row._workerModel, reasoning_effort: row._workerEffort});
-    row._thint.textContent = taskMetrics({summary: row._taskSummary, agent: row._taskAgent, status: row._taskStatus});
-    row._stat.textContent = taskStatusLabel(row._taskStatus) + (row._taskElapsed != null ? " · " + fmtDuration(row._taskElapsed) : "");
+    setTaskHint(row, taskHintText({summary: row._taskSummary, agent: row._taskAgent, status: row._taskStatus}));
+    setRowClock(row, taskStatusLabel(row._taskStatus), row._taskElapsed != null ? row._taskElapsed : null);
   });
   row._body.innerHTML = "";
   appendTaskBacklink(row);
@@ -2084,6 +2266,9 @@ function renderTaskResult(row, note, elapsed, prompt, err, history) {
     if (!row.open) row._cancelTaskReport = cancel;
   }
   appendWorkerObservations(row);
+  // Stopped, failed or interrupted workers keep their saved conversation.
+  row._resumeButton = null;
+  if ((err || note.status === "failed" || note.status === "stopped" || note.status === "interrupted") && note.id) addWorkerResumeAction(row, note.id);
 }
 
 function addHistoryTask(note, prompt, savedActivity) {
@@ -2114,7 +2299,8 @@ function addHistoryTask(note, prompt, savedActivity) {
 // monotonic performance clock, including the originating client's behaviour.
 function keepTaskClock(row) {
   clearInterval(row._clock);
-  function update() { row._stat.textContent = taskStatusLabel("running") + " · " + fmtDuration(toolElapsed(row)); }
+  function update() { setRowClock(row, taskStatusLabel("running"), toolElapsed(row)); }
+  row._updateElapsed = update;
   update();
   row._clock = setInterval(update, 250);
 }
@@ -2168,6 +2354,7 @@ function addToolCall(name, args, id, at) {
       // Dispatch may only steer or be rejected. Transfer ownership only when
       // the worker's accepted started event binds this invocation below.
     }
+    setTaskHint(row, info.prompt || "");
     body.innerHTML = "";
     appendTaskBacklink(row);
     body.appendChild(i18nEl("div", "lbl", "task.brief"));
@@ -2185,7 +2372,7 @@ function addToolCall(name, args, id, at) {
   row.classList.add("running");
   function updateElapsed() {
     var label = row._pendingApproval ? "⏸ " + t("tool.pendingApproval") : t("tool.running");
-    stat.textContent = label + " · " + fmtDuration(toolElapsed(row)) + (row._progressText ? " · " + row._progressText : "");
+    setRowClock(row, label, toolElapsed(row), row._progressText ? " · " + row._progressText : "");
   }
   row._updateElapsed = updateElapsed;
   updateElapsed();
@@ -2512,8 +2699,8 @@ function applyWorkerModelInfo(row, ev) {
   row._workerModelInfo = workerModelInfo(ev.model, ev.reasoning_effort);
   row.title = row._workerModelInfo;
   row._tname.title = row._workerModelInfo;
-  if (!row._modelLabel) { row._modelLabel = el("small", "worker-model-info"); row._tname.appendChild(row._modelLabel); }
-  row._modelLabel.textContent = row._workerModelInfo;
+  if (!row._modelLabel || (row._modelLabel.parentNode && row._modelLabel.parentNode !== row._tname)) { row._modelLabel = el("small", "worker-model-info"); row._tname.appendChild(row._modelLabel); }
+  if (row._modelLabel.textContent !== row._workerModelInfo) row._modelLabel.textContent = row._workerModelInfo;
 }
 function addWorkerProgress(ev) {
   var row = findTaskRow(ev.id, ev.name, ev.parent_call_id, ev.run || undefined);
@@ -2540,13 +2727,12 @@ function addWorkerProgress(ev) {
     row._workerSnapshotMismatch = false;
     row._taskAgent = ev.name || row._taskAgent;
     row._taskRun = ev.run || row._taskRun || 0;
-    row._tname.textContent = taskRowTitle(row, row._taskAgent, ev.id);
+    // Replayed starts must not rebuild the title/model label or task text.
+    setTaskRowTitle(row, taskRowTitle(row, row._taskAgent, ev.id));
     row._tname.title = ev.id;
-    // Reattach the label after the task title's textContent reset.
-    row._modelLabel = null;
     applyWorkerModelInfo(row, ev);
     updateWorkerOverview(ev.id, row._taskAgent, "running", row._taskPrompt || ev.prompt, row);
-    row._thint.textContent = clip(row._taskPrompt || ev.prompt || "", 90);
+    setTaskHint(row, row._taskPrompt || ev.prompt || "");
     return true;
   }
   if (ev.kind === "finished") {
@@ -2558,7 +2744,7 @@ function addWorkerProgress(ev) {
     applyWorkerModelInfo(row, ev);
     clearInterval(row._clock);
     row._clock = null;
-    row._stat.textContent = taskStatusLabel(ev.status) + (row._startedAtMS > 0 ? " · " + fmtDuration(toolElapsed(row, ev.at)) : "");
+    setRowClock(row, taskStatusLabel(ev.status), row._startedAtMS > 0 ? toolElapsed(row, ev.at) : null);
     updateWorkerOverview(ev.id, ev.name, ev.status, row._taskActivity || row._taskPrompt, row);
     return true;
   }

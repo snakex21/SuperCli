@@ -10,22 +10,27 @@ import (
 // syncFrame wraps the existing chat protocol. Snapshots and subscription are
 // captured under one lock, so replay cannot lose or duplicate a live delta.
 type syncFrame struct {
-	Type        string      `json:"type"`
-	Kind        string      `json:"kind,omitempty"`
-	QueuePaused bool        `json:"queue_paused,omitempty"`
-	ProjectPath string      `json:"project_path,omitempty"`
-	ProjectName string      `json:"project_name,omitempty"`
-	Title       string      `json:"title,omitempty"`
-	State       string      `json:"state,omitempty"`
-	StartedAtMS int64       `json:"started_at_ms,omitempty"`
-	ServerNowMS int64       `json:"server_now_ms,omitempty"`
-	SessionID   string      `json:"session_id,omitempty"`
-	TurnID      string      `json:"turn_id,omitempty"`
-	ClientID    string      `json:"client_id,omitempty"`
-	Prompt      string      `json:"prompt,omitempty"`
-	Event       *wireEvent  `json:"event,omitempty"`
-	Runs        []syncFrame `json:"runs,omitempty"`
-	Events      []wireEvent `json:"events,omitempty"`
+	Type        string `json:"type"`
+	Kind        string `json:"kind,omitempty"`
+	QueuePaused bool   `json:"queue_paused,omitempty"`
+	ProjectPath string `json:"project_path,omitempty"`
+	ProjectName string `json:"project_name,omitempty"`
+	Title       string `json:"title,omitempty"`
+	// Auto marks a server-started automatic turn (background wake-up).
+	Auto bool `json:"auto,omitempty"`
+	// Count: running background agents (type background_agents).
+	Count       int            `json:"count,omitempty"`
+	Background  map[string]int `json:"background,omitempty"`
+	State       string         `json:"state,omitempty"`
+	StartedAtMS int64          `json:"started_at_ms,omitempty"`
+	ServerNowMS int64          `json:"server_now_ms,omitempty"`
+	SessionID   string         `json:"session_id,omitempty"`
+	TurnID      string         `json:"turn_id,omitempty"`
+	ClientID    string         `json:"client_id,omitempty"`
+	Prompt      string         `json:"prompt,omitempty"`
+	Event       *wireEvent     `json:"event,omitempty"`
+	Runs        []syncFrame    `json:"runs,omitempty"`
+	Events      []wireEvent    `json:"events,omitempty"`
 }
 
 type syncIdentity struct{ turnID, clientID string }
@@ -41,17 +46,22 @@ type syncSubscriber struct {
 	events          chan syncFrame
 }
 type syncHub struct {
-	mu          sync.Mutex
-	closed      bool
-	sequence    uint64
-	runs        map[string]*liveSyncRun
-	subscribers map[*syncSubscriber]struct{}
+	mu       sync.Mutex
+	closed   bool
+	sequence uint64
+	runs     map[string]*liveSyncRun
+	// Running background agents per conversation, replayed in snapshots.
+	backgroundCounts map[string]int
+	subscribers      map[*syncSubscriber]struct{}
 }
 
 func (h *syncHub) publishLocked(frame syncFrame) {
 	frame.ServerNowMS = time.Now().UnixMilli()
 	for sub := range h.subscribers {
 		if frame.Type == "run_event" && (frame.SessionID != sub.session || (sub.client != "" && frame.ClientID == sub.client)) {
+			continue
+		}
+		if frame.Type == "background_event" && frame.SessionID != sub.session {
 			continue
 		}
 		select {
@@ -90,6 +100,7 @@ func (h *syncHub) start(session, prompt string, identity syncIdentity, cancel co
 	run := &liveSyncRun{info: syncFrame{Type: "run_started", StartedAtMS: time.Now().UnixMilli(), SessionID: session, TurnID: identity.turnID, ClientID: identity.clientID, Prompt: prompt}, cancel: cancel}
 	if len(details) > 0 {
 		run.info.ProjectPath, run.info.ProjectName, run.info.Title = details[0].ProjectPath, details[0].ProjectName, details[0].Title
+		run.info.Auto = details[0].Auto
 	}
 	run.info.State = "running"
 	h.runs[session] = run
@@ -175,6 +186,12 @@ func (h *syncHub) subscribe(session, client string) (*syncSubscriber, syncFrame,
 	}
 	sub := &syncSubscriber{session: session, client: client, events: make(chan syncFrame, 128)}
 	snapshot := syncFrame{Type: "snapshot", ServerNowMS: time.Now().UnixMilli(), Runs: []syncFrame{}}
+	if len(h.backgroundCounts) > 0 {
+		snapshot.Background = make(map[string]int, len(h.backgroundCounts))
+		for id, n := range h.backgroundCounts {
+			snapshot.Background[id] = n
+		}
+	}
 	for id, run := range h.runs {
 		snapshot.Runs = append(snapshot.Runs, run.info)
 		if id == session && (client == "" || client != run.info.ClientID) {
@@ -217,4 +234,31 @@ func (h *syncHub) stop(session, turn string) bool {
 	h.mu.Unlock()
 	cancel()
 	return true
+}
+
+// background publishes a worker event of a conversation that has no live run
+// (a detached background agent) to every view of that conversation.
+func (h *syncHub) background(session string, event wireEvent) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if event.At == 0 {
+		event.At = time.Now().UnixMilli()
+	}
+	h.publishLocked(syncFrame{Type: "background_event", SessionID: session, Event: &event})
+}
+
+// backgroundAgents publishes the running background-agent count of one
+// conversation to every view (sidebar/composer badge).
+func (h *syncHub) backgroundAgents(session string, count int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.backgroundCounts == nil {
+		h.backgroundCounts = map[string]int{}
+	}
+	if count > 0 {
+		h.backgroundCounts[session] = count
+	} else {
+		delete(h.backgroundCounts, session)
+	}
+	h.publishLocked(syncFrame{Type: "background_agents", SessionID: session, Count: count})
 }

@@ -1198,5 +1198,20 @@
   "model.level.medium": "médio",
   "model.level.high": "alto",
   "model.level.xhigh": "muito alto",
-  "model.level.max": "máx."
+  "model.level.max": "máx.",
+  "background.agents": "{n} em segundo plano",
+  "background.agentsHint": "Agentes em segundo plano desta conversa ainda estão trabalhando; seus resultados iniciarão um turno automático.",
+  "background.wake": "Turno automático — agentes em segundo plano concluídos (não é sua mensagem)",
+  "background.held": "Resultados em segundo plano retidos: {n} relatório(s) aguardam sua próxima mensagem (limite de despertares automáticos atingido).",
+  "prov.rename": "Renomear",
+  "prov.renameLabel": "Novo nome do provedor",
+  "prov.renameHint": "Somente letras, dígitos, espaços e . _ -. Configurações, escolhas de modelo e sessões salvas que usam este provedor são atualizadas.",
+  "prov.renamed": "Provedor renomeado para {n}.",
+  "prov.renameFailed": "Falha ao renomear",
+  "task.interrupted": "interrompido",
+  "task.interruptedNoRunner": "O agente terminou sem relatório final (aplicativo fechado, falha ou conexão perdida).",
+  "task.resume": "Retomar",
+  "task.resumeHint": "Continuar este agente com sua conversa salva",
+  "task.resumePrompt": "Retome {id} com send_message e continue sua tarefa de onde parou; a conversa salva é restaurada.",
+  "chat.jumpLatestNew": "{n} novos"
 }

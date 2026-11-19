@@ -208,6 +208,19 @@ type TomlConfig struct {
 	// self-hosted server behind a public address or a forced choice.
 	TaskParallel *bool `toml:"task_parallel"`
 
+	// BackgroundWake: what happens when a task{async:true} worker finishes
+	// after the coordinator's turn has ended. "each" (default) starts an
+	// automatic turn for every completion (close completions are batched),
+	// "all" waits until no background worker is running, "off" keeps the
+	// report for the next user message.
+	BackgroundWake string `toml:"background_wake"`
+	// BackgroundWakeDebounceMS batches completions arriving within this
+	// window into one automatic turn; 0 = 1500 ms.
+	BackgroundWakeDebounceMS int `toml:"background_wake_debounce_ms"`
+	// BackgroundWakeMaxAuto caps consecutive automatic turns without user
+	// input; further reports wait for the next message. 0 = 10.
+	BackgroundWakeMaxAuto int `toml:"background_wake_max_auto"`
+
 	// CachePrompt hints local llama.cpp-family servers to reuse the KV
 	// prompt cache across turns (`"cache_prompt": true` in the request).
 	// Tri-state: nil = auto (sent to local/private hosts, never to cloud
@@ -625,3 +638,11 @@ func FindTomlPaths(dataDir, cwd string) (global, project string) {
 
 // mergeToml applies non-zero values from `src` onto `dst`.
 // src takes precedence; zero/empty values in src are skipped.
+
+// BackgroundWakeSettings returns the background wake-up policy (zero = defaults).
+func (c *TomlConfig) BackgroundWakeSettings() (mode string, debounceMS, maxAuto int) {
+	if c == nil {
+		return "", 0, 0
+	}
+	return c.BackgroundWake, c.BackgroundWakeDebounceMS, c.BackgroundWakeMaxAuto
+}

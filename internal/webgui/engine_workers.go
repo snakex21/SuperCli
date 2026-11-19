@@ -67,7 +67,7 @@ func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Pr
 	}
 	deps := &assembly.Deps{Provided: map[string]tools.Tool{
 		"task":         at.Spec(),
-		"send_message": agent.NewSendMessageTool(at.Workers).Spec(),
+		"send_message": agent.NewSendMessageToolFor(at).Spec(),
 		"task_stop":    agent.NewTaskStopTool(at.Workers).Spec(),
 	}}
 	if len(turns) > 0 && turns[0] != nil {

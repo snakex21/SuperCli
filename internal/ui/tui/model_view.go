@@ -178,6 +178,10 @@ func (m Model) renderHeader() string {
 		// The run waits for the user: pending (amber), not working.
 		right = m.palette.StatusPending.Inherit(bar).Render(mode) + bar.Render(" ")
 	}
+	if m.backgroundAgents > 0 {
+		// Running task{async:true} workers; their results wake the chat.
+		right = m.palette.StatusPending.Inherit(bar).Render(fmt.Sprintf(m.tr("tui.status.background"), m.backgroundAgents)) + sep + right
+	}
 	if m.memoryOffFn != nil && m.memoryOffFn() {
 		// Permanent, like the GUI chip. The badge belongs to the right-hand
 		// group, so on a narrow terminal the model name is shortened first

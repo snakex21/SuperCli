@@ -75,6 +75,11 @@ type Worker struct {
 	cancelMu sync.Mutex
 	cancel   context.CancelFunc
 	stopped  bool
+
+	// Persistence identity (worker_persist.go), immutable after setup.
+	sessionID string
+	baseDir   string
+	registry  *WorkerRegistry
 }
 
 // setCancel installs the cancel function for the current run.
@@ -276,4 +281,6 @@ type WorkerRegistry struct {
 	// constants) and read-only afterwards.
 	retention int
 	maxActive int
+	// store persists resumable workers (worker_persist.go). Guarded by mu.
+	store WorkerStore
 }

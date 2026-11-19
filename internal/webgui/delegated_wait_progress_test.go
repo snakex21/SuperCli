@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -110,7 +112,11 @@ func TestDelegatedHostWaitPausesModelWatchdogAndResumesItAfterReports(t *testing
 			const modelIdle = 200 * time.Millisecond
 			srv := newTestServer(t, false)
 			srv.eng.setHome(t.TempDir())
-			writeDiagnosticOrchestratorFixture(t, srv.eng.DataDir())
+			// background_wake = "off" keeps the blocking in-turn wait this test
+			// covers; the default hand-off is covered by background_wake_test.go.
+			if err := os.WriteFile(filepath.Join(srv.eng.DataDir(), "config.toml"), []byte("orchestrator = true\npreflight_repo = false\nbackground_wake = \"off\"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
 			entered := []chan struct{}{make(chan struct{}), make(chan struct{})}
 			release := []chan struct{}{make(chan struct{}), make(chan struct{})}
 			var enterOnce, releaseOnce [2]sync.Once

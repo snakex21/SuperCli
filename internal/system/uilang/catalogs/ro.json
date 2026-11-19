@@ -1092,5 +1092,10 @@
   "approval.badge.irreversible": "Cannot be undone",
   "project.stopRun": "Opriți rularea curentă înainte de a comuta sau a schimba proiecte.",
   "tui.diff.summary": "Modificări de fișiere în sesiune: %d",
-  "tui.diff.more_lines": "… (linii ascunse: %d)"
+  "tui.diff.more_lines": "… (linii ascunse: %d)",
+  "tui.status.background": "%d în fundal",
+  "tui.wake.started": "[tur automat — nu este mesajul tău] au sosit %d rezultat(e) de la agenți în fundal",
+  "tui.wake.held": "[rezultate din fundal reținute] %d raport(e) așteaptă următorul tău mesaj — s-a atins limita de %d treziri automate",
+  "tui.provider_rename.hint": "Schimbă numele pentru a redenumi acest furnizor. Setările, alegerile de model și sesiunile salvate care îl folosesc sunt actualizate.",
+  "tui.provider_rename.done": "Furnizorul %s a fost redenumit în %s."
 }

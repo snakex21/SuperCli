@@ -1198,5 +1198,20 @@
   "model.level.medium": "srednje",
   "model.level.high": "visoka",
   "model.level.xhigh": "khigh",
-  "model.level.max": "mak"
+  "model.level.max": "mak",
+  "background.agents": "{n} u pozadini",
+  "background.agentsHint": "Pozadinski agenti ovog razgovora još rade; njihovi rezultati pokrenuće automatski potez.",
+  "background.wake": "Automatski potez — pozadinski agenti su završili (nije vaša poruka)",
+  "background.held": "Pozadinski rezultati zadržani: {n} izveštaja čeka vašu sledeću poruku (dostignuto ograničenje automatskih buđenja).",
+  "prov.rename": "Preimenuj",
+  "prov.renameLabel": "Novi naziv provajdera",
+  "prov.renameHint": "Samo slova, cifre, razmaci i . _ -. Podešavanja, izbori modela i sačuvane sesije koje koriste ovog provajdera se ažuriraju.",
+  "prov.renamed": "Provajder preimenovan u {n}.",
+  "prov.renameFailed": "Preimenovanje nije uspelo",
+  "task.interrupted": "prekinut",
+  "task.interruptedNoRunner": "Agent je završio bez završnog izveštaja (aplikacija zatvorena, pad ili prekid veze).",
+  "task.resume": "Nastavi",
+  "task.resumeHint": "Nastavi ovog agenta sa njegovim sačuvanim razgovorom",
+  "task.resumePrompt": "Nastavi {id} putem send_message od mesta gde je stao; njegov sačuvani razgovor se vraća.",
+  "chat.jumpLatestNew": "{n} novo"
 }

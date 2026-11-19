@@ -1198,5 +1198,20 @@
   "model.level.medium": "średnie",
   "model.level.high": "wysokie",
   "model.level.xhigh": "bardzo wysokie (xhigh)",
-  "model.level.max": "maksymalne (max)"
+  "model.level.max": "maksymalne (max)",
+  "background.agents": "{n} w tle",
+  "background.agentsHint": "Agenci w tle tej rozmowy wciąż pracują; ich wyniki uruchomią automatyczną turę.",
+  "background.wake": "Automatyczna tura — agenci w tle skończyli (to nie Twoja wiadomość)",
+  "background.held": "Wyniki w tle wstrzymane: {n} raport(ów) czeka na Twoją następną wiadomość (osiągnięto limit automatycznych wybudzeń).",
+  "prov.rename": "Zmień nazwę",
+  "prov.renameLabel": "Nowa nazwa dostawcy",
+  "prov.renameHint": "Tylko litery, cyfry, spacje oraz . _ -. Ustawienia, wybory modeli i zapisane sesje używające tego dostawcy zostaną zaktualizowane.",
+  "prov.renamed": "Zmieniono nazwę dostawcy na {n}.",
+  "prov.renameFailed": "Nie udało się zmienić nazwy",
+  "task.interrupted": "przerwany",
+  "task.interruptedNoRunner": "Proces agenta zakończył się bez raportu końcowego (aplikacja zamknięta, awaria lub utrata połączenia).",
+  "task.resume": "Wznów",
+  "task.resumeHint": "Kontynuuj tego agenta z zapisaną rozmową",
+  "task.resumePrompt": "Wznów {id} przez send_message i kontynuuj jego zadanie od miejsca przerwania; jego zapisana rozmowa zostanie przywrócona.",
+  "chat.jumpLatestNew": "{n} nowe"
 }

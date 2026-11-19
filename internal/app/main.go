@@ -38,6 +38,7 @@ import (
 	"supercli/internal/account/usagecost"
 	"supercli/internal/agent"
 	"supercli/internal/agent/darwin"
+	"supercli/internal/agent/workerstore"
 	"supercli/internal/assembly"
 	"supercli/internal/buildinfo"
 	"supercli/internal/checkpoint"
@@ -635,6 +636,13 @@ func Main() {
 	if err != nil {
 		fatal("init agent tool", err)
 	}
+	// Delegated workers are saved per conversation and resumable by id,
+	// also after a restart (send_message restores them).
+	if sessStore != nil && at != nil {
+		if err := workerstore.Attach(context.Background(), at.Workers, sessStore); err != nil {
+			log.Printf("worker persistence: %v", err)
+		}
+	}
 
 	// F14: /clear slash command. Hides all but the last
 	// 2 user turns from the model's view. Cheaper than
@@ -759,6 +767,9 @@ func Main() {
 	// [council: ...] marker in the transcript.
 	extCh := make(chan agent.Event, 16)
 	loop.SetExternalSink(extCh)
+	// Finished background workers wake the idle chat (BackgroundWakeEvent →
+	// TUI starts Loop.RunWake); policy from config.toml background_wake*.
+	loop.SetBackgroundWake(agent.WakeConfigFrom(tomlCfg.BackgroundWakeSettings()))
 
 	// Scan all configured providers for models in the
 	// background so they're ready when the user opens

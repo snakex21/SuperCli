@@ -302,6 +302,16 @@ func (p *Page) SetViewport(ctx context.Context, width, height int) error {
 	}, nil)
 }
 
+// EmulateMediaFeature overrides one CSS media feature for this page, e.g.
+// ("prefers-reduced-motion", "reduce"); an empty value clears the override.
+func (p *Page) EmulateMediaFeature(ctx context.Context, name, value string) error {
+	features := []map[string]string{}
+	if value != "" {
+		features = append(features, map[string]string{"name": name, "value": value})
+	}
+	return p.browser.cdp.call(ctx, p.session, "Emulation.setEmulatedMedia", map[string]any{"features": features}, nil)
+}
+
 type jsStack struct {
 	CallFrames []struct {
 		FunctionName string `json:"functionName"`

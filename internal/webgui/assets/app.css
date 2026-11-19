@@ -536,18 +536,30 @@ button.side-cost:focus-visible { outline: 2px solid var(--accent); outline-offse
   display: flex; justify-content: center; pointer-events: none;
 }
 .jump-latest {
-  pointer-events: auto; transform: translateY(calc(-100% - 14px));
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 5px 12px 5px 10px; border: 1px solid var(--line); border-radius: 999px;
-  background: var(--raise); color: var(--text); font-size: var(--fs-sm);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, .28);
-  animation: jump-latest-in .14s ease-out;
+  pointer-events: auto; transform: translateY(calc(-100% - 18px));
+  display: inline-flex; align-items: center; gap: 8px;
+  min-height: 40px; padding: 8px 18px 8px 14px; border-radius: 999px;
+  /* Filled primary-action pill (same --accent-fill/--on-accent pair as the
+     composer's primary button, contrast >= 4.5:1 in every theme). */
+  background: var(--accent-fill, var(--accent)); color: var(--on-accent, #101014);
+  border: 1px solid color-mix(in srgb, var(--on-accent, #101014) 18%, var(--accent-fill, var(--accent)));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-fill, var(--accent)) 22%, transparent), 0 8px 22px rgba(0, 0, 0, .35);
+  font: inherit; font-size: calc(var(--fs-md) * 1.2); font-weight: 600; line-height: 1.2;
+  cursor: pointer; animation: jump-latest-in .18s ease-out;
 }
 .jump-latest[hidden] { display: none; }
-.jump-latest:hover { border-color: var(--muted); }
-.jump-latest:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.jump-latest-arrow { color: var(--accent); font-size: var(--fs-sm); line-height: 1; }
-@keyframes jump-latest-in { from { opacity: 0; } to { opacity: 1; } }
+.jump-latest:hover { filter: brightness(1.08); }
+.jump-latest:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+.jump-latest-arrow { color: inherit; font-size: 1.25em; line-height: 1; }
+.jump-latest-count {
+  margin-left: 2px; padding: 1px 8px; border-radius: 999px; font-size: .85em;
+  background: color-mix(in srgb, var(--on-accent, #101014) 16%, transparent); color: inherit;
+}
+.jump-latest-count:empty { display: none; }
+@keyframes jump-latest-in {
+  from { opacity: 0; transform: translateY(calc(-100% - 8px)); }
+  to { opacity: 1; transform: translateY(calc(-100% - 18px)); }
+}
 @media (prefers-reduced-motion: reduce) { .jump-latest { animation: none; } }
 .column { max-width: 46rem; margin: 0 auto; padding: 24px 20px 28px; }
 .stream { display: flex; flex-direction: column; gap: 12px; }
@@ -1009,6 +1021,33 @@ button[data-sec="about"].has-update::after {
 .task-row > summary { grid-template-columns: 10px minmax(150px, 190px) 1fr auto; }
 .task-row .worker-model-info { overflow: hidden; text-overflow: ellipsis; }
 .task-row .tname { font-family: var(--sans); font-weight: 600; }
+/* Ticks rewrite only the elapsed span; tabular digits and a fixed minimum keep
+   the status cell (and so the task text beside it) from shifting per tick. */
+.tool-row .tstat-time { display: inline-block; min-width: 5ch; text-align: right; font-variant-numeric: tabular-nums; }
+.tool-row .tstat-time:empty { display: none; }
+/* Shared single-line marquee: syncMarquee() (04-transcript.js) sets
+   .marquee-overflow plus --marquee-distance/--marquee-duration only while the
+   text is wider than its box. Sidebar titles (session-fade.css) scroll while
+   hovered; worker task text scrolls by itself and pauses on hover. */
+@keyframes marquee-scroll {
+  0%, 12% { transform: translate3d(0, 0, 0); }
+  88%, 100% { transform: translate3d(calc(-1 * var(--marquee-distance, 0px)), 0, 0); }
+}
+.task-row .thint.marquee-overflow {
+  text-overflow: clip;
+  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 22px), transparent 100%);
+  mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 22px), transparent 100%);
+}
+.task-row .thint.marquee-overflow > .marquee-text {
+  display: inline-block; min-width: max-content; vertical-align: top;
+  animation: marquee-scroll var(--marquee-duration, 4s) linear infinite alternate;
+}
+.task-row > summary:hover .thint > .marquee-text { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  /* Static ellipsis; the full task text stays in the hint's title. */
+  .task-row .thint.marquee-overflow { text-overflow: ellipsis; -webkit-mask-image: none; mask-image: none; }
+  .task-row .thint.marquee-overflow > .marquee-text { display: inline; min-width: 0; animation: none; }
+}
 .task-row.done .tstat { color: var(--ok); }
 .task-row.failed .tstat { color: var(--danger); }
 .task-row .task-brief {
@@ -2514,3 +2553,25 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
 .font-preview .font-preview-text { margin: 6px 0; font-size: var(--fs-md); color: var(--text); }
 .font-preview .font-preview-code { margin: 0; padding: 8px 10px; font-size: var(--fs-sm); color: var(--text); background: var(--raise); border: 1px solid var(--line); border-radius: var(--radius); white-space: pre; overflow-x: auto; }
 .font-custom-row[hidden], .font-custom-hint[hidden] { display: none; }
+
+/* Running background agents of this conversation (sync background_agents). */
+.bg-agents-badge {
+  display: inline-flex; align-items: center; gap: 4px; margin-left: 8px;
+  padding: 1px 8px; border-radius: 999px; font-size: 12px; white-space: nowrap;
+  color: var(--status-running); border: 1px solid color-mix(in srgb, var(--status-running) 45%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+.bg-agents-badge[hidden] { display: none; }
+.bg-agents-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+@media (prefers-reduced-motion: no-preference) {
+  .bg-agents-badge::before { animation: bg-agents-pulse 1.6s ease-in-out infinite; }
+}
+@keyframes bg-agents-pulse { 50% { opacity: .35; } }
+.event-line.auto-wake { color: var(--status-running); }
+
+/* Resume a stopped/failed/interrupted worker with its saved conversation. */
+.task-row .worker-resume {
+  margin-top: 8px; padding: 3px 10px; border-radius: 6px; font: inherit; font-size: var(--fs-xs);
+  color: var(--text); background: transparent; border: 1px solid var(--line); cursor: pointer;
+}
+.task-row .worker-resume:hover { border-color: var(--status-running); color: var(--status-running); }

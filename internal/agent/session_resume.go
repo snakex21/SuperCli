@@ -32,6 +32,11 @@ func (l *Loop) ResumeConversation(ctx context.Context, writer SessionWriter, msg
 		return fmt.Errorf("session has no conversation messages")
 	}
 	l.LoadConversation(msgs)
+	// A different conversation: earlier reports belong to the old one.
+	l.unseenNotices.Store(0)
+	if s := l.WakeScheduler(); s != nil {
+		s.UserTurn()
+	}
 	l.writer = writer
 	if l.toolOutputsFollowWriter {
 		l.toolOutputs, _ = writer.(tools.OutputPersistence)

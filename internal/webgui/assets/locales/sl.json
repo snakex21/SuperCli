@@ -1198,5 +1198,20 @@
   "model.level.medium": "srednje",
   "model.level.high": "visoka",
   "model.level.xhigh": "xvisoko",
-  "model.level.max": "maks"
+  "model.level.max": "maks",
+  "background.agents": "{n} v ozadju",
+  "background.agentsHint": "Agenti v ozadju tega pogovora še delajo; njihovi rezultati bodo sprožili samodejno potezo.",
+  "background.wake": "Samodejna poteza — agenti v ozadju so končali (ni vaše sporočilo)",
+  "background.held": "Rezultati v ozadju zadržani: {n} poročil čaka na vaše naslednje sporočilo (dosežena omejitev samodejnih prebujanj).",
+  "prov.rename": "Preimenuj",
+  "prov.renameLabel": "Novo ime ponudnika",
+  "prov.renameHint": "Samo črke, števke, presledki in . _ -. Nastavitve, izbire modelov in shranjene seje, ki uporabljajo tega ponudnika, se posodobijo.",
+  "prov.renamed": "Ponudnik preimenovan v {n}.",
+  "prov.renameFailed": "Preimenovanje ni uspelo",
+  "task.interrupted": "prekinjen",
+  "task.interruptedNoRunner": "Agent se je končal brez končnega poročila (aplikacija zaprta, sesutje ali izguba povezave).",
+  "task.resume": "Nadaljuj",
+  "task.resumeHint": "Nadaljuj tega agenta z njegovim shranjenim pogovorom",
+  "task.resumePrompt": "Nadaljuj {id} s send_message tam, kjer se je ustavil; njegov shranjeni pogovor se obnovi.",
+  "chat.jumpLatestNew": "{n} novo"
 }

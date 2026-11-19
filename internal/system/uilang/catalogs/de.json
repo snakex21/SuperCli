@@ -1092,5 +1092,10 @@
   "approval.badge.irreversible": "Cannot be undone",
   "project.stopRun": "Stoppen Sie den aktuellen Lauf, bevor Sie Projekte wechseln oder ändern.",
   "tui.diff.summary": "Dateiänderungen in der Sitzung: %d",
-  "tui.diff.more_lines": "… (ausgeblendete Zeilen: %d)"
+  "tui.diff.more_lines": "… (ausgeblendete Zeilen: %d)",
+  "tui.status.background": "%d im Hintergrund",
+  "tui.wake.started": "[automatischer Zug — nicht Ihre Nachricht] %d Ergebnis(se) von Hintergrund-Agenten eingetroffen",
+  "tui.wake.held": "[Hintergrundergebnisse zurückgehalten] %d Bericht(e) warten auf Ihre nächste Nachricht — Limit von %d automatischen Weckvorgängen erreicht",
+  "tui.provider_rename.hint": "Ändere den Namen, um diesen Anbieter umzubenennen. Einstellungen, Modellauswahlen und gespeicherte Sitzungen, die ihn verwenden, werden aktualisiert.",
+  "tui.provider_rename.done": "Anbieter %s in %s umbenannt."
 }

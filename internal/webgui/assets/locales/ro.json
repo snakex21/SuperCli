@@ -1198,5 +1198,20 @@
   "model.level.medium": "mediu",
   "model.level.high": "ridicat",
   "model.level.xhigh": "xhigh",
-  "model.level.max": "max"
+  "model.level.max": "max",
+  "background.agents": "{n} în fundal",
+  "background.agentsHint": "Agenții din fundal ai acestei conversații încă lucrează; rezultatele lor vor porni un tur automat.",
+  "background.wake": "Tur automat — agenții din fundal au terminat (nu este mesajul tău)",
+  "background.held": "Rezultate din fundal reținute: {n} raport(e) așteaptă următorul tău mesaj (s-a atins limita de treziri automate).",
+  "prov.rename": "Redenumește",
+  "prov.renameLabel": "Nume nou pentru furnizor",
+  "prov.renameHint": "Doar litere, cifre, spații și . _ -. Setările, alegerile de model și sesiunile salvate care folosesc acest furnizor sunt actualizate.",
+  "prov.renamed": "Furnizor redenumit în {n}.",
+  "prov.renameFailed": "Redenumirea a eșuat",
+  "task.interrupted": "întrerupt",
+  "task.interruptedNoRunner": "Agentul s-a oprit fără raport final (aplicație închisă, blocare sau conexiune pierdută).",
+  "task.resume": "Reia",
+  "task.resumeHint": "Continuă acest agent cu conversația salvată",
+  "task.resumePrompt": "Reia {id} cu send_message și continuă-i sarcina de unde s-a oprit; conversația salvată este restaurată.",
+  "chat.jumpLatestNew": "{n} noi"
 }

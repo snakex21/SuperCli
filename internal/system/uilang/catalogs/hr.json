@@ -1092,5 +1092,10 @@
   "approval.badge.irreversible": "Cannot be undone",
   "project.stopRun": "Zaustavite trenutni rad prije prebacivanja ili promjene projekata.",
   "tui.diff.summary": "Promjene datoteka u sesiji: %d",
-  "tui.diff.more_lines": "… (skrivenih redaka: %d)"
+  "tui.diff.more_lines": "… (skrivenih redaka: %d)",
+  "tui.status.background": "%d u pozadini",
+  "tui.wake.started": "[automatski potez — nije vaša poruka] stiglo je %d rezultata pozadinskih agenata",
+  "tui.wake.held": "[pozadinski rezultati zadržani] %d izvješća čeka vašu sljedeću poruku — dosegnuto ograničenje od %d automatskih buđenja",
+  "tui.provider_rename.hint": "Promijenite naziv da biste preimenovali ovog pružatelja. Postavke, odabiri modela i spremljene sesije koje ga koriste ažuriraju se.",
+  "tui.provider_rename.done": "Pružatelj %s preimenovan u %s."
 }

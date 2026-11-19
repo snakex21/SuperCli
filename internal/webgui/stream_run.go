@@ -48,6 +48,25 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	defer admission.release()
 	ctx, cancelSyncRun := context.WithCancel(ctx)
 	defer cancelSyncRun()
+	wake := isWakeRun(ctx)
+	if wake && strings.TrimSpace(sessionID) == "" {
+		return agent.ErrNothingToWake
+	}
+	// Registered first, so it runs last: after the session gate is released,
+	// the finished loop hands its still-running background workers (and
+	// their late reports) to the conversation's pump and wake-up scheduler.
+	var bg *sessionBackground
+	var bgLoop *agent.Loop
+	defer func() {
+		if bgLoop == nil {
+			return
+		}
+		if bg == nil {
+			bgLoop.SetExternalSink(nil)
+			return
+		}
+		bg.attach(bgLoop, true)
+	}()
 	var hostPowerLoop *agent.Loop
 	var hostPowerErr error
 	// Outermost acknowledgement: all session, question, checkpoint and loop
@@ -100,6 +119,11 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		}
 		defer release()
 	}
+	if id := strings.TrimSpace(sessionID); id != "" {
+		// This run reads the saved conversation, including every report that
+		// detached loops have stored so far.
+		e.backgroundFor(id, home).acknowledge()
+	}
 	initial, writer, sid, err := e.sessionState(ctx, prompt, sessionID, home)
 	if err != nil {
 		return err
@@ -114,7 +138,9 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		defer release()
 	}
 	identity, _ := ctx.Value(syncIdentityKey{}).(syncIdentity)
-	syncedRun = e.syncHub.start(sid, prompt, identity, cancelSyncRun, e.syncRunDetails(sid, home, prompt))
+	runDetails := e.syncRunDetails(sid, home, prompt)
+	runDetails.Auto = wake
+	syncedRun = e.syncHub.start(sid, prompt, identity, cancelSyncRun, runDetails)
 	originalEmit := emit
 	var liveData toolDataTracker
 	emit = func(ev wireEvent) {
@@ -194,7 +220,10 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	lateChanges := &deferredCheckpointChanges{store: usageStore, sessionID: sid}
 	var checkpointTurn *checkpoint.Turn
 	if manager, openErr := e.checkpointManager(home); openErr == nil {
-		checkpointTurn = manager.NewTurn(sid, prompt)
+		if !wake {
+			// An automatic turn has no user message to bind a rewind point to.
+			checkpointTurn = manager.NewTurn(sid, prompt)
+		}
 		lateChanges.manager = manager
 	} else if !errors.Is(openErr, checkpoint.ErrUnavailable) {
 		log.Printf("checkpoint open: %v", openErr)
@@ -204,11 +233,17 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		return fmt.Errorf("build loop: %w", err)
 	}
 	hostPowerLoop = loop
+	bg = e.backgroundFor(sid, home)
+	bg.attach(loop, false)
+	bgLoop = loop
+	if strings.TrimSpace(sessionID) != "" {
+		e.reconcileWorkersIntoRun(ctx, loop, sid)
+	}
 	// Pull only a few relevant capsules from OTHER conversations. This is a
 	// local FTS5 lookup (no model/embedding call), capped to a few hundred
 	// tokens so remembering old work does not add perceptible drag.
 	recallAddon := ""
-	if memoryOn {
+	if memoryOn && !wake {
 		recallAddon = e.webRelevantSessionMemory(ctx, home, prompt, sid, webSessionRecallTokens)
 	}
 	combinedAddon := strings.TrimSpace(userAddon)
@@ -230,7 +265,8 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	// are visible in the transcript and Workers panel.
 	external := make(chan agent.Event, 32)
 	loop.SetExternalSink(external)
-	defer loop.SetExternalSink(nil)
+	// Not detached on exit: the deferred hand-off above re-points the sink
+	// to the conversation's background pump.
 	// Fresh project context is collected inside the loop only after the real
 	// route needs it. A greeting can still discover tools and promote its route;
 	// neither greeting startup nor request acceptance waits for repository I/O.
@@ -261,7 +297,12 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		}
 		lateChanges.setUserReceipt(seq, id)
 	})
-	ch, err := loop.Run(ctx, prompt)
+	var ch <-chan agent.Event
+	if wake {
+		ch, err = loop.RunWake(ctx, false)
+	} else {
+		ch, err = loop.Run(ctx, prompt)
+	}
 	// Run synchronously registers the agent root before starting its goroutine.
 	// Keep the admission until now: there must never be an empty-root gap.
 	// Confirmation is consumed below, only after this handoff is complete.
@@ -280,6 +321,10 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	// Run persists the user message synchronously. Refresh the sidebar now,
 	// while the model is working, rather than before the write or after its reply.
 	activity := wireEvent{Type: "session_activity", SessionID: sid}
+	if wake && usageStore != nil {
+		// No user message: the live automatic turn starts after saved history.
+		activity.UserSeq = wakeActivitySeq(ctx, usageStore.LatestMessageSeq, sid)
+	}
 	if initiatingReceipt.ID > 0 {
 		activity.UserSeq = initiatingReceipt.Seq
 		activity.UserMessageID = strconv.FormatInt(initiatingReceipt.ID, 10)
@@ -638,6 +683,12 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 				send(w)
 			}
 		case ev := <-external:
+			if _, ok := ev.(agent.BackgroundAgentsEvent); ok {
+				if bg != nil {
+					bg.publishCount()
+				}
+				continue
+			}
 			resetProgress()
 			if w, keep := toWireEvent(ev); keep {
 				send(w)

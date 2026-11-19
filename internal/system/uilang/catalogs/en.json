@@ -1092,5 +1092,10 @@
   "approval.badge.irreversible": "Cannot be undone",
   "project.stopRun": "Stop the current run before switching or changing projects.",
   "tui.diff.summary": "%d file change(s) in session",
-  "tui.diff.more_lines": "... (%d more lines)"
+  "tui.diff.more_lines": "... (%d more lines)",
+  "tui.status.background": "%d in background",
+  "tui.wake.started": "[automatic turn — not your message] %d background agent result(s) arrived",
+  "tui.wake.held": "[background results held] %d report(s) wait for your next message — automatic wake-up limit %d reached",
+  "tui.provider_rename.hint": "Change the name to rename this provider. Settings, model choices and saved sessions that use it are updated.",
+  "tui.provider_rename.done": "Provider %s renamed to %s."
 }

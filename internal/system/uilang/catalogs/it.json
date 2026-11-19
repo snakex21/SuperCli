@@ -1092,5 +1092,10 @@
   "approval.badge.irreversible": "Cannot be undone",
   "project.stopRun": "Arresta l'esecuzione corrente prima di cambiare o modificare progetti.",
   "tui.diff.summary": "Modifiche ai file nella sessione: %d",
-  "tui.diff.more_lines": "… (righe nascoste: %d)"
+  "tui.diff.more_lines": "… (righe nascoste: %d)",
+  "tui.status.background": "%d in background",
+  "tui.wake.started": "[turno automatico — non è un tuo messaggio] arrivati %d risultato/i di agenti in background",
+  "tui.wake.held": "[risultati in background trattenuti] %d report attendono il tuo prossimo messaggio — raggiunto il limite di %d risvegli automatici",
+  "tui.provider_rename.hint": "Cambia il nome per rinominare questo provider. Impostazioni, scelte di modello e sessioni salvate che lo usano vengono aggiornate.",
+  "tui.provider_rename.done": "Provider %s rinominato in %s."
 }

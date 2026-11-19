@@ -1092,5 +1092,10 @@
   "approval.badge.irreversible": "Cannot be undone",
   "project.stopRun": "Stop den aktuelle kørsel, før du skifter eller ændrer projekter.",
   "tui.diff.summary": "Filændringer i sessionen: %d",
-  "tui.diff.more_lines": "… (skjulte linjer: %d)"
+  "tui.diff.more_lines": "… (skjulte linjer: %d)",
+  "tui.status.background": "%d i baggrunden",
+  "tui.wake.started": "[automatisk tur — ikke din besked] %d resultat(er) fra baggrundsagenter modtaget",
+  "tui.wake.held": "[baggrundsresultater tilbageholdt] %d rapport(er) venter på din næste besked — grænsen på %d automatiske opvågninger er nået",
+  "tui.provider_rename.hint": "Ændr navnet for at omdøbe denne udbyder. Indstillinger, modelvalg og gemte sessioner, der bruger den, opdateres.",
+  "tui.provider_rename.done": "Udbyder %s omdøbt til %s."
 }

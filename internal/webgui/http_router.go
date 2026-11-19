@@ -87,6 +87,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/providers", s.handleProviders)
 	mux.Handle("/api/provider/key/reveal", s.withSecretLocalOnly(http.HandlerFunc(s.handleProviderKeyReveal)))
 	mux.HandleFunc("/api/provider/scan", s.handleProviderScan)
+	mux.HandleFunc("/api/provider/rename", s.handleProviderRename)
 	mux.HandleFunc("/api/provider/diagnostics", s.handleProviderDiagnostics)
 	mux.HandleFunc("/api/codex/accounts", s.handleCodexAccounts)
 	mux.HandleFunc("/api/codex/login", s.handleCodexLogin)

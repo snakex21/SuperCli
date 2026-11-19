@@ -1198,5 +1198,20 @@
   "model.level.medium": "keskmine",
   "model.level.high": "kõrge",
   "model.level.xhigh": "xkõrge",
-  "model.level.max": "max"
+  "model.level.max": "max",
+  "background.agents": "{n} taustal",
+  "background.agentsHint": "Selle vestluse taustaagendid töötavad veel; nende tulemused käivitavad automaatse käigu.",
+  "background.wake": "Automaatne käik — taustaagendid valmis (mitte sinu sõnum)",
+  "background.held": "Taustatulemused peatatud: {n} aruannet ootab sinu järgmist sõnumit (automaatsete äratuste piir on täis).",
+  "prov.rename": "Nimeta ümber",
+  "prov.renameLabel": "Teenusepakkuja uus nimi",
+  "prov.renameHint": "Ainult tähed, numbrid, tühikud ja . _ -. Seda teenusepakkujat kasutavad seaded, mudelivalikud ja salvestatud seansid uuendatakse.",
+  "prov.renamed": "Teenusepakkuja uus nimi on {n}.",
+  "prov.renameFailed": "Ümbernimetamine ebaõnnestus",
+  "task.interrupted": "katkestatud",
+  "task.interruptedNoRunner": "Agent lõppes ilma lõpparuandeta (rakendus suleti, jooksis kokku või ühendus katkes).",
+  "task.resume": "Jätka",
+  "task.resumeHint": "Jätka seda agenti selle salvestatud vestlusega",
+  "task.resumePrompt": "Jätka agenti {id} send_message abil sealt, kus see pooleli jäi; selle salvestatud vestlus taastatakse.",
+  "chat.jumpLatestNew": "{n} uut"
 }

@@ -158,6 +158,15 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.TaskParallel != nil {
 		dst.TaskParallel = src.TaskParallel
 	}
+	if src.BackgroundWake != "" {
+		dst.BackgroundWake = src.BackgroundWake
+	}
+	if src.BackgroundWakeDebounceMS != 0 {
+		dst.BackgroundWakeDebounceMS = src.BackgroundWakeDebounceMS
+	}
+	if src.BackgroundWakeMaxAuto != 0 {
+		dst.BackgroundWakeMaxAuto = src.BackgroundWakeMaxAuto
+	}
 	if src.CachePrompt != nil {
 		dst.CachePrompt = src.CachePrompt
 	}
