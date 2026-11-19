@@ -64,6 +64,12 @@ func TestWorkerAsyncUIActualRunAndHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer eng.Close()
+	// The live event order checked below needs the turn to wait for its
+	// background worker: that blocking wait is kept by background_wake = "off".
+	// The default hand-off is covered by the background wake tests.
+	if err := os.WriteFile(filepath.Join(eng.DataDir(), "config.toml"), []byte("background_wake = \"off\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	eng.prov = &workerAsyncUIProvider{file: file}
 	var events []wireEvent
 	var sid string
