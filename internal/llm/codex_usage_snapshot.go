@@ -40,6 +40,19 @@ type CodexUsageWindow struct {
 	Stale            bool     `json:"stale"`
 }
 
+// Informative reports whether a window carries any data. The ChatGPT backend
+// can return a placeholder window (used 0 %, no duration, no reset) on plans
+// with a single limit; every view hides it instead of showing a bar labelled
+// "window duration unknown" with no reset (1.0.38).
+func (w *CodexUsageWindow) Informative() bool {
+	if w == nil {
+		return false
+	}
+	return (w.WindowSeconds != nil && *w.WindowSeconds > 0) ||
+		(w.ResetsAt != nil && *w.ResetsAt > 0) ||
+		(w.UsedPercent != nil && *w.UsedPercent > 0)
+}
+
 type CodexUsageCredits struct {
 	CapturedAt *time.Time `json:"captured_at,omitempty"`
 	HasCredits *bool      `json:"has_credits"`

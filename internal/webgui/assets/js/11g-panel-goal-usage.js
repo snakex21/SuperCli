@@ -497,26 +497,31 @@ var usageRenderSeq = 0;
 sections.usage = async function () {
   var seq = ++usageRenderSeq;
   var requestSession = activeSessionID;
-  panelContent.innerHTML = "";
+  function current() { return seq === usageRenderSeq && currentSection === "usage" && requestSession === activeSessionID; }
+  // Re-rendering a shown usage panel keeps it until all data has arrived and
+  // then patches the subscription sections in place (no loading flash).
+  var refreshing = Array.from(panelContent.children).some(function (node) { return node.classList.contains("usage-inspector"); });
+  if (!refreshing) {
+    panelContent.innerHTML = "";
+    panelContent.appendChild(i18nEl("div", "usage-loading", "common.loading"));
+  }
   panelContent.setAttribute("aria-busy", "true");
-  panelContent.appendChild(i18nEl("div", "usage-loading", "common.loading"));
+  // The account requests run alongside the statistics request; their errors
+  // stay local to their own section.
+  var accountsRequest = j("/api/codex/accounts").then(function (data) { return {data: data}; }, function (error) { return {error: error}; });
+  var claudeRequest = j("/api/claude/account").then(function (data) { return {data: data}; }, function (error) { return {error: error}; });
   try {
     var stats = normalizeStats(await j(statsURL()));
-    if (seq !== usageRenderSeq || currentSection !== "usage" || requestSession !== activeSessionID) return;
-    panelContent.innerHTML = "";
-    panelContent.appendChild(renderUsageInspector(stats));
-    try {
-      var accounts = await j("/api/codex/accounts");
-      if (seq === usageRenderSeq && currentSection === "usage" && requestSession === activeSessionID) panelContent.appendChild(renderCodexUsageDashboard(accounts));
-    } catch (accountError) {
-      if (seq === usageRenderSeq && currentSection === "usage") panelContent.appendChild(el("div", "usage-caption", t("acct.usage.title") + ": " + accountError.message));
+    var accounts = await accountsRequest, claude = await claudeRequest;
+    if (!current()) return;
+    var nodes = [renderUsageInspector(stats)];
+    nodes.push(accounts.error ? el("div", "usage-caption", t("acct.usage.title") + ": " + accounts.error.message) : renderCodexUsageDashboard(accounts.data));
+    nodes.push(claude.error ? el("div", "usage-caption", "Claude: " + claude.error.message) : renderClaudeUsageDashboard(claude.data));
+    if (typeof reconcileChildren === "function") {
+      var swap = function () { reconcileChildren(panelContent, nodes); };
+      if (refreshing && typeof preservePanelState === "function") preservePanelState(swap); else swap();
     }
-    try {
-      var claude = await j("/api/claude/account");
-      if (seq === usageRenderSeq && currentSection === "usage" && requestSession === activeSessionID) panelContent.appendChild(renderClaudeUsageDashboard(claude));
-    } catch (claudeError) {
-      if (seq === usageRenderSeq && currentSection === "usage") panelContent.appendChild(el("div", "usage-caption", "Claude: " + claudeError.message));
-    }
+    else { panelContent.innerHTML = ""; nodes.forEach(function (node) { panelContent.appendChild(node); }); }
   } catch (e) {
     if (seq === usageRenderSeq && currentSection === "usage") {
       panelContent.innerHTML = "";

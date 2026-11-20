@@ -70,6 +70,7 @@ func (e *Engine) backgroundFor(sid, home string) *sessionBackground {
 	}
 	bg := &sessionBackground{e: e, sid: sid, home: home, events: make(chan agent.Event, 256), loops: map[*agent.Loop]struct{}{}}
 	bg.sched = agent.NewWakeScheduler(e.wakeConfig(home), bg.state, bg.startWake, bg.held)
+	bg.sched.SetReleaseHook(func() { e.syncHub.backgroundWakeHeld(sid, 0, 0) })
 	e.bg[sid] = bg
 	go bg.pump()
 	return bg
@@ -146,8 +147,25 @@ func (bg *sessionBackground) publishCount() {
 	}
 }
 
+// held: automatic wake-ups paused at the cap. The view shows a persistent
+// banner with a Resume button (1.0.38; before, only a toast that was easy to
+// miss, so the conversation looked idle while reports piled up).
 func (bg *sessionBackground) held(unseen int) {
-	bg.e.syncHub.background(bg.sid, wireEvent{Type: "background_held", Run: unseen, Step: bg.sched.Config().MaxConsecutive})
+	bg.e.syncHub.backgroundWakeHeld(bg.sid, unseen, bg.sched.Config().MaxConsecutive)
+}
+
+// ResumeBackgroundWake ends a hold at the automatic wake-up cap: the budget
+// is restored and the held reports start an automatic turn right away.
+// ok=false: the conversation has no background state in this process.
+func (e *Engine) ResumeBackgroundWake(sid string) bool {
+	e.bgMu.Lock()
+	bg := e.bg[sid]
+	e.bgMu.Unlock()
+	if bg == nil {
+		return false
+	}
+	bg.sched.Resume()
+	return true
 }
 
 func (bg *sessionBackground) pump() {

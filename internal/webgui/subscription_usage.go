@@ -50,7 +50,7 @@ func (e *Engine) subscriptionUsage() []subscriptionUsageView {
 					continue
 				}
 				for i, w := range []*llm.CodexUsageWindow{limit.Primary, limit.Secondary} {
-					if w == nil {
+					if !codexWindowInformative(w) {
 						continue
 					}
 					window := subscriptionWindow{ID: []string{"primary", "secondary"}[i], UsedPercent: w.UsedPercent, RemainingPercent: w.RemainingPercent, Stale: w.Stale}
@@ -79,4 +79,12 @@ func (e *Engine) subscriptionUsage() []subscriptionUsageView {
 		out = append(out, view)
 	}
 	return out
+}
+
+// codexWindowInformative reports whether a Codex window carries any data. The
+// ChatGPT backend returns a placeholder secondary window (used 0 %, window 0
+// min, no reset) on plans with a single limit; showing it as a bar without a
+// duration or reset only confuses.
+func codexWindowInformative(w *llm.CodexUsageWindow) bool {
+	return w.Informative()
 }

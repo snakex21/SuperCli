@@ -43,7 +43,7 @@ func (m Model) claudeUsageItems() []menuListItem {
 	var rows []menuListItem
 	for _, w := range m.menu.usage.claudeUsage.At(time.Now()).Windows {
 		seconds := w.WindowSeconds
-		label := m.codexWindowLabel(&seconds)
+		label := m.codexWindowLabel(&seconds, false)
 		if w.ID == "seven_day_opus" {
 			label = "Opus · " + label
 		}

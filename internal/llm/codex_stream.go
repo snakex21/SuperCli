@@ -353,6 +353,7 @@ func (p *CodexProvider) streamCodexSSEWithInput(ctx context.Context, r io.Reader
 	// arguments) for the Estimated usage of an aborted stream.
 	streamedNonWS := 0
 	var toolWatch toolStreamWatch
+	var argsProgress toolArgsProgress
 	fail := func(err error) {
 		if usage == nil && streamedNonWS > 0 {
 			in := 0
@@ -416,6 +417,9 @@ func (p *CodexProvider) streamCodexSSEWithInput(ctx context.Context, r io.Reader
 					return
 				}
 				if notice != "" && !emit(Delta{Notice: notice}) {
+					return
+				}
+				if progress := argsProgress.next(name, size); progress != nil && !emit(Delta{ToolArgs: progress}) {
 					return
 				}
 			}

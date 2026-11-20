@@ -10,11 +10,16 @@ import (
 // result, tool progress). The GUI shows it so a working agent can be told
 // apart from a stalled one ("no progress for 6 min"). Zero for an idle worker.
 type WorkerLiveness struct {
-	// Phase is "model" (waiting for / streaming the model's answer) or
-	// "tool" (at least one tool call is executing).
+	// Phase is "model" (waiting for / streaming the model's answer),
+	// "args" (the model is writing a tool call's arguments, e.g. a file's
+	// content; the call has not started yet) or "tool" (at least one tool
+	// call is executing).
 	Phase string
-	// Tool names the first tool of the executing batch (Phase "tool").
+	// Tool names the call being written (Phase "args") or the first tool of
+	// the executing batch (Phase "tool").
 	Tool string
+	// ArgsBytes is the streamed argument size (Phase "args").
+	ArgsBytes int
 	// OpenCalls is the number of tool calls without a result yet.
 	OpenCalls int
 	// PhaseSince is when the current phase began.
@@ -45,9 +50,19 @@ func (w *Worker) liveObserve(ev Event, now time.Time) {
 	switch e := ev.(type) {
 	case MessageEvent, ReasoningEvent, DoneEvent, steeringDeliveryEvent:
 		w.live.LastProgressAt = now
+	case ToolArgsProgressEvent:
+		w.live.LastProgressAt = now
+		if w.live.Phase == "tool" {
+			break // a later call of the same batch; execution is what runs now
+		}
+		if w.live.Phase != "args" || w.live.Tool != e.Tool {
+			w.live.Phase, w.live.Tool, w.live.PhaseSince, w.live.ToolProgress = "args", e.Tool, now, ""
+		}
+		w.live.ArgsBytes = e.Bytes
 	case ToolCallEvent:
 		w.live.LastProgressAt = now
 		w.live.OpenCalls++
+		w.live.ArgsBytes = 0
 		if w.live.Phase != "tool" {
 			w.live.Phase, w.live.Tool, w.live.PhaseSince, w.live.ToolProgress = "tool", e.Name, now, ""
 		}

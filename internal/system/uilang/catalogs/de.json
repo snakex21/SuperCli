@@ -996,6 +996,7 @@
   "acct.usage.reset": "Zurücksetzung",
   "acct.usage.period": "Zeitfenster {duration}",
   "acct.usage.windowUnknown": "Dauer des Zeitfensters nicht verfügbar",
+  "acct.usage.windowAdditional": "Zusätzliches Limit",
   "acct.usage.captured": "Aktualisiert {time}",
   "acct.usage.plan": "Tarif",
   "acct.usage.credits": "Guthaben",

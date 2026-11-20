@@ -127,6 +127,10 @@
         <input type="file" id="phone-files-input" multiple hidden data-i18n-aria="composer.attach" aria-label="Attach files">
         <input type="file" id="phone-photo-input" accept="image/*" capture="environment" hidden data-i18n-aria="composer.takePhoto" aria-label="Take photo">
         <input type="file" id="phone-video-input" accept="video/*" capture="environment" hidden data-i18n-aria="composer.recordVideo" aria-label="Record video">
+        <div class="wake-held" id="wake-held" role="status" aria-live="polite" hidden>
+          <span class="wake-held-text"></span>
+          <button type="button" class="wake-held-resume" data-i18n="background.resume">Resume</button>
+        </div>
         <form class="composer" id="composer">
           <div class="box">
             <div class="attachment-list" id="attachment-list" hidden></div>

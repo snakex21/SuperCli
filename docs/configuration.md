@@ -371,7 +371,7 @@ user instructions and project instructions.
 | `darwin_parallel` | unset = auto by host | same logic as task_parallel |
 | `background_wake` | `each` | what happens when a `task{async:true}` worker finishes after the coordinator's turn ended: `each` starts an automatic turn per completion (close completions batched), `all` waits until no background worker of the conversation is running, `off` keeps the report for your next message (and restores the old blocking wait at the end of a turn) |
 | `background_wake_debounce_ms` | 0 = 1500 | completions within this window share one automatic turn |
-| `background_wake_max_auto` | 0 = 10 | consecutive automatic turns without user input; further reports wait for your next message (loop guard) |
+| `background_wake_max_auto` | 0 = 20 | consecutive automatic turns without progress (no worker started/resumed, file change, command or goal update); a turn with progress resets the count; further reports wait for Resume or your next message (loop guard). GUI: Settings → Modes |
 
 ## Misc
 

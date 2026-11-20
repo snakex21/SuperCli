@@ -996,6 +996,7 @@
   "acct.usage.reset": "Lähtestamine",
   "acct.usage.period": "{duration} aken",
   "acct.usage.windowUnknown": "Akna kestus pole teada",
+  "acct.usage.windowAdditional": "Lisalimiit",
   "acct.usage.captured": "Uuendatud {time}",
   "acct.usage.plan": "Pakett",
   "acct.usage.credits": "Krediidid",

@@ -122,6 +122,16 @@ streamLoop:
 			closeReasoning()
 			return transcript.String(), toolCalls, usage, d.Err
 		}
+		if d.ToolArgs != nil {
+			// The model is still writing a tool call (liveness only).
+			select {
+			case out <- ToolArgsProgressEvent{Tool: d.ToolArgs.Name, Bytes: d.ToolArgs.Bytes}:
+			case <-ctx.Done():
+				closeReasoning()
+				return transcript.String(), toolCalls, usage, ctx.Err()
+			}
+			continue
+		}
 		if d.Notice != "" {
 			// Informational status (rate-limit retry etc.) — surface
 			// to the UI, never into the conversation text.

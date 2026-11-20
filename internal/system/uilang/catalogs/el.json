@@ -996,6 +996,7 @@
   "acct.usage.reset": "Επαναφορά",
   "acct.usage.period": "Παράθυρο {duration}",
   "acct.usage.windowUnknown": "Άγνωστη διάρκεια παραθύρου",
+  "acct.usage.windowAdditional": "Πρόσθετο όριο",
   "acct.usage.captured": "Ενημερώθηκε στις {time}",
   "acct.usage.plan": "Πρόγραμμα",
   "acct.usage.credits": "Πιστώσεις",

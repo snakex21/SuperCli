@@ -679,6 +679,11 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) (r
 		}
 	}
 	l.recordPhase("tool:"+tc.Name, time.Since(execStart))
+	if invalidatesEvidence && err == nil && res.Err == nil && !operationReplayed && !reused {
+		// An effect (worker started/resumed, file change, command, goal
+		// update) is progress for the automatic wake-up cap.
+		l.wakeProgress.Add(1)
+	}
 	if toolCallKind(tc.Name, tc.Arguments) == "mutation" && !res.Inert {
 		// Successful no-ops preserve verification. An attempted non-inert edit
 		// (even a failed/cancelled partial write) invalidates earlier checks.

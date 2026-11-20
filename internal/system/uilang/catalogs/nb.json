@@ -996,6 +996,7 @@
   "acct.usage.reset": "Nullstilles",
   "acct.usage.period": "{duration} periode",
   "acct.usage.windowUnknown": "Periodens varighet er ukjent",
+  "acct.usage.windowAdditional": "Ekstra grense",
   "acct.usage.captured": "Oppdatert {time}",
   "acct.usage.plan": "Abonnement",
   "acct.usage.credits": "Kreditter",

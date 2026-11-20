@@ -81,8 +81,11 @@ func (m Model) refreshSelectedCodexUsage() (tea.Model, tea.Cmd) {
 	return m.beginCodexUsageWith(true, label, loadCodexUsage)
 }
 
-func (m Model) codexWindowLabel(seconds *int64) string {
+func (m Model) codexWindowLabel(seconds *int64, secondary bool) string {
 	if seconds == nil || *seconds <= 0 {
+		if secondary {
+			return m.tr("acct.usage.windowAdditional")
+		}
 		return m.tr("acct.usage.windowUnknown")
 	}
 	n, key := *seconds, "acct.usage.durationSeconds"
@@ -185,12 +188,14 @@ func (m Model) codexUsageRows() []codexUsageMenuRow {
 		windows := 0
 		if usage != nil {
 			for _, limit := range usage.RateLimits {
-				for _, window := range []*llm.CodexUsageWindow{limit.Primary, limit.Secondary} {
-					if window == nil {
+				for slot, window := range []*llm.CodexUsageWindow{limit.Primary, limit.Secondary} {
+					// The backend's placeholder window (used 0 %, no duration,
+					// no reset) carries no information and is not listed.
+					if !codexUsageWindowInformative(window) {
 						continue
 					}
 					windows++
-					label := m.codexWindowLabel(window.WindowSeconds)
+					label := m.codexWindowLabel(window.WindowSeconds, slot == 1)
 					if limit.Name != "" {
 						label = limit.Name + " · " + label
 					} else if limit.ID != "" {
@@ -257,3 +262,5 @@ func (m Model) renderCodexUsageMenu() string {
 	}
 	return m.renderMenuPage(p)
 }
+
+func codexUsageWindowInformative(w *llm.CodexUsageWindow) bool { return w.Informative() }

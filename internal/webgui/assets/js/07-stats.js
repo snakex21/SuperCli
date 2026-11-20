@@ -242,6 +242,9 @@ function appendSidebarCost(parent, cost, providerTypes) {
   var sessionID = activeSessionID;
   var block = el("button", "side-cost cost-state-" + state);
   block.type = "button";
+  // Keyed so a refresh patches the shown block in place (no flicker); the
+  // click target is read from the node, so a patched block opens current data.
+  block.setAttribute("data-patch-key", "side-cost");
   block.title = t("cost.openDetails");
   block.setAttribute("aria-label", t("cost.openDetails") + ": " + costPrimary(cost));
   block.setAttribute("aria-haspopup", "dialog");
@@ -257,7 +260,8 @@ function appendSidebarCost(parent, cost, providerTypes) {
   var coverage = costCoverage(cost);
   if (coverage) block.appendChild(el("span", "side-cost-coverage", coverage));
   if (cost.ratesPending) block.appendChild(i18nEl("span", "side-cost-meta", "cost.pending"));
-  block.addEventListener("click", function () { if (state === "subscription") openPanel("usage"); else openCostDetails(sessionID); });
+  block.costOpen = function () { if (state === "subscription") openPanel("usage"); else openCostDetails(sessionID); };
+  block.addEventListener("click", function () { block.costOpen(); });
   parent.appendChild(block);
 }
 
@@ -744,14 +748,21 @@ function openCostDetails(sessionID) {
     var requestContext = costRatesContextKey();
     if (!current(seq, requestScope)) return;
     if (content.contains(document.activeElement) || document.activeElement === refresh) scope.focus();
-    content.replaceChildren(i18nEl("div", "usage-loading", "common.loading"));
+    // A refresh of shown details keeps them until the new data arrives.
+    var shown = content.querySelector(".cost-details-body");
+    if (!shown) content.replaceChildren(i18nEl("div", "usage-loading", "common.loading"));
     content.setAttribute("aria-busy", "true");
     refresh.disabled = true;
     try {
       var url = "/api/costs" + (requestScope === "session" ? "?session=" + encodeURIComponent(sessionID) : "");
       var data = await j(url, {signal: state.request.signal});
       if (!current(seq, requestScope)) return;
-      content.replaceChildren(renderCostDetails(data, fetchRates));
+      var body = renderCostDetails(data, fetchRates);
+      // Keep the shown subscription bars: patch them instead of re-creating.
+      var oldSummary = shown && shown.isConnected ? shown.querySelector(".subscription-summary") : null;
+      var newSummary = body.querySelector(".subscription-summary");
+      if (oldSummary && newSummary && typeof patchDomInPlace === "function") newSummary.replaceWith(patchDomInPlace(oldSummary, newSummary));
+      content.replaceChildren(body);
       observeCostRatesPending(Object.prototype.hasOwnProperty.call(data, "pending") ? !!data.pending : null,
         data.rates_generation, "popup", function () {
         return current(seq, requestScope) && requestContext === costRatesContextKey();
@@ -1040,8 +1051,18 @@ async function renderStats() {
 
   // Leave the independently usable config group connected (including focus).
   // Session/worker rows always precede it, whichever request finished first.
-  Array.from(targetBox.childNodes).forEach(function (node) { if (node !== configBox) node.remove(); });
-  Array.from(box.childNodes).forEach(function (node) { targetBox.insertBefore(node, configBox); });
+  // The subscription/cost block is patched in place, so periodic refreshes
+  // only change its text and bar widths instead of rebuilding it.
+  if (typeof reconcileChildren === "function") {
+    var oldCost = Array.from(targetBox.children).find(function (node) { return node.getAttribute("data-patch-key") === "side-cost"; });
+    var newCost = Array.from(box.children).find(function (node) { return node.getAttribute("data-patch-key") === "side-cost"; });
+    var costOpen = newCost && newCost.costOpen;
+    reconcileChildren(targetBox, Array.from(box.childNodes).concat([configBox]));
+    if (oldCost && oldCost.isConnected && costOpen) oldCost.costOpen = costOpen;
+  } else {
+    Array.from(targetBox.childNodes).forEach(function (node) { if (node !== configBox) node.remove(); });
+    Array.from(box.childNodes).forEach(function (node) { targetBox.insertBefore(node, configBox); });
+  }
   if (costSnapshot) observeCostRatesPending(costSnapshot.ratesPendingKnown ? costSnapshot.ratesPending : null,
     costSnapshot.ratesGeneration, "hud", function () {
     return current() && targetBox.isConnected;

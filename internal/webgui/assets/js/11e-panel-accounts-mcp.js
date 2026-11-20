@@ -4,13 +4,17 @@ var codexAccountsRenderSeq = 0;
 sections.accounts = async function () {
   var seq = ++codexAccountsRenderSeq;
   clearTimeout(codexPollTimer);
-  var got;
+  var got, claude = null, claudeError = null;
+  // Both requests finish before the panel changes, so a refresh never shows a
+  // half-empty panel; the usage dashboards are then patched in place.
+  var claudeRequest = j("/api/claude/account").then(function (data) { claude = data; }, function (error) { claudeError = error; });
   try { got = await j("/api/codex/accounts"); } catch (e) {
     if (seq === codexAccountsRenderSeq && currentSection === "accounts") panelContent.innerHTML = '<div class="note">' + escHtml(e.message) + "</div>";
     return;
   }
+  await claudeRequest;
   if (seq !== codexAccountsRenderSeq || currentSection !== "accounts") return;
-  panelContent.innerHTML = "";
+  var nodes = [];
   var g = el("div", "group");
   var accountsLabel = i18nEl("div", "g-label", "acct.title");
   var reloadAccounts = i18nEl("button", "g-act", "common.refresh");
@@ -56,14 +60,12 @@ sections.accounts = async function () {
     row.appendChild(act);
     g.appendChild(row);
   });
-  panelContent.appendChild(g);
-  panelContent.appendChild(renderCodexUsageDashboard(got, sections.accounts));
-  try {
-    var claude = await j("/api/claude/account");
-    if (seq === codexAccountsRenderSeq && currentSection === "accounts") panelContent.appendChild(renderClaudeUsageDashboard(claude, sections.accounts));
-  } catch (error) {
-    if (seq === codexAccountsRenderSeq && currentSection === "accounts") panelContent.appendChild(el("div", "usage-caption", "Claude: " + error.message));
-  }
+  nodes.push(g);
+  nodes.push(renderCodexUsageDashboard(got, sections.accounts));
+  if (claude && typeof renderClaudeUsageDashboard === "function") nodes.push(renderClaudeUsageDashboard(claude, sections.accounts));
+  else if (claudeError) nodes.push(el("div", "usage-caption", "Claude: " + claudeError.message));
+  if (typeof reconcileChildren === "function") reconcileChildren(panelContent, nodes);
+  else { panelContent.innerHTML = ""; nodes.forEach(function (node) { panelContent.appendChild(node); }); }
 };
 
 /* Browser sign-in finishes outside the GUI. Watch only that login (not usage),
@@ -168,8 +170,17 @@ function codexUsagePercentText(value) {
   if (percent === null) return "—";
   return statsFormatter("codexUsagePercent", {maximumFractionDigits: 1}).format(percent) + "%";
 }
-function codexUsageWindowLabel(seconds) {
-  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0) return t("acct.usage.windowUnknown");
+// The ChatGPT backend reports a placeholder window (used 0 %, no duration, no
+// reset) on plans with a single limit. It carries no information: hidden.
+function codexUsageWindowInformative(window) {
+  if (!window) return false;
+  var seconds = window.window_seconds, used = window.used_percent, reset = window.resets_at;
+  return (typeof seconds === "number" && seconds > 0) || (typeof reset === "number" && reset > 0) ||
+    (typeof used === "number" && Number.isFinite(used) && used > 0);
+}
+function codexUsageWindowLabel(seconds, slot) {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0)
+    return t(slot === "secondary" ? "acct.usage.windowAdditional" : "acct.usage.windowUnknown");
   var key = "acct.usage.durationSeconds", n = seconds;
   if (seconds % 86400 === 0) { key = "acct.usage.durationDays"; n = seconds / 86400; }
   else if (seconds % 3600 === 0) { key = "acct.usage.durationHours"; n = seconds / 3600; }
@@ -205,6 +216,7 @@ function codexUsageReset(value) {
 function renderCodexUsageDashboard(data, onUpdated) {
   data = data || {};
   var root = el("section", "usage-section codex-usage");
+  root.setAttribute("data-patch-key", "codex-usage");
   var head = el("div", "usage-section-head");
   head.appendChild(i18nEl("h3", "usage-section-title", "acct.usage.title"));
   function refreshButton(label, body) {
@@ -216,6 +228,7 @@ function renderCodexUsageDashboard(data, onUpdated) {
         if (updated.ok === false) toast(updated.error || t("common.error"));
         if (root.isConnected) {
           if (onUpdated) await onUpdated();
+          else if (typeof patchDomInPlace === "function") patchDomInPlace(root, renderCodexUsageDashboard(updated));
           else root.replaceWith(renderCodexUsageDashboard(updated));
         }
       } catch (error) {
@@ -239,6 +252,7 @@ function renderCodexUsageDashboard(data, onUpdated) {
   accounts.forEach(function (account) {
     var state = codexUsageAccountState(account), usage = account.usage || {};
     var card = el("article", "codex-usage-account " + state);
+    card.setAttribute("data-patch-key", "codex|" + (account.label || ""));
     var title = el("div", "codex-usage-account-head");
     title.appendChild(el("strong", "", account.label || ""));
     title.appendChild(el("span", "codex-usage-state", t("acct.usage." + state)));
@@ -250,11 +264,11 @@ function renderCodexUsageDashboard(data, onUpdated) {
     if (account.usage_error) card.appendChild(el("div", "codex-usage-error", account.usage_error));
     var windows = 0;
     (usage.rate_limits || []).forEach(function (limit) {
-      [limit.primary, limit.secondary].forEach(function (window) {
-        if (!window) return;
+      [limit.primary, limit.secondary].forEach(function (window, slot) {
+        if (!codexUsageWindowInformative(window)) return;
         windows++;
         var row = el("div", "codex-usage-window" + (window.stale ? " stale" : ""));
-        var label = codexUsageWindowLabel(window.window_seconds);
+        var label = codexUsageWindowLabel(window.window_seconds, slot ? "secondary" : "primary");
         if (limit.name || limit.id) label = (limit.name || limit.id) + " · " + label;
         row.appendChild(el("div", "codex-usage-window-label", label));
         var metrics = el("div", "codex-usage-window-values");

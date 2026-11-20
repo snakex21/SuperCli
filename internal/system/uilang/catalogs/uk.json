@@ -996,6 +996,7 @@
   "acct.usage.reset": "Скидання",
   "acct.usage.period": "Вікно {duration}",
   "acct.usage.windowUnknown": "Тривалість вікна недоступна",
+  "acct.usage.windowAdditional": "Додатковий ліміт",
   "acct.usage.captured": "Оновлено {time}",
   "acct.usage.plan": "Тариф",
   "acct.usage.credits": "Кредити",

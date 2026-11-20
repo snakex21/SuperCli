@@ -2642,3 +2642,20 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
   font-size: var(--fs-xs); line-height: 1.45; color: var(--danger);
   background: color-mix(in srgb, var(--danger) 9%, transparent);
 }
+
+/* 1.0.38: automatic wake-ups paused at the cap: persistent banner + Resume. */
+.wake-held {
+  display: flex; align-items: center; gap: 10px; box-sizing: border-box;
+  max-width: calc(46rem - 40px); width: calc(100% - 40px); margin: 0 auto 6px; padding: 8px 12px;
+  border-radius: var(--radius); font-size: var(--fs-sm); color: var(--text);
+  background: color-mix(in srgb, var(--status-running) 10%, var(--raise));
+  border: 1px solid color-mix(in srgb, var(--status-running) 55%, var(--line));
+}
+.wake-held[hidden] { display: none; }
+.wake-held .wake-held-text { flex: 1; min-width: 0; }
+.wake-held .wake-held-resume {
+  flex: none; padding: 4px 12px; border-radius: 6px; font: inherit; font-weight: 600; cursor: pointer;
+  color: var(--status-running); background: transparent; border: 1px solid var(--status-running);
+}
+.wake-held .wake-held-resume:hover { background: color-mix(in srgb, var(--status-running) 14%, transparent); }
+.wake-held .wake-held-resume:disabled { opacity: .6; cursor: default; }

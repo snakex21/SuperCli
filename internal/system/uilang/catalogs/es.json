@@ -996,6 +996,7 @@
   "acct.usage.reset": "Restablecimiento",
   "acct.usage.period": "Ventana de {duration}",
   "acct.usage.windowUnknown": "Duración de la ventana no disponible",
+  "acct.usage.windowAdditional": "Límite adicional",
   "acct.usage.captured": "Actualizado {time}",
   "acct.usage.plan": "Plan",
   "acct.usage.credits": "Créditos",

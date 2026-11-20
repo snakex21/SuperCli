@@ -996,6 +996,7 @@
   "acct.usage.reset": "Obnova",
   "acct.usage.period": "Period {duration}",
   "acct.usage.windowUnknown": "Trajanje perioda nije dostupno",
+  "acct.usage.windowAdditional": "Dodatno ograničenje",
   "acct.usage.captured": "Ažurirano {time}",
   "acct.usage.plan": "Paket",
   "acct.usage.credits": "Krediti",

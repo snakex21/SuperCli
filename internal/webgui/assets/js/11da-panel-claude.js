@@ -115,6 +115,8 @@ async function renderClaudeLogin(templates) {
 function renderClaudeUsageDashboard(data, onUpdated) {
   data = data || {};
   var root = el("section", "usage-section claude-usage");
+  // Keyed: a refresh patches the shown bars in place instead of rebuilding.
+  root.setAttribute("data-patch-key", "claude-usage");
   var head = el("div", "usage-section-head");
   head.appendChild(el("h3", "usage-section-title", t("claude.usage.title")));
   var refresh = el("button", "btn", t("subscription.refresh"));
@@ -125,6 +127,7 @@ function renderClaudeUsageDashboard(data, onUpdated) {
       var updated = await jpost("/api/claude/usage", {});
       if (root.isConnected) {
         if (onUpdated) await onUpdated();
+        else if (typeof patchDomInPlace === "function") patchDomInPlace(root, renderClaudeUsageDashboard(updated));
         else root.replaceWith(renderClaudeUsageDashboard(updated));
         if (typeof renderStats === "function") await renderStats();
       }

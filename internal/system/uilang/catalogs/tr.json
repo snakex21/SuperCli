@@ -996,6 +996,7 @@
   "acct.usage.reset": "Sıfırlanma",
   "acct.usage.period": "{duration} dönemi",
   "acct.usage.windowUnknown": "Dönem süresi bilinmiyor",
+  "acct.usage.windowAdditional": "Ek limit",
   "acct.usage.captured": "Son güncelleme: {time}",
   "acct.usage.plan": "Plan",
   "acct.usage.credits": "Krediler",

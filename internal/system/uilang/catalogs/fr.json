@@ -996,6 +996,7 @@
   "acct.usage.reset": "Réinitialisation",
   "acct.usage.period": "Fenêtre de {duration}",
   "acct.usage.windowUnknown": "Durée de la fenêtre indisponible",
+  "acct.usage.windowAdditional": "Limite supplémentaire",
   "acct.usage.captured": "Mis à jour {time}",
   "acct.usage.plan": "Forfait",
   "acct.usage.credits": "Crédits",

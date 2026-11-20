@@ -996,6 +996,7 @@
   "acct.usage.reset": "Återställning",
   "acct.usage.period": "{duration} period",
   "acct.usage.windowUnknown": "Periodens längd är okänd",
+  "acct.usage.windowAdditional": "Extra gräns",
   "acct.usage.captured": "Uppdaterat {time}",
   "acct.usage.plan": "Abonnemang",
   "acct.usage.credits": "Krediter",

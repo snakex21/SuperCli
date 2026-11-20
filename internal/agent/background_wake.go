@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"supercli/internal/llm"
@@ -38,8 +39,17 @@ const (
 )
 
 const (
-	DefaultWakeDebounce       = 1500 * time.Millisecond
-	DefaultWakeMaxConsecutive = 10
+	DefaultWakeDebounce = 1500 * time.Millisecond
+	// DefaultWakeMaxConsecutive caps consecutive automatic turns that made no
+	// progress (1.0.38). A turn that starts or resumes a worker, changes a
+	// file, runs a command or updates the goal resets the count, so a
+	// coordinator that keeps a worker pool full is never held; one that only
+	// reads reports and answers stops after this many idle wake-ups.
+	// Before 1.0.38 every automatic turn counted and the cap was 10: with
+	// 30 parallel workers it was reached in ~15 minutes while the coordinator
+	// was still refilling freed slots, and the remaining reports waited for
+	// the user's next message.
+	DefaultWakeMaxConsecutive = 20
 )
 
 // ErrNothingToWake is returned by RunWake when no unseen worker report exists.
@@ -87,7 +97,7 @@ type WakeState struct {
 // WakeRequest is handed to the host's start callback.
 type WakeRequest struct {
 	Unseen      int
-	Consecutive int // automatic turns already started since the last user input
+	Consecutive int // automatic turns without progress since the last user input or progress
 }
 
 // WakeScheduler is safe for concurrent use. Signal is cheap and non-blocking;
@@ -102,8 +112,10 @@ type WakeScheduler struct {
 	timer       *time.Timer
 	consecutive int
 	heldNoticed bool
+	heldUnseen  int // >0 while reports are held at the cap
 	stopped     bool
 	afterFunc   func(time.Duration, func()) *time.Timer
+	onRelease   func() // host hook: the hold ended (user turn, resume, progress)
 }
 
 // NewWakeScheduler builds a scheduler. probe reports the conversation state,
@@ -159,12 +171,28 @@ func (s *WakeScheduler) UserTurn() {
 		return
 	}
 	s.mu.Lock()
-	s.consecutive = 0
-	s.heldNoticed = false
+	release := s.resetLocked()
 	s.mu.Unlock()
+	if release != nil {
+		release()
+	}
 }
 
-// WakeStarted counts one automatic turn against the consecutive cap.
+// resetLocked restores the budget and ends a hold; it returns the host's
+// release hook when a hold was active. Caller holds mu.
+func (s *WakeScheduler) resetLocked() func() {
+	wasHeld := s.heldUnseen > 0 || s.heldNoticed
+	s.consecutive = 0
+	s.heldNoticed = false
+	s.heldUnseen = 0
+	if wasHeld {
+		return s.onRelease
+	}
+	return nil
+}
+
+// WakeStarted counts one automatic turn against the consecutive cap. It is
+// counted as "no progress" until WakeFinished reports otherwise.
 func (s *WakeScheduler) WakeStarted() {
 	if s == nil {
 		return
@@ -174,7 +202,59 @@ func (s *WakeScheduler) WakeStarted() {
 	s.mu.Unlock()
 }
 
-// Consecutive reports automatic turns since the last user input.
+// WakeFinished closes an automatic turn. A turn that made progress (started
+// or resumed a worker, changed files, ran a command, updated the goal)
+// restores the whole budget: only consecutive idle wake-ups count.
+func (s *WakeScheduler) WakeFinished(progress bool) {
+	if s == nil || !progress {
+		return
+	}
+	s.mu.Lock()
+	release := s.resetLocked()
+	s.mu.Unlock()
+	if release != nil {
+		release()
+	}
+}
+
+// Resume ends a hold at the cap on the user's request (GUI "Resume" button)
+// without a chat message: the budget is restored and held reports wake the
+// conversation right away.
+func (s *WakeScheduler) Resume() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	release := s.resetLocked()
+	s.mu.Unlock()
+	if release != nil {
+		release()
+	}
+	s.Signal()
+}
+
+// Held reports the number of reports waiting at the cap (0 = not held).
+func (s *WakeScheduler) Held() int {
+	if s == nil {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.heldUnseen
+}
+
+// SetReleaseHook registers a callback for the end of a hold (host UI state).
+func (s *WakeScheduler) SetReleaseHook(fn func()) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.onRelease = fn
+	s.mu.Unlock()
+}
+
+// Consecutive reports automatic turns without progress since the last user
+// input (or the last automatic turn that made progress).
 func (s *WakeScheduler) Consecutive() int {
 	if s == nil {
 		return 0
@@ -216,8 +296,11 @@ func (s *WakeScheduler) fire() {
 	}
 	if consecutive >= cfg.MaxConsecutive {
 		s.mu.Lock()
-		notify := !s.heldNoticed
+		// Re-notify when more reports arrived so the host's banner count is
+		// current; the first notice also starts the hold.
+		notify := !s.heldNoticed || s.heldUnseen != state.Unseen
 		s.heldNoticed = true
+		s.heldUnseen = state.Unseen
 		s.mu.Unlock()
 		if notify && s.held != nil {
 			s.held(state.Unseen)
@@ -239,11 +322,15 @@ type BackgroundWakeEvent struct {
 
 func (BackgroundWakeEvent) event() {}
 
-// BackgroundWakeHeldEvent: the consecutive automatic-turn cap was reached and
-// Unseen reports wait for the next user message.
+// BackgroundWakeHeldEvent: the cap of consecutive automatic turns without
+// progress was reached and Unseen reports wait for the next user message (or
+// an explicit resume).
 type BackgroundWakeHeldEvent struct {
 	Unseen int
 	Limit  int
+	// First is true for the notice that starts a hold; later ones only
+	// update the waiting count.
+	First bool
 }
 
 func (BackgroundWakeHeldEvent) event() {}
@@ -260,7 +347,7 @@ func (BackgroundAgentsEvent) event() {}
 // WakeHeldNotice is the user-facing text when the consecutive cap holds
 // reports until the next message.
 func WakeHeldNotice(unseen, limit int) string {
-	return fmt.Sprintf("Background results held: %d finished agent report(s) wait for your next message (automatic wake-up limit %d reached).", unseen, limit)
+	return fmt.Sprintf("Automatic wake-up paused: %d finished agent report(s) wait for your next message (%d automatic turns in a row made no progress; limit background_wake_max_auto).", unseen, limit)
 }
 
 // SetWakeScheduler attaches a host-owned scheduler. Several loops of the same
@@ -291,11 +378,13 @@ func (l *Loop) SetBackgroundWake(cfg WakeConfig) *WakeScheduler {
 		return existing
 	}
 	var s *WakeScheduler
+	var holding atomic.Bool
 	s = NewWakeScheduler(cfg, l.BackgroundWakeState, func(req WakeRequest) bool {
 		return l.Emit(BackgroundWakeEvent{Unseen: req.Unseen, Consecutive: req.Consecutive})
 	}, func(unseen int) {
-		l.Emit(BackgroundWakeHeldEvent{Unseen: unseen, Limit: s.Config().MaxConsecutive})
+		l.Emit(BackgroundWakeHeldEvent{Unseen: unseen, Limit: s.Config().MaxConsecutive, First: !holding.Swap(true)})
 	})
+	s.SetReleaseHook(func() { holding.Store(false) })
 	l.SetWakeScheduler(s)
 	return s
 }
@@ -352,8 +441,50 @@ func (l *Loop) backgroundWorkerFinished() {
 // automated event so the model neither treats reports as user words nor
 // restarts finished tasks.
 const wakeTurnHint = "[automatic wake-up — not user input] Background agent(s) you started have finished; their reports are the task-notification messages above. " +
-	"Tell the user the outcome concisely, or continue the planned work if more steps remain. Do not restart finished tasks. " +
+	"Keep pursuing the user's stated goal and standing instructions (below and in the goal state) without waiting for a new message: " +
+	"if more steps remain, start them now (e.g. refill freed worker slots when the user asked to keep agents busy); " +
+	"when the goal is reached or blocked, tell the user the outcome concisely. Do not restart finished tasks. " +
 	"A report shown only as a preview can be read in full with read_output using its handle."
+
+// wakeGoalBudget bounds the user's recent instructions repeated in a wake-up
+// hint (request-only; the messages themselves stay in history unchanged).
+const (
+	wakeGoalMessages = 3
+	wakeGoalRunes    = 500
+)
+
+// wakeUserGoal returns the user's latest instructions, oldest first, as a
+// compact block for an automatic turn. Long orchestrations push the user's
+// request far up the history (hundreds of worker reports later); repeating
+// it here keeps the coordinator on the goal across wake-ups so the user does
+// not have to restate it.
+func wakeUserGoal(msgs []llm.Message) string {
+	var picked []string
+	for i := len(msgs) - 1; i >= 0 && len(picked) < wakeGoalMessages; i-- {
+		if !llm.IsConversationUserTurn(msgs[i]) {
+			continue
+		}
+		text := strings.Join(strings.Fields(msgs[i].Content), " ")
+		if text == "" {
+			continue
+		}
+		if r := []rune(text); len(r) > wakeGoalRunes {
+			text = string(r[:wakeGoalRunes]) + "…"
+		}
+		picked = append(picked, text)
+	}
+	if len(picked) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\nThe user's most recent instructions (oldest first; still in force unless already done or superseded):")
+	for i := len(picked) - 1; i >= 0; i-- {
+		b.WriteString("\n- «")
+		b.WriteString(picked[i])
+		b.WriteString("»")
+	}
+	return b.String()
+}
 
 // RunWake starts an automatic turn for unseen background reports without
 // appending a user message. requireUnseen=false lets a host that loaded the
@@ -376,7 +507,7 @@ const wakeRunPrompt = "[automatic wake-up: background agents finished]"
 // prepareWakeRoute replaces prompt routing for an automatic turn: the
 // coordinator handles reports with no navigator call and no one-shot addons.
 func (l *Loop) prepareWakeRoute() {
-	l.implementationHintForRun = wakeTurnHint
+	l.implementationHintForRun = wakeTurnHint + wakeUserGoal(l.Messages)
 	l.screenshotForRun, l.headlessForRun = false, false
 	l.downloadForRun, l.downloadPageForRun = false, false
 	l.webForRun, l.webURLForRun = false, false

@@ -996,6 +996,7 @@
   "acct.usage.reset": "Atiestatīšana",
   "acct.usage.period": "{duration} periods",
   "acct.usage.windowUnknown": "Perioda ilgums nav pieejams",
+  "acct.usage.windowAdditional": "Papildu limits",
   "acct.usage.captured": "Atjaunināts {time}",
   "acct.usage.plan": "Plāns",
   "acct.usage.credits": "Kredīti",

@@ -12,15 +12,24 @@ var syncClockOffsetMS = 0;
 var syncProjectsPending = false;
 // Running background agents per conversation (server background_agents frames).
 var syncBackgroundCounts = Object.create(null);
+// Reports held at the automatic wake-up cap (server background_wake_held
+// frames): session -> {n, limit}. Shown as a banner with a Resume button.
+var syncWakeHeld = Object.create(null);
 function renderBackgroundAgents() {
   renderSessionBackground();
+  renderWakeHeld();
   var badge = $("#background-agents");
   if (!badge) return;
   var n = (activeSessionID && syncBackgroundCounts[activeSessionID]) || 0;
   // With the coordinator idle the conversation is still working: say so
   // plainly ("Working in background (2)"), not just a small counter.
   var status = $("#run-status"), mainState = status && status.dataset && status.dataset.state || "";
-  var idle = n > 0 && mainState !== "running" && mainState !== "pending";
+  var mainIdle = mainState !== "running" && mainState !== "pending";
+  // 1.0.38: the badge never contradicts the worker panel. While the
+  // coordinator is idle, workers the panel shows as running count too, so
+  // "Ready" next to "working: 22" in the panel always comes with the badge.
+  if (mainIdle && typeof workerOverviewRunningCount === "function") n = Math.max(n, workerOverviewRunningCount());
+  var idle = n > 0 && mainIdle;
   var text = n > 0 ? t(idle ? "background.working" : "background.agents").replace("{n}", String(n)) : "";
   if (badge.textContent !== text) badge.textContent = text;
   badge.hidden = n <= 0;
@@ -28,6 +37,37 @@ function renderBackgroundAgents() {
   syncToggleClass(badge, "idle", idle);
   syncToggleClass($("#composer"), "bg-working", idle);
   syncToggleClass($("#status-dot"), "background", n > 0);
+}
+function renderWakeHeld() {
+  var box = $("#wake-held");
+  if (!box) return;
+  var held = activeSessionID && syncWakeHeld[activeSessionID];
+  box.hidden = !held;
+  if (!held) return;
+  var text = t("background.heldBanner").replace("{n}", String(held.n)).replace("{limit}", String(held.limit || ""));
+  var label = box.querySelector(".wake-held-text");
+  if (label && label.textContent !== text) label.textContent = text;
+  var btn = box.querySelector(".wake-held-resume");
+  if (btn && !btn._bound) {
+    btn._bound = true;
+    btn.addEventListener("click", resumeWakeHeld);
+  }
+}
+// One click: the server restores the wake-up budget and the held reports
+// start an automatic turn; the banner goes away with the server's frame.
+function resumeWakeHeld() {
+  var id = activeSessionID, box = $("#wake-held");
+  if (!id || !box) return Promise.resolve(false);
+  var btn = box.querySelector(".wake-held-resume");
+  if (btn) btn.disabled = true;
+  return Promise.resolve(jpost("/api/background/resume", {session: id})).then(function () {
+    delete syncWakeHeld[id];
+    renderWakeHeld();
+    return true;
+  }, function (error) {
+    if (typeof toast === "function") toast(t("background.resumeFailed") + (error && error.message ? ": " + error.message : ""));
+    return false;
+  }).finally(function () { if (btn) btn.disabled = false; });
 }
 function syncToggleClass(node, name, on) {
   if (node && node.classList && typeof node.classList.toggle === "function") node.classList.toggle(name, on);
@@ -286,6 +326,12 @@ function syncHandleFrame(frame) {
     if (typeof loadPromptQueue === "function") loadPromptQueue();
     return;
   }
+  if (frame.type === "background_wake_held") {
+    if (frame.count > 0) syncWakeHeld[frame.session_id] = {n: frame.count, limit: frame.limit || 0};
+    else delete syncWakeHeld[frame.session_id];
+    renderWakeHeld();
+    return;
+  }
   if (frame.type === "background_agents") {
     if (frame.count > 0) syncBackgroundCounts[frame.session_id] = frame.count;
     else delete syncBackgroundCounts[frame.session_id];
@@ -306,6 +352,8 @@ function syncHandleFrame(frame) {
     syncRuns = Object.create(null);
     syncBackgroundCounts = Object.create(null);
     Object.keys(frame.background || {}).forEach(function (id) { syncBackgroundCounts[id] = frame.background[id]; });
+    syncWakeHeld = Object.create(null);
+    Object.keys(frame.held || {}).forEach(function (id) { syncWakeHeld[id] = {n: frame.held[id], limit: frame.limit || 0}; });
     renderBackgroundAgents();
     (frame.runs || []).forEach(function (info) {
       if (syncFollowingTurn && info.turn_id === syncFollowingTurn && !syncSession) {

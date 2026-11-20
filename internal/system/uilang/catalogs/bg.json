@@ -996,6 +996,7 @@
   "acct.usage.reset": "Нулиране",
   "acct.usage.period": "Период {duration}",
   "acct.usage.windowUnknown": "Продължителността не е налична",
+  "acct.usage.windowAdditional": "Допълнителен лимит",
   "acct.usage.captured": "Обновено {time}",
   "acct.usage.plan": "План",
   "acct.usage.credits": "Кредити",

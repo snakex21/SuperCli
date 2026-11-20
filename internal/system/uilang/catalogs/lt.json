@@ -996,6 +996,7 @@
   "acct.usage.reset": "Atnaujinimas",
   "acct.usage.period": "{duration} laikotarpis",
   "acct.usage.windowUnknown": "Laikotarpio trukmė nežinoma",
+  "acct.usage.windowAdditional": "Papildomas limitas",
   "acct.usage.captured": "Atnaujinta {time}",
   "acct.usage.plan": "Planas",
   "acct.usage.credits": "Kreditai",

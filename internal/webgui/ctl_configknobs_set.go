@@ -153,6 +153,16 @@ func knobSet(c *config.TomlConfig, key, val string) error {
 		}
 		c.MaxParallelAgents = n
 		return nil
+	case "background_wake_max_auto":
+		n := 0
+		if err := setInt(&n); err != nil {
+			return err
+		}
+		if n < 0 {
+			return fmt.Errorf("background_wake_max_auto must be 0 (default) or a positive number")
+		}
+		c.BackgroundWakeMaxAuto = n
+		return nil
 	case "max_parallel_agents_per_provider":
 		m, err := config.ParseProviderAgentLimits(val)
 		if err != nil {

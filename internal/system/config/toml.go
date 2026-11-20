@@ -219,8 +219,10 @@ type TomlConfig struct {
 	// BackgroundWakeDebounceMS batches completions arriving within this
 	// window into one automatic turn; 0 = 1500 ms.
 	BackgroundWakeDebounceMS int `toml:"background_wake_debounce_ms"`
-	// BackgroundWakeMaxAuto caps consecutive automatic turns without user
-	// input; further reports wait for the next message. 0 = 10.
+	// BackgroundWakeMaxAuto caps consecutive automatic turns that made no
+	// progress (no worker started/resumed, no file change, command or goal
+	// update); further reports wait for the next message or the GUI's
+	// Resume button. A turn with progress restores the budget. 0 = 20.
 	BackgroundWakeMaxAuto int `toml:"background_wake_max_auto"`
 
 	// CachePrompt hints local llama.cpp-family servers to reuse the KV

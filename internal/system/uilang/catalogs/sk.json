@@ -996,6 +996,7 @@
   "acct.usage.reset": "Obnovenie",
   "acct.usage.period": "Okno {duration}",
   "acct.usage.windowUnknown": "Trvanie okna nie je dostupné",
+  "acct.usage.windowAdditional": "Dodatočný limit",
   "acct.usage.captured": "Aktualizované {time}",
   "acct.usage.plan": "Program",
   "acct.usage.credits": "Kredity",

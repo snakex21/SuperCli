@@ -30,6 +30,9 @@ func (m Model) handleBackgroundExternal(ev agent.Event) (Model, tea.Cmd, bool) {
 		m.backgroundAgents = e.Active
 		return m, nil, true
 	case agent.BackgroundWakeHeldEvent:
+		if !e.First {
+			return m, nil, true // same hold, only the waiting count changed
+		}
 		m.appendLine(m.palette.InputHint.Render(fmt.Sprintf(m.tr("tui.wake.held"), e.Unseen, e.Limit)))
 		m.refreshTranscript()
 		return m, nil, true

@@ -996,6 +996,7 @@
   "acct.usage.reset": "Resetare",
   "acct.usage.period": "Fereastră de {duration}",
   "acct.usage.windowUnknown": "Durata ferestrei nu este disponibilă",
+  "acct.usage.windowAdditional": "Limită suplimentară",
   "acct.usage.captured": "Actualizat {time}",
   "acct.usage.plan": "Plan",
   "acct.usage.credits": "Credite",

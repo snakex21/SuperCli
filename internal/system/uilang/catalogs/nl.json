@@ -996,6 +996,7 @@
   "acct.usage.reset": "Reset",
   "acct.usage.period": "Venster van {duration}",
   "acct.usage.windowUnknown": "Duur van het venster niet beschikbaar",
+  "acct.usage.windowAdditional": "Aanvullende limiet",
   "acct.usage.captured": "Bijgewerkt {time}",
   "acct.usage.plan": "Abonnement",
   "acct.usage.credits": "Credits",

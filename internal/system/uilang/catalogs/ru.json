@@ -996,6 +996,7 @@
   "acct.usage.reset": "Сброс",
   "acct.usage.period": "Окно {duration}",
   "acct.usage.windowUnknown": "Длительность окна недоступна",
+  "acct.usage.windowAdditional": "Дополнительный лимит",
   "acct.usage.captured": "Обновлено {time}",
   "acct.usage.plan": "Тариф",
   "acct.usage.credits": "Кредиты",

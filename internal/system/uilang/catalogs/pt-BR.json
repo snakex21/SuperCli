@@ -996,6 +996,7 @@
   "acct.usage.reset": "Redefinição",
   "acct.usage.period": "Janela de {duration}",
   "acct.usage.windowUnknown": "Duração da janela indisponível",
+  "acct.usage.windowAdditional": "Limite adicional",
   "acct.usage.captured": "Atualizado {time}",
   "acct.usage.plan": "Plano",
   "acct.usage.credits": "Créditos",

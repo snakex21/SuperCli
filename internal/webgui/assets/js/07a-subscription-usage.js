@@ -7,8 +7,18 @@ function subscriptionPercentText(value) {
   var percent = subscriptionPercent(value);
   return percent === null ? "—" : statsFormatter("subscriptionPercent", {maximumFractionDigits: 1}).format(percent) + "%";
 }
+// A window with no duration, no reset time and no usage above zero carries no
+// information: the ChatGPT backend reports such a placeholder "secondary"
+// window (used 0 %, window 0 min, reset 0) on plans that have a single limit.
+function subscriptionWindowInformative(window) {
+  if (!window) return false;
+  var seconds = window.window_seconds, used = window.used_percent;
+  return (typeof seconds === "number" && seconds > 0) || !!window.resets_at ||
+    (typeof used === "number" && Number.isFinite(used) && used > 0);
+}
 function subscriptionWindowLabel(window) {
-  var seconds = window.window_seconds, duration = t("acct.usage.windowUnknown");
+  var seconds = window.window_seconds;
+  var duration = t(window.id === "secondary" ? "acct.usage.windowAdditional" : "acct.usage.windowUnknown");
   if (seconds > 0) {
     var key = "acct.usage.durationSeconds", n = seconds;
     if (seconds % 86400 === 0) { key = "acct.usage.durationDays"; n /= 86400; }
@@ -29,7 +39,7 @@ function subscriptionWindowFresh(window) {
   return !window.stale && subscriptionWindowUsable(window);
 }
 function subscriptionPrimaryWindow(account) {
-  var windows = account.windows || [];
+  var windows = (account.windows || []).filter(subscriptionWindowInformative);
   var primary = function (w) { return w.id === "five_hour" || w.id === "primary"; };
   return windows.find(function (w) { return primary(w) && subscriptionWindowFresh(w); }) ||
     windows.find(function (w) { return subscriptionWindowFresh(w); }) ||
@@ -78,6 +88,7 @@ function subscriptionCostPrimary(cost) {
 function renderSubscriptionWindow(window, compact) {
   var fresh = subscriptionWindowFresh(window), usable = subscriptionWindowUsable(window);
   var root = el("span", "subscription-window" + (fresh ? "" : " stale"));
+  root.setAttribute("data-patch-key", String(window.id || ""));
   var remaining = usable ? subscriptionPercent(window.remaining_percent) : null;
   var line = el("span", "subscription-window-line");
   line.appendChild(el("span", "", subscriptionWindowLabel(window)));
@@ -102,10 +113,70 @@ function renderSubscriptionSummary(accounts, compact) {
   (accounts || []).forEach(function (account) {
     var card = el("span", "subscription-summary-account");
     card.appendChild(el("strong", "subscription-account-name", account.provider + (account.account && account.account !== "default" ? " · " + account.account : "")));
-    var windows = (account.windows || []).filter(function (w) { return !compact || ["primary", "secondary", "five_hour", "seven_day"].indexOf(w.id) >= 0; });
+    card.setAttribute("data-patch-key", account.provider + "|" + (account.account || ""));
+    var windows = (account.windows || []).filter(function (w) {
+      return subscriptionWindowInformative(w) && (!compact || ["primary", "secondary", "five_hour", "seven_day"].indexOf(w.id) >= 0);
+    });
     if (!windows.length) card.appendChild(el("span", "subscription-window-meta", t("acct.usage.noSnapshot")));
     windows.forEach(function (w) { card.appendChild(renderSubscriptionWindow(w, compact)); });
     root.appendChild(card);
   });
   return root;
+}
+
+/* In-place updates. A periodic or live refresh must not clear and rebuild a
+   panel that already shows data (visible flicker, lost hover/scroll/focus):
+   the existing nodes stay and only changed text, attributes and widths are
+   written. Only listener-free subtrees are patched; a node whose
+   data-patch-key differs is replaced, so keyed controls never keep a stale
+   closure for another account. */
+function patchDomInPlace(target, source) {
+  if (!target || !source) return target || source;
+  if (target.nodeType !== source.nodeType || target.nodeName !== source.nodeName ||
+      (target.nodeType === 1 && target.getAttribute("data-patch-key") !== source.getAttribute("data-patch-key"))) {
+    target.replaceWith(source);
+    return source;
+  }
+  if (target.nodeType !== 1) {
+    if (target.nodeValue !== source.nodeValue) target.nodeValue = source.nodeValue;
+    return target;
+  }
+  Array.from(target.attributes).forEach(function (a) { if (!source.hasAttribute(a.name)) target.removeAttribute(a.name); });
+  Array.from(source.attributes).forEach(function (a) { if (target.getAttribute(a.name) !== a.value) target.setAttribute(a.name, a.value); });
+  if ("disabled" in source && target.disabled !== source.disabled) target.disabled = source.disabled;
+  var next = Array.from(source.childNodes);
+  next.forEach(function (child, i) {
+    var current = target.childNodes[i];
+    if (current) patchDomInPlace(current, child); else target.appendChild(child);
+  });
+  while (target.childNodes.length > next.length) target.removeChild(target.lastChild);
+  return target;
+}
+// Puts `nodes` into `host` in order. A new node whose data-patch-key matches a
+// current child of `host` is patched into that child instead, and children
+// that stay are never detached (only new nodes are inserted around them).
+function reconcileChildren(host, nodes) {
+  var keep = new Set();
+  var final = nodes.filter(Boolean).map(function (node) {
+    var key = node.nodeType === 1 ? node.getAttribute("data-patch-key") : null;
+    if (!key) return node;
+    var old = Array.from(host.children).find(function (child) {
+      return !keep.has(child) && child.getAttribute("data-patch-key") === key;
+    });
+    if (!old) return node;
+    keep.add(old);
+    return patchDomInPlace(old, node);
+  });
+  var wanted = new Set(final);
+  Array.from(host.childNodes).forEach(function (child) { if (!wanted.has(child)) child.remove(); });
+  final.forEach(function (node, i) {
+    var at = host.childNodes[i];
+    if (at !== node) host.insertBefore(node, at || null);
+  });
+  return final;
+}
+// Update an existing subscription summary in place (or return a new one).
+function updateSubscriptionSummary(existing, accounts, compact) {
+  var fresh = renderSubscriptionSummary(accounts, compact);
+  return existing ? patchDomInPlace(existing, fresh) : fresh;
 }

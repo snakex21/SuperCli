@@ -55,6 +55,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/workers", s.handleWorkers)
 	mux.HandleFunc("/api/workers/observations", s.handleWorkerObservations)
 	mux.HandleFunc("/api/workers/activity", s.handleWorkerActivity)
+	mux.HandleFunc("/api/background/resume", s.handleBackgroundResume)
 	mux.HandleFunc("/api/doctor", s.handleDoctor)
 	mux.HandleFunc("/api/session/rewind", s.handleSessionRewind)
 	mux.HandleFunc("/api/session/message/edit", s.handleSessionMessageEdit)

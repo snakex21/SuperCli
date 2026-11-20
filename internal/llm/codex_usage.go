@@ -127,8 +127,8 @@ func formatCodexUsageDetail(snapshot CodexUsageSnapshot, now time.Time, language
 			lines = append(lines, uilang.Text(language, "acct.usage.windowUnknown")+": "+unknown)
 		}
 		for _, w := range windows {
-			if w == nil {
-				continue
+			if !w.Informative() {
+				continue // placeholder window without data (1.0.38)
 			}
 			label := codexWindowName(w, uilang.Text(language, "acct.usage.windowUnknown"))
 			pct := unknown

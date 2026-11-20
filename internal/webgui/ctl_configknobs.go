@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"supercli/internal/agent"
 	"supercli/internal/llm"
 	"supercli/internal/system/config"
 )
@@ -81,6 +82,7 @@ func knobDefs() []knobDef {
 		{"task_max_steps", "cap on model turns a delegated worker may take", knobInt, true},
 		{"task_max_tokens", "cap on a delegated worker's total token spend", knobInt, true},
 		{"max_parallel_agents", "how many delegated workers may run at the same time; empty = default 6, 0 or unlimited = no limit. High values multiply cost and provider rate limits (HTTP 429); a local LM Studio server answers one request at a time", knobText, true},
+		{"background_wake_max_auto", "automatic wake-ups for finished background agents in a row that made no progress (no new worker, file change, command or goal update) before reports wait for you; a turn with progress resets the count; 0 = default 20", knobInt, true},
 		{"max_parallel_agents_per_provider", "optional cap per provider, provider=number separated by ';' (e.g. lmstudio=1; openrouter=4); empty = none", knobText, true},
 		{"task_model", "worker model/host for task delegation (\"model\" or \"provider/model\"; empty = coordinator's model)", knobText, true},
 		{"task_reasoning_effort", "worker thinking level; empty = inherit main model", knobText, true},
@@ -217,6 +219,8 @@ func knobValue(c *config.TomlConfig, key string) (value, source, raw string) {
 			return "unlimited", "manual", "0"
 		}
 		return strconv.Itoa(*c.MaxParallelAgents), "manual", strconv.Itoa(*c.MaxParallelAgents)
+	case "background_wake_max_auto":
+		return intKnob(c.BackgroundWakeMaxAuto, strconv.Itoa(agent.DefaultWakeMaxConsecutive))
 	case "max_parallel_agents_per_provider":
 		if len(c.MaxParallelAgentsPerProvider) == 0 {
 			return "default (none)", "default", ""
@@ -418,6 +422,8 @@ func knobDefault(key string) string {
 		return "5"
 	case "max_parallel_agents":
 		return strconv.Itoa(config.DefaultMaxParallelAgents)
+	case "background_wake_max_auto":
+		return strconv.Itoa(agent.DefaultWakeMaxConsecutive)
 	default:
 		return ""
 	}

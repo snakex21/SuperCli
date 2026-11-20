@@ -340,6 +340,9 @@ func runWorkerLoopLocked(ctx context.Context, w *Worker, prompt string, workers 
 			}
 			emit(progress)
 			delete(toolCalls, e.ID)
+		case ToolArgsProgressEvent:
+			// The model is writing a call (e.g. a large file): UI-only.
+			emit(WorkerProgressEvent{Kind: "tool_args", Tool: e.Tool, Bytes: e.Bytes})
 		case ToolProgressEvent:
 			// Live progress of a long tool (e.g. the last output line of a
 			// build): UI-only, never part of the report or evidence.

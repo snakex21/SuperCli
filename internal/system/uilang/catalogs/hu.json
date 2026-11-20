@@ -996,6 +996,7 @@
   "acct.usage.reset": "Visszaállítás",
   "acct.usage.period": "{duration} időablak",
   "acct.usage.windowUnknown": "Az időablak hossza nem érhető el",
+  "acct.usage.windowAdditional": "További korlát",
   "acct.usage.captured": "Frissítve: {time}",
   "acct.usage.plan": "Csomag",
   "acct.usage.credits": "Kreditek",

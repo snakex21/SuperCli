@@ -33,6 +33,9 @@ type wireEvent struct {
 	Output string   `json:"output,omitempty"`
 	Images []string `json:"images,omitempty"`
 	Err    string   `json:"err,omitempty"`
+	// Bytes: streamed size of a tool call the model is still writing
+	// (worker_progress kind "tool_args").
+	Bytes int `json:"bytes,omitempty"`
 	// Status carries the worker outcome on type "worker".
 	Status       string `json:"status,omitempty"`
 	Kind         string `json:"kind,omitempty"`
@@ -120,7 +123,7 @@ func toWireEvent(ev agent.Event) (wireEvent, bool) {
 		return wireEvent{Type: "worker_progress", ID: e.TaskID, Name: e.Agent, Kind: e.Kind, Model: e.Model, ReasoningEffort: e.ReasoningEffort,
 			DetailHandle: e.DetailHandle, Partial: e.Partial,
 			CallID: e.CallID, Tool: e.Tool, Args: e.Args, Output: e.Output, Err: e.Err,
-			ParentCallID: e.ParentCallID, Run: e.Run, Prompt: e.Prompt, Status: e.Status, Images: e.Images}, true
+			ParentCallID: e.ParentCallID, Run: e.Run, Prompt: e.Prompt, Status: e.Status, Images: e.Images, Bytes: e.Bytes}, true
 	case agent.DraftUsedEvent:
 		return wireEvent{Type: "notice", Text: fmt.Sprintf(
 			"draft-verify: %s · draft %s → verdict %s · saved ~%d tok",

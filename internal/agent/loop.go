@@ -69,11 +69,15 @@ type Loop struct {
 	sessionBusy atomic.Bool
 	// Background wake-up (background_wake.go): reports appended after the
 	// model's latest request, running detached workers and the host scheduler.
-	unseenNotices      atomic.Int32
-	backgroundActive   atomic.Int32
-	wakeMu             sync.Mutex
-	wake               *WakeScheduler
-	wakeTurn           bool // current Run is an automatic wake-up (owner-only)
+	unseenNotices    atomic.Int32
+	backgroundActive atomic.Int32
+	wakeMu           sync.Mutex
+	wake             *WakeScheduler
+	wakeTurn         bool // current Run is an automatic wake-up (owner-only)
+	// wakeProgress counts effectful tool calls of the current Run (workers
+	// started/resumed, file changes, commands, goal updates). An automatic
+	// turn with none counts against the wake-up cap (WakeScheduler).
+	wakeProgress       atomic.Int32
 	conversationEpoch  atomic.Uint64
 	backgroundMu       sync.Mutex
 	backgroundPending  atomic.Bool
@@ -1083,6 +1087,16 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	ctx = llm.WithCallReason(ctx, llm.ReasonUnknown)
 	defer close(out)
 	defer l.releaseConversation()
+	l.wakeProgress.Store(0)
+	if wake {
+		// Runs before releaseConversation (LIFO): the cap must already know
+		// whether this turn made progress when a held report re-signals.
+		defer func() {
+			if s := l.WakeScheduler(); s != nil {
+				s.WakeFinished(l.wakeProgress.Load() > 0)
+			}
+		}()
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			l.blockHostPower(ctx)

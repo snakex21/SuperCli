@@ -233,7 +233,7 @@ type WorkerProgressEvent struct {
 	ReasoningEffort string
 	TaskID          string
 	Agent           string
-	Kind            string // started, tool_call, tool_result, tool_progress, steering_delivered, steering_rejected, finished
+	Kind            string // started, tool_args, tool_call, tool_result, tool_progress, steering_delivered, steering_rejected, finished
 	ParentCallID    string // parent task/send_message call; stable across worker tool calls
 	Run             int    // 1-based invocation within this worker
 	Prompt          string // UI-only instruction for this invocation
@@ -243,11 +243,24 @@ type WorkerProgressEvent struct {
 	Args            string
 	Output          string
 	Err             string
+	// Bytes: streamed argument size of a call the model is still writing
+	// (Kind "tool_args").
+	Bytes int
 	// Images are durable session-media paths from a tool_result, never pixels.
 	Images []string
 }
 
 func (WorkerProgressEvent) event() {}
+
+// ToolArgsProgressEvent: the model is still generating a tool call's
+// arguments (Bytes streamed so far). UI liveness only; the call executes
+// after the response is complete (ToolCallEvent).
+type ToolArgsProgressEvent struct {
+	Tool  string
+	Bytes int
+}
+
+func (ToolArgsProgressEvent) event() {}
 
 // DraftOverrideSink is the F11 contract for recording
 // "the verifier overrode the draft" instances so the

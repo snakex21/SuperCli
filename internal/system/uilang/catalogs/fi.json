@@ -996,6 +996,7 @@
   "acct.usage.reset": "Nollautuu",
   "acct.usage.period": "{duration} jakso",
   "acct.usage.windowUnknown": "Jakson kesto ei ole saatavilla",
+  "acct.usage.windowAdditional": "Lisäraja",
   "acct.usage.captured": "Päivitetty {time}",
   "acct.usage.plan": "Tilaus",
   "acct.usage.credits": "Krediitit",

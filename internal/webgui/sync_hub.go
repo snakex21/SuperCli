@@ -19,8 +19,12 @@ type syncFrame struct {
 	// Auto marks a server-started automatic turn (background wake-up).
 	Auto bool `json:"auto,omitempty"`
 	// Count: running background agents (type background_agents).
-	Count       int            `json:"count,omitempty"`
-	Background  map[string]int `json:"background,omitempty"`
+	Count      int            `json:"count,omitempty"`
+	Background map[string]int `json:"background,omitempty"`
+	// Held: reports waiting at the automatic wake-up cap, per conversation
+	// (snapshot); Limit is the cap (type background_wake_held).
+	Held        map[string]int `json:"held,omitempty"`
+	Limit       int            `json:"limit,omitempty"`
 	State       string         `json:"state,omitempty"`
 	StartedAtMS int64          `json:"started_at_ms,omitempty"`
 	ServerNowMS int64          `json:"server_now_ms,omitempty"`
@@ -52,7 +56,11 @@ type syncHub struct {
 	runs     map[string]*liveSyncRun
 	// Running background agents per conversation, replayed in snapshots.
 	backgroundCounts map[string]int
-	subscribers      map[*syncSubscriber]struct{}
+	// Reports held at the automatic wake-up cap per conversation, replayed
+	// in snapshots so a refreshed view still shows the Resume banner.
+	backgroundHeld map[string]int
+	heldLimit      map[string]int
+	subscribers    map[*syncSubscriber]struct{}
 }
 
 func (h *syncHub) publishLocked(frame syncFrame) {
@@ -192,6 +200,15 @@ func (h *syncHub) subscribe(session, client string) (*syncSubscriber, syncFrame,
 			snapshot.Background[id] = n
 		}
 	}
+	if len(h.backgroundHeld) > 0 {
+		snapshot.Held = make(map[string]int, len(h.backgroundHeld))
+		for id, n := range h.backgroundHeld {
+			snapshot.Held[id] = n
+			if snapshot.Limit == 0 {
+				snapshot.Limit = h.heldLimit[id]
+			}
+		}
+	}
 	for id, run := range h.runs {
 		snapshot.Runs = append(snapshot.Runs, run.info)
 		if id == session && (client == "" || client != run.info.ClientID) {
@@ -261,4 +278,26 @@ func (h *syncHub) backgroundAgents(session string, count int) {
 		delete(h.backgroundCounts, session)
 	}
 	h.publishLocked(syncFrame{Type: "background_agents", SessionID: session, Count: count})
+}
+
+// backgroundWakeHeld publishes that a conversation's automatic wake-ups are
+// paused at the cap (unseen > 0: reports waiting) or resumed (unseen == 0).
+func (h *syncHub) backgroundWakeHeld(session string, unseen, limit int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.backgroundHeld == nil {
+		h.backgroundHeld = map[string]int{}
+		h.heldLimit = map[string]int{}
+	}
+	if unseen > 0 {
+		h.backgroundHeld[session] = unseen
+		h.heldLimit[session] = limit
+	} else {
+		if _, ok := h.backgroundHeld[session]; !ok {
+			return
+		}
+		delete(h.backgroundHeld, session)
+		delete(h.heldLimit, session)
+	}
+	h.publishLocked(syncFrame{Type: "background_wake_held", SessionID: session, Count: unseen, Limit: limit})
 }

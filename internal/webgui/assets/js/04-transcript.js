@@ -1441,6 +1441,13 @@ function resumeWorkerStatusSync() {
   workerStatusFailures = 0;
   return refreshWorkerStatusSnapshot();
 }
+// Workers this view shows as running (the badge must agree with the panel).
+function workerOverviewRunningCount() {
+  if (workerOverviewSession && typeof activeSessionID === "string" && activeSessionID && workerOverviewSession !== activeSessionID) return 0;
+  var n = 0;
+  Object.keys(workerOverview).forEach(function (id) { if (workerOverview[id] && workerOverview[id].status === "running") n++; });
+  return n;
+}
 function workerOverviewOrder(w) { var r = workerOverviewRank[w.status]; return r == null ? 2 : r; }
 function workerOverviewSummary(counts) {
   var parts = [t("task.workers")];
@@ -1482,6 +1489,7 @@ function renderWorkerOverview() {
   items.forEach(function (w) { counts[w.status] = (counts[w.status] || 0) + 1; });
   $("#worker-overview-summary").textContent = workerOverviewSummary(counts);
   workerOverviewView = { panel: panel, list: list, items: items, counts: counts };
+  if (typeof renderBackgroundAgents === "function") renderBackgroundAgents();
   panel.hidden = !items.length;
   // Collapse once nothing is working so the panel does not cover the chat,
   // unless the user already chose otherwise during this run.
@@ -2248,6 +2256,15 @@ var WORKER_STALL_MS = 5 * 60 * 1000;
 var workerLiveTimer = null;
 function workerNow() { return typeof syncServerNow === "function" ? syncServerNow() : Date.now(); }
 function workerLiveDuration(ms) { return typeof fmtDuration === "function" ? fmtDuration(ms) : Math.round(ms / 1000) + "s"; }
+function workerLiveSize(bytes) {
+  bytes = bytes > 0 ? bytes : 0;
+  return typeof fmtSize === "function" ? fmtSize(bytes) : bytes + " B";
+}
+// Server progress labels with a fixed meaning are shown translated.
+var WORKER_CHECKPOINT_WAIT = "waiting for the checkpoint snapshot of another agent";
+function workerProgressText(text) {
+  return text === WORKER_CHECKPOINT_WAIT ? t("task.waitCheckpoint") : text;
+}
 function workerLiveToggle(node, name, on) {
   if (node && node.classList && typeof node.classList.toggle === "function") node.classList.toggle(name, on);
 }
@@ -2258,9 +2275,18 @@ function noteWorkerLiveEvent(row, ev) {
   else {
     var live = row._liveness || (row._liveness = {phase: "model", since: now, last: now, open: 0});
     live.last = Math.max(live.last || 0, now);
-    if (ev.kind === "tool_call") {
+    if (ev.kind === "tool_args") {
+      // The model is still writing this call (e.g. a file's content); it
+      // has not started executing. A later call of a running batch is not
+      // what the worker waits for.
+      if (live.phase !== "tool") {
+        if (live.phase !== "args" || (live.tool || "") !== (ev.tool || "")) { live.phase = "args"; live.tool = ev.tool || ""; live.since = now; live.progress = ""; }
+        live.bytes = ev.bytes || 0;
+      }
+    } else if (ev.kind === "tool_call") {
       live.open = (live.open || 0) + 1;
       live.progress = "";
+      live.bytes = 0;
       if (live.phase !== "tool") { live.phase = "tool"; live.tool = ev.tool || ""; live.since = now; }
     } else if (ev.kind === "tool_result") {
       live.open = Math.max(0, (live.open || 0) - 1);
@@ -2278,7 +2304,8 @@ function applyWorkerLivenessSnapshot(row, worker, serverNow) {
   var last = Math.max(map(worker.last_progress_at), prev.last || 0);
   var samePhase = prev.phase === worker.phase && (prev.tool || "") === (worker.phase_tool || "");
   row._liveness = {phase: worker.phase, tool: worker.phase_tool || "", since: map(worker.phase_since) || (samePhase && prev.since) || last,
-    last: last, progress: worker.tool_progress || (samePhase ? prev.progress || "" : ""), open: prev.open || 0};
+    last: last, progress: worker.tool_progress || (samePhase ? prev.progress || "" : ""), open: prev.open || 0,
+    bytes: Math.max(worker.phase_bytes || 0, samePhase ? prev.bytes || 0 : 0)};
   renderWorkerLiveness(row);
 }
 function workerLivenessView(row) {
@@ -2287,10 +2314,12 @@ function workerLivenessView(row) {
   var now = workerNow(), quiet = Math.max(0, now - (live.last || now)), phase = Math.max(0, now - (live.since || now));
   var step = live.phase === "tool" ?
     t("task.liveTool").replace("{tool}", toolDisplayName(live.tool || "tool")).replace("{time}", workerLiveDuration(phase)) :
+    live.phase === "args" ?
+    t("task.liveArgs").replace("{tool}", toolDisplayName(live.tool || "tool")).replace("{size}", workerLiveSize(live.bytes)).replace("{time}", workerLiveDuration(phase)) :
     t("task.liveModel").replace("{time}", workerLiveDuration(phase));
   if (quiet >= WORKER_STALL_MS) return {stalled: true, text: t("task.stalled").replace("{time}", workerLiveDuration(quiet)) + " · " + step};
   var parts = [step];
-  if (live.progress) parts.push(clip(live.progress, 90));
+  if (live.progress) parts.push(clip(workerProgressText(live.progress), 90));
   parts.push(t("task.liveLast").replace("{time}", workerLiveDuration(quiet)));
   return {stalled: false, text: parts.join(" · ")};
 }
@@ -2586,6 +2615,9 @@ function toolElapsed(row, at) {
     var now = at > 0 ? at : (typeof syncServerNow === "function" ? syncServerNow() : Date.now());
     return Math.max(0, now - row._startedAtMS);
   }
+  // A card rebuilt from history has neither start time: no duration rather
+  // than "NaNmNaNs" when its worker's report arrives (1.0.38).
+  if (typeof row._t0 !== "number" || !isFinite(row._t0)) return null;
   return Math.max(0, performance.now() - row._t0);
 }
 
@@ -3004,6 +3036,7 @@ function addWorkerProgress(ev) {
   // rebuilt from history has none); status sync can then confirm it.
   if (ev.run > 0 && !row._taskRun && ev.parent_call_id && (toolRows[ev.parent_call_id] === row || row._parentCallID === ev.parent_call_id)) row._taskRun = ev.run;
   noteWorkerLiveEvent(row, ev);
+  if (ev.kind === "tool_args") return true; // liveness only, not an activity item
   if (ev.kind === "started") {
     row._taskStatus = "running";
     row.classList.remove("done", "failed");
@@ -3058,7 +3091,7 @@ function addWorkerProgress(ev) {
         if (statusNode && statusNode.parentNode) statusNode.parentNode.insertBefore(progressNode, statusNode);
         else item.appendChild(progressNode);
       }
-      setNodeText(progressNode, clip(ev.output || "", 120));
+      setNodeText(progressNode, clip(workerProgressText(ev.output || ""), 120));
     }
     return true;
   }

@@ -9,8 +9,17 @@ import (
 	"path/filepath"
 	"strings"
 
+	tools "supercli/internal/tools/core"
 	"supercli/internal/tools/sandbox"
 )
+
+// CheckpointWaitProgress is the live progress label of a file/command tool
+// that waits for the turn's checkpoint lock: parallel workers of one
+// coordinator turn share it, and a whole-workspace snapshot taken for
+// another worker's command can hold it for a long time. Before 1.0.38 such a
+// wait looked like the tool itself hanging ("Creating file running · 3m").
+// The GUI translates this exact text.
+const CheckpointWaitProgress = "waiting for the checkpoint snapshot of another agent"
 
 var errBeforePinNotCurrent = errors.New("checkpoint before snapshot requires a successful capture retry after an earlier failure; tool did not run")
 
@@ -40,8 +49,11 @@ func (t *Turn) ensureBeforeForTool(ctx context.Context, name string, args json.R
 // ensureBeforeForToolNotice additionally returns a user-visible notice when a
 // ctx_execute baseline had to be narrowed or skipped because of snapshot limits.
 func (t *Turn) ensureBeforeForToolNotice(ctx context.Context, name string, args json.RawMessage) (string, error) {
-	if err := t.mu.LockContext(ctx); err != nil {
-		return "", err
+	if !t.mu.TryLock() {
+		tools.ReportToolProgress(ctx, tools.ToolProgress{Message: CheckpointWaitProgress})
+		if err := t.mu.LockContext(ctx); err != nil {
+			return "", err
+		}
 	}
 	defer t.mu.Unlock()
 	var external []string

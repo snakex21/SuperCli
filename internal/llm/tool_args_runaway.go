@@ -286,3 +286,36 @@ func (w *toolStreamWatch) observe(name string, argBytes int) (notice string, err
 	}
 	return "", nil
 }
+
+// Tool-argument progress (1.0.38): a large create_file/patch_file call can
+// take minutes to generate; before, the GUI showed only "model thinking" with
+// a growing "last activity" while kilobytes were arriving. One progress
+// delta once a call reaches toolArgsProgressMin bytes (small calls finish
+// before anyone could read a label), then every toolArgsProgressStep bytes
+// or toolArgsProgressEvery, whichever comes first.
+const (
+	toolArgsProgressMin   = 1 << 10
+	toolArgsProgressStep  = 2 << 10
+	toolArgsProgressEvery = time.Second
+)
+
+type toolArgsProgress struct {
+	name  string
+	bytes int
+	at    time.Time
+}
+
+// next returns a progress report to emit, or nil when throttled.
+func (p *toolArgsProgress) next(name string, bytes int) *ToolArgsProgress {
+	if bytes < toolArgsProgressMin {
+		return nil
+	}
+	now := toolStreamClock()
+	if name == p.name && !p.at.IsZero() {
+		if bytes <= p.bytes || (bytes < p.bytes+toolArgsProgressStep && now.Sub(p.at) < toolArgsProgressEvery) {
+			return nil
+		}
+	}
+	p.name, p.bytes, p.at = name, bytes, now
+	return &ToolArgsProgress{Name: name, Bytes: bytes}
+}

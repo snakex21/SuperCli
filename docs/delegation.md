@@ -99,9 +99,16 @@ task-notification message.
 - **Policy:** `background_wake = "each" | "all" | "off"`. `all` waits until no
   background worker of the conversation runs. `off` never wakes; reports wait
   for the next message and the old in-turn wait is kept.
-- **Loop guard:** at most `background_wake_max_auto` (default 10) consecutive
-  automatic turns without user input; then reports are held (TUI line, GUI
-  toast) until you write again.
+- **Loop guard:** at most `background_wake_max_auto` (default 20) consecutive
+  automatic turns **without progress** (no worker started or resumed, no file
+  change, command or goal update); a turn with progress resets the count, so a
+  coordinator that keeps refilling a worker pool is never held. At the limit
+  the reports are held (TUI line; GUI banner "Automatic wake-up paused" with a
+  **Resume** button, also `POST /api/background/resume`) until you resume or
+  write again. Settings → Modes: "Automatic wake-ups without progress".
+- **Goal across wake-ups:** every automatic turn repeats the user's latest
+  instructions (up to 3 messages, 500 characters each, request-only) and asks
+  the coordinator to keep pursuing them, next to the persisted goal state.
 - **Compact reports:** a long report is stored in full and enters the context
   as a bounded preview with a `read_output` handle, so small local models
   (e.g. 32k context) are not flooded; the model fetches the rest on demand.

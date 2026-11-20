@@ -518,6 +518,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 		// arguments) for the Estimated usage of an aborted stream.
 		streamedNonWS := 0
 		var toolWatch toolStreamWatch
+		var argsProgress toolArgsProgress
 		var lastTimings *llamaTimings
 		sawResponse := false
 		sawPayload := false
@@ -677,6 +678,11 @@ func (p *OpenAIProvider) Complete(ctx context.Context, msgs []Message, tools []T
 						}
 						if notice != "" {
 							if err := emit(Delta{Notice: notice}); err != nil {
+								return err
+							}
+						}
+						if progress := argsProgress.next(acc.Name, acc.arguments.Len()); progress != nil {
+							if err := emit(Delta{ToolArgs: progress}); err != nil {
 								return err
 							}
 						}

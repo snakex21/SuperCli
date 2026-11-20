@@ -37,6 +37,7 @@ type webWorker struct {
 	// progress and the running tool's live progress line.
 	Phase          string `json:"phase,omitempty"`
 	PhaseTool      string `json:"phase_tool,omitempty"`
+	PhaseBytes     int    `json:"phase_bytes,omitempty"`
 	PhaseSince     int64  `json:"phase_since,omitempty"`
 	LastProgressAt int64  `json:"last_progress_at,omitempty"`
 	ToolProgress   string `json:"tool_progress,omitempty"`
@@ -57,6 +58,7 @@ func workerDTO(s agent.Snapshot) webWorker {
 	}
 	if live := s.Live; live.Phase != "" {
 		dto.Phase, dto.PhaseTool, dto.ToolProgress = live.Phase, live.Tool, live.ToolProgress
+		dto.PhaseBytes = live.ArgsBytes
 		dto.PhaseSince, dto.LastProgressAt = live.PhaseSince.UnixMilli(), live.LastProgressAt.UnixMilli()
 	}
 	return dto

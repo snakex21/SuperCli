@@ -996,6 +996,7 @@
   "acct.usage.reset": "Ponastavitev",
   "acct.usage.period": "Obdobje {duration}",
   "acct.usage.windowUnknown": "Trajanje obdobja ni na voljo",
+  "acct.usage.windowAdditional": "Dodatna omejitev",
   "acct.usage.captured": "Posodobljeno {time}",
   "acct.usage.plan": "Paket",
   "acct.usage.credits": "Dobroimetje",

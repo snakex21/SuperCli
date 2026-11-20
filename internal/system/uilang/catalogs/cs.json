@@ -996,6 +996,7 @@
   "acct.usage.reset": "Obnovení",
   "acct.usage.period": "Okno {duration}",
   "acct.usage.windowUnknown": "Délka okna není dostupná",
+  "acct.usage.windowAdditional": "Dodatečný limit",
   "acct.usage.captured": "Aktualizováno {time}",
   "acct.usage.plan": "Tarif",
   "acct.usage.credits": "Kredity",
