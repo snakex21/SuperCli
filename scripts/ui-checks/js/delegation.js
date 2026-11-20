@@ -78,6 +78,10 @@ export async function cleanup(){
   equal(workerOverview['worker-3'].status,'stopped','verified worker cancellation settled');
   check(worker._clock === null,'verified stopped worker clock released');
   check(!$('#worker-overview').open,'idle overview collapsed');
-  pruneWorkerOverview();check($('#worker-overview').hidden && !Object.keys(workerOverview).length,'new run prunes settled workers');
+  // 1.0.37: recently settled workers stay listed; past the window a new run prunes them.
+  pruneWorkerOverview();check(!$('#worker-overview').hidden && Object.keys(workerOverview).length,'new run keeps recently settled workers');
+  const recent = WORKER_OVERVIEW_RECENT_MS; WORKER_OVERVIEW_RECENT_MS = 0;
+  pruneWorkerOverview(); WORKER_OVERVIEW_RECENT_MS = recent;
+  check($('#worker-overview').hidden && !Object.keys(workerOverview).length,'new run prunes settled workers');
   newSession();check($('#worker-overview').hidden && !Object.keys(workerOverview).length,'new session clears workers');noErrors();
 }

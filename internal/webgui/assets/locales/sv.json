@@ -1215,5 +1215,13 @@
   "task.resumePrompt": "Återuppta {id} med send_message och fortsätt dess uppgift där den stannade; dess sparade konversation återställs.",
   "task.queued": "i kö (väntar på start)",
   "task.activityLive": "Arbetar. Verktygsanrop från före omladdningen av vyn visas inte här; nya visas live.",
-  "chat.jumpLatestNew": "{n} nya"
+  "chat.jumpLatestNew": "{n} nya",
+  "task.liveModel": "modellen tänker · {time}",
+  "task.liveTool": "{tool} körs · {time}",
+  "task.liveLast": "senaste aktivitet för {time} sedan",
+  "task.stalled": "inga framsteg på {time}",
+  "task.stalledHint": "Inga framsteg har rapporterats på länge. Den kanske väntar på ett långsamt modellsvar eller ett långt kommando; stoppa eller starta om den om den har fastnat.",
+  "task.restart": "Starta om",
+  "task.activityLoading": "Läser in verktygsanropen för den här körningen…",
+  "background.working": "Arbetar i bakgrunden ({n})"
 }

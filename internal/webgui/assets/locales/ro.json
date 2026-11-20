@@ -1215,5 +1215,13 @@
   "task.resumePrompt": "Reia {id} cu send_message și continuă-i sarcina de unde s-a oprit; conversația salvată este restaurată.",
   "task.queued": "în coadă (așteaptă pornirea)",
   "task.activityLive": "Lucrează. Apelurile de unelte dinaintea reîncărcării vizualizării nu sunt afișate aici; cele noi apar în timp real.",
-  "chat.jumpLatestNew": "{n} noi"
+  "chat.jumpLatestNew": "{n} noi",
+  "task.liveModel": "modelul gândește · {time}",
+  "task.liveTool": "{tool} rulează · {time}",
+  "task.liveLast": "ultima activitate acum {time}",
+  "task.stalled": "niciun progres de {time}",
+  "task.stalledHint": "Nu s-a raportat niciun progres de mult timp. Poate așteaptă un răspuns lent al modelului sau o comandă lungă; oprește-l sau repornește-l dacă s-a blocat.",
+  "task.restart": "Repornește",
+  "task.activityLoading": "Se încarcă apelurile de instrumente ale acestei rulări…",
+  "background.working": "Lucrează în fundal ({n})"
 }

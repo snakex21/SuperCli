@@ -206,6 +206,7 @@ func (r *Runner) Run(parent context.Context, req *Request) (*Result, error) {
 	}
 	if runErr == nil {
 		watchDone := make(chan struct{})
+		go reportCommandProgress(runCtx, watchDone, activity)
 		if idle > 0 {
 			go watchPrompt(watchDone, activity, idle, func(line string) {
 				stallMu.Lock()

@@ -1215,5 +1215,13 @@
   "task.resumePrompt": "Gjenoppta {id} med send_message og fortsett oppgaven der den stoppet; den lagrede samtalen gjenopprettes.",
   "task.queued": "i kø (venter på start)",
   "task.activityLive": "Arbeider. Verktøykall fra før visningen ble lastet på nytt vises ikke her; nye vises direkte.",
-  "chat.jumpLatestNew": "{n} nye"
+  "chat.jumpLatestNew": "{n} nye",
+  "task.liveModel": "modellen tenker · {time}",
+  "task.liveTool": "{tool} kjører · {time}",
+  "task.liveLast": "siste aktivitet for {time} siden",
+  "task.stalled": "ingen fremdrift på {time}",
+  "task.stalledHint": "Ingen fremdrift er rapportert på lenge. Den venter kanskje på et tregt modellsvar eller en lang kommando; stopp eller start den på nytt hvis den har kjørt seg fast.",
+  "task.restart": "Start på nytt",
+  "task.activityLoading": "Laster inn verktøykallene for denne kjøringen…",
+  "background.working": "Arbeider i bakgrunnen ({n})"
 }

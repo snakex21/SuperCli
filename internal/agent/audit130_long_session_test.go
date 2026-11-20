@@ -327,6 +327,7 @@ func TestA130_LongSessionRetainedUserContextDoesNotWedge(t *testing.T) {
 			cancel()
 			t.Fatal(err)
 		}
+		var compacted []AutoCompactEvent
 		for ev := range ch {
 			switch e := ev.(type) {
 			case ErrorEvent:
@@ -336,12 +337,20 @@ func TestA130_LongSessionRetainedUserContextDoesNotWedge(t *testing.T) {
 				}
 			case AutoCompactEvent:
 				compactions++
-				retained := a130RetainedTokens(l.Messages)
-				maxRetained = max(maxRetained, retained)
-				trail = append(trail, fmt.Sprintf("t%d: removed=%d est=%d retained=%dtok", turn, e.Removed, e.Estimated, retained))
+				compacted = append(compacted, e)
 			}
 		}
 		cancel()
+		// l.Messages belongs to the run goroutine until its channel closes;
+		// reading it while the turn runs raced (-race flake). The carry is
+		// measured once the turn has ended.
+		if len(compacted) > 0 {
+			retained := a130RetainedTokens(l.Messages)
+			maxRetained = max(maxRetained, retained)
+			for _, e := range compacted {
+				trail = append(trail, fmt.Sprintf("t%d: removed=%d est=%d retained=%dtok", turn, e.Removed, e.Estimated, retained))
+			}
+		}
 	}
 	t.Logf("compactions=%d trail=%v", compactions, trail)
 	t.Logf("first failure at turn %d: %v; %d of %d turns failed", failedAt, failure, failedTurns, turns)

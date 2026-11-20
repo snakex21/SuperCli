@@ -2576,3 +2576,58 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
   color: var(--text); background: transparent; border: 1px solid var(--line); cursor: pointer;
 }
 .task-row .worker-resume:hover { border-color: var(--status-running); color: var(--status-running); }
+
+/* 1.0.37: background work stays visible while the coordinator is idle. */
+.bg-agents-badge.idle {
+  font-weight: 600; padding: 2px 10px;
+  background: color-mix(in srgb, var(--status-running) 12%, transparent);
+  border-color: color-mix(in srgb, var(--status-running) 60%, transparent);
+}
+.composer.bg-working .box { border-color: color-mix(in srgb, var(--status-running) 45%, var(--line)); }
+.side-item .side-bg {
+  display: inline-flex; align-items: center; gap: 4px; margin-left: 7px;
+  color: var(--status-running); font-variant-numeric: tabular-nums;
+}
+.side-item .side-bg::before {
+  content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .side-item .side-bg::before { animation: bg-agents-pulse 1.6s ease-in-out infinite; }
+}
+.side-item.background:not(.running) .s::after { content: none; }
+
+/* 1.0.37: worker liveness — current step, last activity, stall warning. */
+.task-liveness {
+  margin: 0 0 8px; padding: 4px 8px; border-radius: 6px;
+  font: var(--fs-xs) var(--mono); color: var(--status-running);
+  background: color-mix(in srgb, var(--status-running) 8%, transparent);
+  overflow-wrap: anywhere;
+}
+.task-liveness[hidden], .worker-stall-actions[hidden], .worker-overview-live[hidden] { display: none; }
+.task-liveness.stalled { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.worker-stall-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 10px; }
+.worker-stall-hint { flex: 1 1 100%; color: var(--muted); font-size: var(--fs-xs); line-height: 1.45; }
+.worker-stall-actions button {
+  padding: 3px 10px; border-radius: 6px; font: inherit; font-size: var(--fs-xs);
+  color: var(--text); background: transparent; border: 1px solid var(--line); cursor: pointer;
+}
+.worker-stall-actions .worker-stop:hover { border-color: var(--danger); color: var(--danger); }
+.worker-stall-actions .worker-restart:hover { border-color: var(--status-running); color: var(--status-running); }
+.task-row.stalled > summary .tstat { color: var(--danger); }
+.task-activity-item .activity-progress {
+  grid-column: 2 / -1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  color: var(--faint); font: var(--fs-xs) var(--mono);
+}
+.worker-overview-live {
+  grid-column: 2 / -1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  color: var(--muted); font: var(--fs-xs) var(--mono); margin-top: -4px;
+}
+.worker-overview-item.stalled .worker-overview-live, .worker-overview-item.stalled .worker-overview-status { color: var(--danger); }
+/* State changes animate in place; rows are never removed and re-added. */
+.worker-overview-dot, .worker-overview-status { transition: background-color 240ms ease, color 240ms ease, box-shadow 240ms ease; }
+.worker-overview-item { transition: opacity 240ms ease; }
+@media (prefers-reduced-motion: reduce) {
+  .worker-overview-dot, .worker-overview-status, .worker-overview-item { transition: none; }
+}
+.status-dot.background:not(.busy):not(.pending) { background: var(--status-running); animation: pulse 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .status-dot.background { animation: none; } }

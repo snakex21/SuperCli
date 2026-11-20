@@ -1215,5 +1215,13 @@
   "task.resumePrompt": "Wznów {id} przez send_message i kontynuuj jego zadanie od miejsca przerwania; jego zapisana rozmowa zostanie przywrócona.",
   "task.queued": "w kolejce (czeka na start)",
   "task.activityLive": "Pracuje. Wywołania narzędzi sprzed odświeżenia widoku nie są tu pokazane; nowe pojawią się na żywo.",
-  "chat.jumpLatestNew": "{n} nowe"
+  "chat.jumpLatestNew": "{n} nowe",
+  "task.liveModel": "model myśli · {time}",
+  "task.liveTool": "{tool} działa · {time}",
+  "task.liveLast": "ostatnia aktywność {time} temu",
+  "task.stalled": "brak postępu od {time}",
+  "task.stalledHint": "Od dłuższego czasu nie zgłoszono postępu. Agent może czekać na wolną odpowiedź modelu albo na długie polecenie; jeśli utknął, zatrzymaj go lub uruchom ponownie.",
+  "task.restart": "Uruchom ponownie",
+  "task.activityLoading": "Wczytywanie wywołań narzędzi tego przebiegu…",
+  "background.working": "Pracuje w tle ({n})"
 }

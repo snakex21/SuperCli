@@ -13,13 +13,46 @@ var syncProjectsPending = false;
 // Running background agents per conversation (server background_agents frames).
 var syncBackgroundCounts = Object.create(null);
 function renderBackgroundAgents() {
+  renderSessionBackground();
   var badge = $("#background-agents");
   if (!badge) return;
   var n = (activeSessionID && syncBackgroundCounts[activeSessionID]) || 0;
-  var text = n > 0 ? t("background.agents").replace("{n}", String(n)) : "";
+  // With the coordinator idle the conversation is still working: say so
+  // plainly ("Working in background (2)"), not just a small counter.
+  var status = $("#run-status"), mainState = status && status.dataset && status.dataset.state || "";
+  var idle = n > 0 && mainState !== "running" && mainState !== "pending";
+  var text = n > 0 ? t(idle ? "background.working" : "background.agents").replace("{n}", String(n)) : "";
   if (badge.textContent !== text) badge.textContent = text;
   badge.hidden = n <= 0;
   badge.title = n > 0 ? t("background.agentsHint") : "";
+  syncToggleClass(badge, "idle", idle);
+  syncToggleClass($("#composer"), "bg-working", idle);
+  syncToggleClass($("#status-dot"), "background", n > 0);
+}
+function syncToggleClass(node, name, on) {
+  if (node && node.classList && typeof node.classList.toggle === "function") node.classList.toggle(name, on);
+}
+// Session list: a conversation whose agents work in the background is marked
+// busy too (pulsing dot and "N in background"), not only while its own turn
+// runs. Updated in place; the list is not rebuilt.
+function renderSessionBackground() {
+  var list = $("#session-list");
+  if (!list || typeof list.querySelectorAll !== "function") return;
+  list.querySelectorAll(".side-item[data-session-id]").forEach(function (item) {
+    var n = syncBackgroundCounts[item.dataset.sessionId] || 0;
+    item.classList.toggle("background", n > 0);
+    var chip = item.querySelector(".side-bg");
+    if (n > 0) {
+      var text = t("background.agents").replace("{n}", String(n));
+      if (!chip) {
+        chip = el("span", "side-bg");
+        var meta = item.querySelector(".s");
+        if (meta) meta.appendChild(chip); else item.appendChild(chip);
+      }
+      if (chip.textContent !== text) chip.textContent = text;
+      chip.title = t("background.agentsHint");
+    } else if (chip) chip.remove();
+  });
 }
 // A worker of a finished turn keeps running; its progress and report arrive
 // here (no live run carries them) and update the same task card.
@@ -133,6 +166,64 @@ function syncSessionOpened(id) {
   if (syncRefreshAgain && !syncRefreshPending) { syncRefreshAgain = false; syncRefreshView(); }
   else if (run && !run.attached && activeSessionID === id) syncRefreshView();
 }
+// A turn of the viewed conversation started elsewhere (another window won
+// the queued message, a phone, ...): its user message is shown at once and
+// stays until this view renders that run or saved history that contains it.
+// Before, a queued message vanished from this view when its row left the
+// queue and came back only after a history reload (seconds on a long chat).
+var syncEcho = null; // {session, text, node, turn, finishedAt}
+function syncLastUserText() {
+  if (typeof stream === "undefined" || !stream || typeof stream.querySelectorAll !== "function") return "";
+  var users = stream.querySelectorAll(".msg-user");
+  var last = users[users.length - 1];
+  var text = last && last.querySelector(".msg-user-text");
+  return text ? text.textContent : "";
+}
+function syncEchoNode(text) {
+  var node = addUserMsg(text, 0, []);
+  node.classList.add("pending-remote");
+  return node;
+}
+function syncEchoRunStarted(run) {
+  if (!run || !run.remote || run.auto || !run.prompt || !run.sessionID || run.sessionID !== activeSessionID) return;
+  if (activeRun && !activeRun.remote) return; // this view's own turn is shown
+  if (syncEcho && syncEcho.session === run.sessionID && syncEcho.text === run.prompt && syncEcho.node && syncEcho.node.isConnected) {
+    syncEcho.turn = run.turnID; // our bubble of a lost queue claim
+    return;
+  }
+  var node = syncLastUserText() === userMessageDisplayText(run.prompt, []) ? null : syncEchoNode(run.prompt);
+  syncEcho = {session: run.sessionID, text: run.prompt, node: node, turn: run.turnID, finishedAt: 0};
+}
+function syncEchoRunFinished(turnID) {
+  if (syncEcho && (!syncEcho.turn || syncEcho.turn === turnID)) syncEcho.finishedAt = Date.now();
+}
+// The run is now rendered from its own events: the echo is no longer needed.
+function syncEchoAttached(run) {
+  if (syncEcho && syncEcho.turn === run.turnID) syncEcho = null;
+}
+// After saved history was rendered: drop the echo once history contains it
+// (or history fetched after the run finished does not); otherwise put the
+// pending bubble back, so the message never disappears in between.
+function syncAfterHistoryRender(id, fetchStartedAt) {
+  var echo = syncEcho;
+  if (!echo || echo.session !== id) return;
+  if ((activeRun && !activeRun.remote) || syncLastUserText() === userMessageDisplayText(echo.text, []) ||
+      (echo.finishedAt && fetchStartedAt >= echo.finishedAt)) { syncEcho = null; return; }
+  if (!echo.node || !echo.node.isConnected) echo.node = syncEchoNode(echo.text);
+}
+// A queued message this view tried to start was started by another view:
+// keep this view's own bubble as the echo of that run.
+function syncAdoptLostClaim(node, text) {
+  if (!node) return;
+  if (syncEcho && syncEcho.text === text && syncEcho.node && syncEcho.node.isConnected && syncEcho.node !== node) {
+    node.remove(); // the winner's message is already shown here
+    return;
+  }
+  node.classList.add("pending-remote");
+  var run = syncRuns[activeSessionID];
+  var live = run && run.remote && run.prompt === text;
+  syncEcho = {session: activeSessionID, text: text, node: node, turn: live ? run.turnID : "", finishedAt: live ? 0 : Date.now()};
+}
 function syncRemember(run, ev) {
   if (ev.type === "session_activity") { run.userSeq = ev.user_seq || 0; run.activity = ev; }
   if (ev.type === "question_closed") {
@@ -179,6 +270,7 @@ function syncMakeRun(info) {
       // Server-started turn for finished background agents: not user input.
       addEventLine(t("background.wake"), "auto-wake", "auto");
     } else {
+      syncEchoAttached(run);
       var node = addUserMsg(run.prompt, 0, []);
       if (run.activity) bindLiveMessageReceipt(node, run.activity);
     }
@@ -242,6 +334,7 @@ function syncHandleFrame(frame) {
   var id = frame.session_id;
   if (frame.type === "run_started") {
     syncRuns[id] = syncOwnRun(frame) ? frame : syncMakeRun(frame);
+    if (id === activeSessionID) syncEchoRunStarted(syncRuns[id]);
     syncRenderElsewhere();
     syncLoadSessions();
     return;
@@ -261,6 +354,7 @@ function syncHandleFrame(frame) {
     if (run.attached && !run.detached && activeRun === run && id === activeSessionID) syncRender(run, frame.event);
     else if (run.userSeq && id === syncSession && !syncOpeningSession && !syncRefreshPending) syncRefreshView();
   } else if (frame.type === "run_finished") {
+    syncEchoRunFinished(frame.turn_id);
     if (frame.queue_paused && id === activeSessionID && !pendingImmediate) {
       pauseQueue = true;
       if (typeof queueAutoDrain !== "undefined") queueAutoDrain = null;

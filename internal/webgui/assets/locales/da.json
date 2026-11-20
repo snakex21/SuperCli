@@ -1215,5 +1215,13 @@
   "task.resumePrompt": "Genoptag {id} med send_message og fortsæt dens opgave, hvor den stoppede; dens gemte samtale gendannes.",
   "task.queued": "i kø (venter på start)",
   "task.activityLive": "Arbejder. Værktøjskald fra før visningen blev genindlæst vises ikke her; nye vises live.",
-  "chat.jumpLatestNew": "{n} nye"
+  "chat.jumpLatestNew": "{n} nye",
+  "task.liveModel": "modellen tænker · {time}",
+  "task.liveTool": "{tool} kører · {time}",
+  "task.liveLast": "seneste aktivitet for {time} siden",
+  "task.stalled": "ingen fremskridt i {time}",
+  "task.stalledHint": "Der er ikke rapporteret fremskridt i lang tid. Den venter måske på et langsomt modelsvar eller en lang kommando; stop eller genstart den, hvis den sidder fast.",
+  "task.restart": "Genstart",
+  "task.activityLoading": "Indlæser værktøjskaldene for denne kørsel…",
+  "background.working": "Arbejder i baggrunden ({n})"
 }

@@ -1215,5 +1215,13 @@
   "task.resumePrompt": "Tęsk {id} per send_message nuo ten, kur sustojo; jo išsaugotas pokalbis atkuriamas.",
   "task.queued": "eilėje (laukia paleidimo)",
   "task.activityLive": "Dirba. Įrankių iškvietimai iki rodinio perkrovimo čia nerodomi; nauji atsiras realiu laiku.",
-  "chat.jumpLatestNew": "{n} nauji"
+  "chat.jumpLatestNew": "{n} nauji",
+  "task.liveModel": "modelis galvoja · {time}",
+  "task.liveTool": "{tool} vykdomas · {time}",
+  "task.liveLast": "paskutinė veikla prieš {time}",
+  "task.stalled": "nėra pažangos {time}",
+  "task.stalledHint": "Ilgą laiką nepranešta apie pažangą. Jis gali laukti lėto modelio atsakymo arba ilgos komandos; jei užstrigo, sustabdykite arba paleiskite iš naujo.",
+  "task.restart": "Paleisti iš naujo",
+  "task.activityLoading": "Įkeliami šio vykdymo įrankių iškvietimai…",
+  "background.working": "Dirba fone ({n})"
 }

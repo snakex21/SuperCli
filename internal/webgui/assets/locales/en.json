@@ -1215,5 +1215,13 @@
   "task.resumePrompt": "Resume {id} with send_message and continue its task from where it stopped; its saved conversation is restored.",
   "task.queued": "queued (waiting to start)",
   "task.activityLive": "Working. Tool calls made before this view was reloaded are not shown here; new ones appear live.",
-  "chat.jumpLatestNew": "{n} new"
+  "chat.jumpLatestNew": "{n} new",
+  "task.liveModel": "model thinking · {time}",
+  "task.liveTool": "{tool} running · {time}",
+  "task.liveLast": "last activity {time} ago",
+  "task.stalled": "no progress for {time}",
+  "task.stalledHint": "No progress has been reported for a long time. It may be waiting for a slow model reply or a long command; stop or restart it if it is stuck.",
+  "task.restart": "Restart",
+  "task.activityLoading": "Loading this run's tool calls…",
+  "background.working": "Working in background ({n})"
 }

@@ -49,9 +49,11 @@ type Worker struct {
 	Steps        int // model turns consumed across all runs
 	ToolNames    []string
 	Runs         int
-	activity     WorkerActivity  // last observed tool event; guarded by stateMu
-	lastEvidence string          // bounded latest-run observations; guarded by stateMu
-	uiActivity   json.RawMessage // immutable latest-run UI trail; guarded by stateMu
+	activity     WorkerActivity    // last observed tool event; guarded by stateMu
+	lastEvidence string            // bounded latest-run observations; guarded by stateMu
+	uiActivity   json.RawMessage   // immutable latest-run UI trail; guarded by stateMu
+	live         WorkerLiveness    // current run's liveness; guarded by stateMu
+	liveUI       *workerUIActivity // current run's UI journal; guarded by stateMu
 	// reasoningEffort follows this worker across background runs and continuations.
 	// It is applied only inside the worker loop, never to coordinator verdicts.
 	reasoningEffort   string
@@ -132,6 +134,8 @@ type Snapshot struct {
 	ToolNames       []string
 	Runs            int
 	Activity        WorkerActivity
+	// Live is the running worker's current phase and last progress time.
+	Live WorkerLiveness
 	// SessionID names the conversation the worker belongs to ("" when not
 	// persisted). The registry is process-wide, so ids alone do not identify
 	// a conversation's worker.
@@ -161,6 +165,7 @@ func (w *Worker) Snapshot() Snapshot {
 		ToolNames:       append([]string(nil), w.ToolNames...),
 		Runs:            w.Runs,
 		Activity:        w.activity,
+		Live:            w.live,
 		SessionID:       w.sessionID,
 	}
 }

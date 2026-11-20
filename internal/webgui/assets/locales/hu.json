@@ -1215,5 +1215,13 @@
   "task.resumePrompt": "Folytasd a(z) {id} ügynököt a send_message eszközzel onnan, ahol abbamaradt; a mentett beszélgetése visszaáll.",
   "task.queued": "sorban áll (indulásra vár)",
   "task.activityLive": "Dolgozik. A nézet újratöltése előtti eszközhívások itt nem látszanak; az újak élőben jelennek meg.",
-  "chat.jumpLatestNew": "{n} új"
+  "chat.jumpLatestNew": "{n} új",
+  "task.liveModel": "a modell gondolkodik · {time}",
+  "task.liveTool": "{tool} fut · {time}",
+  "task.liveLast": "utolsó aktivitás {time} ezelőtt",
+  "task.stalled": "nincs előrehaladás {time} óta",
+  "task.stalledHint": "Hosszú ideje nem jelzett előrehaladást. Lehet, hogy lassú modellválaszra vagy hosszú parancsra vár; ha elakadt, állítsa le vagy indítsa újra.",
+  "task.restart": "Újraindítás",
+  "task.activityLoading": "A futás eszközhívásainak betöltése…",
+  "background.working": "A háttérben dolgozik ({n})"
 }

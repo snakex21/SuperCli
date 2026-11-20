@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"supercli/internal/agent"
 	"supercli/internal/buildinfo"
@@ -31,6 +32,14 @@ type webWorker struct {
 	// process-wide, so the GUI adopts a snapshot for a card restored from
 	// history (no run number) only when it is this conversation's worker.
 	Session string `json:"session,omitempty"`
+	// Liveness of a running worker (server epoch ms; 0 when idle): its
+	// current phase ("model" or "tool"), since when, the latest observable
+	// progress and the running tool's live progress line.
+	Phase          string `json:"phase,omitempty"`
+	PhaseTool      string `json:"phase_tool,omitempty"`
+	PhaseSince     int64  `json:"phase_since,omitempty"`
+	LastProgressAt int64  `json:"last_progress_at,omitempty"`
+	ToolProgress   string `json:"tool_progress,omitempty"`
 }
 
 func workerDTO(s agent.Snapshot) webWorker {
@@ -39,13 +48,47 @@ func workerDTO(s agent.Snapshot) webWorker {
 		copy := s.Activity
 		activity = &copy
 	}
-	return webWorker{
+	dto := webWorker{
 		ID: s.ID, Agent: s.Agent, Description: s.Description, Model: s.Model,
 		Status: s.Status, LastError: s.LastError, TokensIn: s.TokensIn,
 		TokensOut: s.TokensOut, Steps: s.Steps, ToolNames: s.ToolNames,
 		Run: s.Runs, UpdatedAt: s.UpdatedAt.UnixMilli(), Activity: activity,
 		Session: s.SessionID,
 	}
+	if live := s.Live; live.Phase != "" {
+		dto.Phase, dto.PhaseTool, dto.ToolProgress = live.Phase, live.Tool, live.ToolProgress
+		dto.PhaseSince, dto.LastProgressAt = live.PhaseSince.UnixMilli(), live.LastProgressAt.UnixMilli()
+	}
+	return dto
+}
+
+// handleWorkerActivity returns the running worker's current tool journal
+// (the format saved with its report), so a card rebuilt after a refresh shows
+// every call of the run so far. 404 when the worker has no run in progress.
+func (s *Server) handleWorkerActivity(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	id := strings.TrimSpace(r.URL.Query().Get("id"))
+	sid := strings.TrimSpace(r.URL.Query().Get("session"))
+	if s.eng.workers == nil || id == "" || sid == "" {
+		http.Error(w, "session and id are required", http.StatusBadRequest)
+		return
+	}
+	worker, ok := s.eng.workers.Get(id)
+	if !ok || worker.Snapshot().SessionID != sid {
+		http.NotFound(w, r)
+		return
+	}
+	data, live := worker.LiveActivity()
+	if !live || len(data) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(data)
 }
 
 // handleWorkers lists the shared process registry or stops one active worker.
@@ -74,7 +117,7 @@ func (s *Server) handleWorkers(w http.ResponseWriter, r *http.Request) {
 		if sid != "" {
 			rows = append(rows, s.eng.savedWorkerRows(r.Context(), sid, seen)...)
 		}
-		writeJSON(w, map[string]any{"workers": rows, "counts": s.eng.workers.Counts()})
+		writeJSON(w, map[string]any{"workers": rows, "counts": s.eng.workers.Counts(), "server_now": time.Now().UnixMilli()})
 	case http.MethodPost:
 		var req struct {
 			ID     string `json:"id"`

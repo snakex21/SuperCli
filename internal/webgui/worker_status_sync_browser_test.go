@@ -207,7 +207,9 @@ toolRows['rebuilt-call']=rebuilt;
 nextWorkers=[Object.assign(snapshot('worker-18',1,'running','build.ps1'),{session:'fixture'})];await resumeWorkerStatusSync();
 check(workerOverview['worker-18'].status==='running'&&rebuilt._taskRun===1,'own running worker stayed unconfirmed: '+workerOverview['worker-18'].status);
 check(rebuilt._stat.textContent!==t('task.statusUnconfirmed')&&workerStatusTimer!==null,'live rebuilt card not monitored');
-check(rebuilt.querySelector('.task-activity-empty').textContent===t('task.activityLive'),'live card still claims no activity was recorded');
+// 1.0.37: the card loads the run's tool journal instead of saying earlier calls are not shown.
+var liveEmpty=rebuilt.querySelector('.task-activity-empty').textContent;
+check(liveEmpty===t('task.activityLoading')||liveEmpty===t('task.activityWaiting'),'live card still claims no activity was recorded: '+liveEmpty);
 nextWorkers=[Object.assign(snapshot('worker-18',1,'done','build.ps1'),{session:'fixture'})];await refreshWorkerStatusSnapshot();
 check(workerOverview['worker-18'].status==='done'&&rebuilt._stat.textContent===t('task.done')&&workerStatusTimer===null,'finished rebuilt card not settled');
 // Another conversation's worker with the same id is never adopted.

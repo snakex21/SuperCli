@@ -1215,5 +1215,13 @@
   "task.resumePrompt": "Setze {id} mit send_message fort und führe seine Aufgabe dort weiter, wo sie stoppte; seine gespeicherte Unterhaltung wird wiederhergestellt.",
   "task.queued": "in Warteschlange (wartet auf Start)",
   "task.activityLive": "Arbeitet. Werkzeugaufrufe vor dem Neuladen der Ansicht werden hier nicht gezeigt; neue erscheinen live.",
-  "chat.jumpLatestNew": "{n} neu"
+  "chat.jumpLatestNew": "{n} neu",
+  "task.liveModel": "Modell denkt · {time}",
+  "task.liveTool": "{tool} läuft · {time}",
+  "task.liveLast": "letzte Aktivität vor {time}",
+  "task.stalled": "kein Fortschritt seit {time}",
+  "task.stalledHint": "Seit längerer Zeit wurde kein Fortschritt gemeldet. Der Agent wartet vielleicht auf eine langsame Modellantwort oder einen langen Befehl; stoppe oder starte ihn neu, wenn er hängt.",
+  "task.restart": "Neu starten",
+  "task.activityLoading": "Werkzeugaufrufe dieses Laufs werden geladen…",
+  "background.working": "Arbeitet im Hintergrund ({n})"
 }

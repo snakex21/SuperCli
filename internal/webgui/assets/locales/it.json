@@ -1215,5 +1215,13 @@
   "task.resumePrompt": "Riprendi {id} con send_message e continua il suo compito da dove si è fermato; la sua conversazione salvata viene ripristinata.",
   "task.queued": "in coda (in attesa di avvio)",
   "task.activityLive": "In lavorazione. Le chiamate agli strumenti precedenti al ricaricamento della vista non sono mostrate qui; le nuove appaiono in tempo reale.",
-  "chat.jumpLatestNew": "{n} nuovi"
+  "chat.jumpLatestNew": "{n} nuovi",
+  "task.liveModel": "il modello sta pensando · {time}",
+  "task.liveTool": "{tool} in esecuzione · {time}",
+  "task.liveLast": "ultima attività {time} fa",
+  "task.stalled": "nessun progresso da {time}",
+  "task.stalledHint": "Nessun progresso segnalato da molto tempo. Potrebbe attendere una risposta lenta del modello o un comando lungo; fermalo o riavvialo se è bloccato.",
+  "task.restart": "Riavvia",
+  "task.activityLoading": "Caricamento delle chiamate agli strumenti di questa esecuzione…",
+  "background.working": "Al lavoro in background ({n})"
 }

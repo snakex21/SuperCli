@@ -926,7 +926,7 @@ async function loadWorkers() {
     var got = await j("/api/workers");
     renderWorkers(got && got.workers ? got.workers : []);
     if (bindings && got && Array.isArray(got.workers) && epoch === workerStatusEpoch && scope === workerStatusScope()) {
-      applyWorkerStatusSnapshot(got.workers, bindings);
+      applyWorkerStatusSnapshot(got.workers, bindings, got.server_now);
     }
   } catch (e) {
     host.innerHTML = "";
@@ -1356,6 +1356,8 @@ function setRunState(state, text) {
   var dot = $("#status-dot");
   dot.classList.toggle("busy", state === "running");
   dot.classList.toggle("pending", state === "pending");
+  // The background-work badge reads the coordinator state set here.
+  if (typeof renderBackgroundAgents === "function") renderBackgroundAgents();
 }
 function refreshRunLabels() {
   if (runStatus.dataset.runKey) runStatus.textContent = t(runStatus.dataset.runKey) + (runStatus.dataset.runSuffix || "");
@@ -1599,7 +1601,10 @@ async function sendPrompt(text, attachments, draft, queuedItem, dispatchScope) {
         handoffBlocked = true;
         terminalSeen = true;
         promptQueue = promptQueue.filter(function (q) { return q.id !== queuedItem.id; });
-        if (liveUserNode && liveUserNode.remove) liveUserNode.remove();
+        // The winning view's run shows this same message; keep ours on screen
+        // until this view renders that run (no remove / re-add).
+        if (liveUserNode && typeof syncAdoptLostClaim === "function") syncAdoptLostClaim(liveUserNode, text);
+        else if (liveUserNode && liveUserNode.remove) liveUserNode.remove();
         return;
       }
       rememberRunEvent(run, ev);

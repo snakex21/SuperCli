@@ -1215,5 +1215,13 @@
   "task.resumePrompt": "Nadaljuj {id} s send_message tam, kjer se je ustavil; njegov shranjeni pogovor se obnovi.",
   "task.queued": "v čakalni vrsti (čaka na zagon)",
   "task.activityLive": "Dela. Klici orodij pred ponovnim nalaganjem pogleda tukaj niso prikazani; novi se prikažejo v živo.",
-  "chat.jumpLatestNew": "{n} novo"
+  "chat.jumpLatestNew": "{n} novo",
+  "task.liveModel": "model razmišlja · {time}",
+  "task.liveTool": "{tool} teče · {time}",
+  "task.liveLast": "zadnja dejavnost pred {time}",
+  "task.stalled": "brez napredka {time}",
+  "task.stalledHint": "Dolgo ni bil sporočen noben napredek. Agent morda čaka na počasen odgovor modela ali dolg ukaz; če se je zataknil, ga ustavite ali znova zaženite.",
+  "task.restart": "Znova zaženi",
+  "task.activityLoading": "Nalaganje klicev orodij tega zagona…",
+  "background.working": "Dela v ozadju ({n})"
 }

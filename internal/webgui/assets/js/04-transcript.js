@@ -1120,9 +1120,16 @@ var workerOverview = {};
 var workerOverviewAutoOpen = true, workerOverviewUserToggled = false, workerOverviewBound = null;
 var workerOverviewView = null;
 var workerOverviewRank = { running: 0, unknown: 1, failed: 1, stopped: 1, done: 2 };
+// Conversation the overview belongs to, and how long a settled worker stays
+// listed (the panel must not vanish the moment the last worker finishes).
+var workerOverviewSession = "", WORKER_OVERVIEW_RECENT_MS = 10 * 60 * 1000;
+function workerOverviewOwner() {
+  return (typeof transcriptSessionID === "string" && transcriptSessionID) || (typeof activeSessionID === "string" ? activeSessionID : "");
+}
 function workerLabel(id) { return String(id || "Worker").replace(/^worker-(\d+)$/, "Worker $1"); }
 function resetWorkerOverview() {
   pauseWorkerStatusSync();
+  workerOverviewSession = "";
   workerOverview = {};
   workerOverviewView = null;
   workerOverviewUserToggled = false;
@@ -1131,12 +1138,31 @@ function resetWorkerOverview() {
   var list = $("#worker-overview-list");
   if (list) list.replaceChildren();
 }
-// A new run keeps only workers that still need attention; settled ones stay in the transcript.
+// A new run keeps workers that still need attention and those that settled
+// recently; older settled ones stay in the transcript only.
 function pruneWorkerOverview() {
   workerOverviewUserToggled = false;
+  var now = Date.now();
   Object.keys(workerOverview).forEach(function (id) {
     var w = workerOverview[id];
-    if (w.status === "done" || w.status === "stopped") { w.button.remove(); delete workerOverview[id]; }
+    if ((w.status === "done" || w.status === "stopped") && now - (w.settledAt || 0) >= WORKER_OVERVIEW_RECENT_MS) { w.button.remove(); delete workerOverview[id]; }
+  });
+  renderWorkerOverview();
+}
+// The same conversation's transcript is rebuilt (turn end, automatic turn,
+// sync refresh): keep the panel and its buttons, re-bind each worker to its
+// rebuilt card and take that card's state. Hiding and re-adding the panel
+// here made it blink whenever a worker finished.
+function rebindWorkerOverview() {
+  Object.keys(workerOverview).forEach(function (id) {
+    var item = workerOverview[id], row = workerRows[id];
+    if (!row || row === item.row) return;
+    if (!row._taskRun && item.run) row._taskRun = item.run;
+    if (row._liveness == null && item.row && item.row._liveness) row._liveness = item.row._liveness;
+    var status = row._taskStatus || item.status;
+    if (status === "created") status = "running";
+    item.row = row;
+    updateWorkerOverview(id, row._taskAgent || item.agent, status, row._taskActivity || item.activity || row._taskPrompt, row);
   });
   renderWorkerOverview();
 }
@@ -1165,11 +1191,13 @@ function updateWorkerOverview(id, agentName, status, activity, row) {
   if (item && item.row === nextRow && item.run === nextRun && item.agent === nextAgent &&
       item.status === nextStatus && item.activity === nextActivity &&
       (!nextRow || nextRow.isConnected) && item.button.dataset.state === nextStatus &&
-      item.button.children.length === 4 && item.button.children[1] === item.label &&
+      item.button.children.length === 5 && item.button.children[1] === item.label &&
       item.button.children[2] === item.detail && item.button.children[3] === item.state &&
+      item.button.children[4] === item.live &&
       item.label.textContent === label && item.detail.textContent === detail &&
       item.state.textContent === state && item.button.title === title && workerOverviewViewMatches()) return;
   if (!item) {
+    workerOverviewSession = workerOverviewOwner();
     item = workerOverview[id] = { id: id };
     item.button = el("button", "worker-overview-item");
     item.button.type = "button";
@@ -1183,15 +1211,19 @@ function updateWorkerOverview(id, agentName, status, activity, row) {
     item.label = el("span", "worker-overview-name");
     item.detail = el("span", "worker-overview-activity");
     item.state = el("span", "worker-overview-status");
-    item.button.append(item.label, item.detail, item.state);
+    item.live = el("span", "worker-overview-live");
+    item.live.hidden = true;
+    item.button.append(item.label, item.detail, item.state, item.live);
     $("#worker-overview-list").appendChild(item.button);
   }
-  if (item.button.children.length !== 4 || item.button.children[1] !== item.label ||
-      item.button.children[2] !== item.detail || item.button.children[3] !== item.state) {
-    item.button.replaceChildren(item.button.querySelector(".worker-overview-dot") || el("span", "worker-overview-dot"), item.label, item.detail, item.state);
+  if (item.button.children.length !== 5 || item.button.children[1] !== item.label ||
+      item.button.children[2] !== item.detail || item.button.children[3] !== item.state || item.button.children[4] !== item.live) {
+    item.button.replaceChildren(item.button.querySelector(".worker-overview-dot") || el("span", "worker-overview-dot"), item.label, item.detail, item.state, item.live);
   }
   item.run = nextRun;
   item.agent = nextAgent;
+  if (workerStatusTerminal(nextStatus) && !workerStatusTerminal(item.status)) item.settledAt = Date.now();
+  else if (!workerStatusTerminal(nextStatus)) item.settledAt = 0;
   item.status = nextStatus;
   item.activity = nextActivity;
   item.row = nextRow;
@@ -1201,6 +1233,8 @@ function updateWorkerOverview(id, agentName, status, activity, row) {
   item.state.textContent = state;
   item.button.title = title;
   renderWorkerOverview();
+  // A new or re-bound button shows its worker's liveness line at once.
+  if (nextRow && nextRow._liveness) renderWorkerLiveness(nextRow);
 }
 // After stream/history boundaries, reconcile only displayed worker IDs.
 // Healthy progress stays event-driven; no model calls or global-worker imports.
@@ -1251,6 +1285,8 @@ function markWorkerInterrupted(binding, reason, resumable) {
   row._workerStatusUnconfirmed = false;
   row._workerSnapshotMismatch = false;
   row._taskStatus = "interrupted";
+  row._liveness = null;
+  renderWorkerLiveness(row);
   row.classList.remove("running");
   row.classList.add("failed", "done");
   row._stat.textContent = taskStatusLabel("interrupted");
@@ -1277,12 +1313,18 @@ function resumeWorkerFromCard(id) {
   if (typeof streaming === "boolean" && streaming && typeof enqueuePrompt === "function") return enqueuePrompt(text, []);
   if (typeof sendPrompt === "function") return sendPrompt(text, []);
 }
-function applyWorkerStatusSnapshot(workers, bindings) {
+function applyWorkerStatusSnapshot(workers, bindings, serverNow, livenessOnly) {
   var snapshots = Object.create(null);
   (workers || []).forEach(function (worker) { if (worker && worker.id) snapshots[worker.id] = worker; });
   bindings.forEach(function (binding) {
     var row = binding.row, worker = snapshots[binding.id];
     if (workerRows[binding.id] !== row || !row.isConnected || (row._taskRun || 0) !== binding.run) return;
+    if (livenessOnly) {
+      // During a live turn its events own the card's state; the snapshot only
+      // adds what events cannot show (model progress, last activity).
+      if (worker && binding.run && Number(worker.run) === binding.run) applyWorkerLivenessSnapshot(row, worker, serverNow);
+      return;
+    }
     if (!worker) {
       // Missing twice in a row: no runner exists for this card any more.
       row._workerMissing = (row._workerMissing || 0) + 1;
@@ -1330,7 +1372,14 @@ function applyWorkerStatusSnapshot(workers, bindings) {
     if (status === "running" && row._clock && row._updateElapsed && !queued) row._updateElapsed();
     else row._stat.textContent = taskStatusLabel(queued ? "created" : status);
     row.classList.toggle("running", status === "running");
+    if (status === "running" && !queued) {
+      applyWorkerLivenessSnapshot(row, worker, serverNow);
+      // A card rebuilt from history shows the run's earlier tool calls too.
+      if (row._needsLiveJournal) loadLiveWorkerActivity(row);
+    }
     if (workerStatusTerminal(status)) {
+      row._liveness = null;
+      renderWorkerLiveness(row);
       clearInterval(row._clock);
       row._clock = null;
       row.classList.remove("running");
@@ -1348,18 +1397,20 @@ function scheduleWorkerStatusSync() {
   clearTimeout(workerStatusTimer);
   workerStatusTimer = null;
   if (!workerStatusArmed || document.hidden || !workerStatusBindings().length) return;
-  if (typeof streaming === "boolean" && streaming && !runFinishing) return;
+  var live = typeof streaming === "boolean" && streaming && !runFinishing;
   // Failures back off (5 s, 10 s, ... up to 30 s) but never stop for good: a
   // transient network error must not leave a card "unconfirmed" forever.
-  workerStatusTimer = setTimeout(refreshWorkerStatusSnapshot, workerStatusFailures ? Math.min(30000, 5000 * workerStatusFailures) : 3000);
+  // During a live turn only liveness is refreshed, every 5 s.
+  workerStatusTimer = setTimeout(refreshWorkerStatusSnapshot, workerStatusFailures ? Math.min(30000, 5000 * workerStatusFailures) : (live ? 5000 : 3000));
 }
 function refreshWorkerStatusSnapshot() {
   clearTimeout(workerStatusTimer);
   workerStatusTimer = null;
   if (!workerStatusArmed || document.hidden || typeof j !== "function") return Promise.resolve();
   if (workerStatusRequest) return workerStatusRequest;
-  if (typeof streaming === "boolean" && streaming && !runFinishing) return Promise.resolve();
+  var livenessOnly = typeof streaming === "boolean" && streaming && !runFinishing;
   var bindings = workerStatusBindings();
+  if (livenessOnly) bindings = bindings.filter(function (binding) { return binding.run > 0 && binding.row._taskStatus === "running"; });
   if (!bindings.length) return Promise.resolve();
   var epoch = workerStatusEpoch, scope = workerStatusScope();
   var request = Promise.resolve().then(function () {
@@ -1369,10 +1420,12 @@ function refreshWorkerStatusSnapshot() {
     if (epoch !== workerStatusEpoch || scope !== workerStatusScope() || document.hidden) return;
     if (!got || !Array.isArray(got.workers)) throw new Error("Invalid worker snapshot");
     workerStatusFailures = 0;
-    applyWorkerStatusSnapshot(got.workers, bindings);
+    var stillLive = typeof streaming === "boolean" && streaming && !runFinishing;
+    applyWorkerStatusSnapshot(got.workers, bindings, got.server_now, livenessOnly || stillLive);
   }).catch(function () {
     if (epoch !== workerStatusEpoch || scope !== workerStatusScope() || document.hidden) return;
     workerStatusFailures++;
+    if (livenessOnly) return;
     bindings.forEach(function (binding) { markWorkerStatusUnconfirmed(binding, false); });
   }).finally(function () {
     if (workerStatusRequest !== request) return;
@@ -2108,9 +2161,206 @@ function parseTaskNotification(text) {
 // run are not in the saved transcript yet, new ones arrive live.
 function markWorkerActivityLive(row) {
   var empty = row && row._activity && row._activity.querySelector(".task-activity-empty");
-  if (!empty || empty.dataset.i18nText === "task.activityLive") return;
-  empty.dataset.i18nText = "task.activityLive";
-  empty.textContent = t("task.activityLive");
+  if (empty && empty.dataset.i18nText !== "task.activityLoading") {
+    empty.dataset.i18nText = "task.activityLoading";
+    empty.textContent = t("task.activityLoading");
+  }
+  loadLiveWorkerActivity(row);
+}
+// Rebuilds a live card's tool list from the server's journal of the current
+// run (every call so far, not only those made after the view was rebuilt).
+// Calls that arrived live meanwhile are kept and keep updating in place.
+function loadLiveWorkerActivity(row) {
+  var id = row && row._taskID, session = transcriptSessionID || activeSessionID;
+  if (!id || !session || typeof j !== "function" || row._liveJournalRequest) return null;
+  if (row._taskRun && row._liveJournalRun === row._taskRun) return null;
+  var url = "/api/workers/activity?session=" + encodeURIComponent(session) + "&id=" + encodeURIComponent(id);
+  var request = row._liveJournalRequest = Promise.resolve().then(function () { return j(url); }).then(function (log) {
+    if (!row.isConnected || workerRows[id] !== row || workerStatusTerminal(row._taskStatus)) return;
+    log = validWorkerActivity(log, id);
+    if (!log || (row._taskRun && log.run !== row._taskRun)) throw Error("stale journal");
+    if (!row._taskRun) row._taskRun = log.run;
+    row._liveJournalRun = log.run;
+    row._needsLiveJournal = false;
+    applyLiveWorkerJournal(row, log);
+  }).catch(function () {
+    // Retried on the next status check while the card still needs it.
+    var empty = row._activity && row._activity.querySelector(".task-activity-empty");
+    if (empty && empty.dataset.i18nText === "task.activityLoading") {
+      empty.dataset.i18nText = "task.activityWaiting";
+      empty.textContent = t("task.activityWaiting");
+    }
+  }).finally(function () { if (row._liveJournalRequest === request) row._liveJournalRequest = null; });
+  return request;
+}
+function applyLiveWorkerJournal(row, log) {
+  var previous = row._activity, live = row._workerCalls || {};
+  var activity = el("div", "task-activity");
+  fillRecordedWorkerActivity(activity, log, null);
+  var calls = Object.create(null);
+  activity.querySelectorAll(".task-activity-item").forEach(function (item) {
+    var callID = item.dataset.workerCallId;
+    if (!callID) return;
+    if (live[callID] && live[callID].isConnected) {
+      item.replaceWith(live[callID]);
+      item = live[callID];
+    } else if (item.classList.contains("unknown")) {
+      // The journal of a run in progress: a call without a result is running.
+      item.classList.remove("unknown");
+      item.classList.add("running");
+      var status = item.querySelector(".activity-status");
+      if (status) {
+        status.textContent = t("tool.running");
+        status.dataset.i18nText = "tool.running";
+        status.removeAttribute("title");
+        status.removeAttribute("aria-label");
+        delete status.dataset.i18nTitle;
+        delete status.dataset.i18nAria;
+      }
+    }
+    calls[callID] = item;
+  });
+  Object.keys(live).forEach(function (key) {
+    var node = live[key];
+    if (calls[key] || !node || !node.isConnected) return;
+    // Live-only calls (and steering receipts) newer than the journal stay.
+    activity.appendChild(node);
+    calls[key] = node;
+  });
+  var empty = activity.querySelector(".task-activity-empty");
+  if (empty && activity.querySelector(".task-activity-item")) empty.remove();
+  else if (empty) {
+    empty.dataset.i18nText = "task.activityWaiting";
+    empty.textContent = t("task.activityWaiting");
+  }
+  row._workerCalls = calls;
+  row._activitySummary = false;
+  if (previous && previous.parentNode) previous.replaceWith(activity);
+  else if (row._body) row._body.appendChild(activity);
+  row._activity = activity;
+}
+
+/* Worker liveness: what a running worker does now and when it last made
+   progress. Fed by live events and the status snapshot; one shared 1 s tick
+   repaints the visible lines. After WORKER_STALL_MS without any progress the
+   card says so and offers Stop / Restart. */
+var WORKER_STALL_MS = 5 * 60 * 1000;
+var workerLiveTimer = null;
+function workerNow() { return typeof syncServerNow === "function" ? syncServerNow() : Date.now(); }
+function workerLiveDuration(ms) { return typeof fmtDuration === "function" ? fmtDuration(ms) : Math.round(ms / 1000) + "s"; }
+function workerLiveToggle(node, name, on) {
+  if (node && node.classList && typeof node.classList.toggle === "function") node.classList.toggle(name, on);
+}
+function noteWorkerLiveEvent(row, ev) {
+  var now = ev.at > 0 ? ev.at : workerNow();
+  if (ev.kind === "started") row._liveness = {phase: "model", since: now, last: now, open: 0};
+  else if (ev.kind === "finished") row._liveness = null;
+  else {
+    var live = row._liveness || (row._liveness = {phase: "model", since: now, last: now, open: 0});
+    live.last = Math.max(live.last || 0, now);
+    if (ev.kind === "tool_call") {
+      live.open = (live.open || 0) + 1;
+      live.progress = "";
+      if (live.phase !== "tool") { live.phase = "tool"; live.tool = ev.tool || ""; live.since = now; }
+    } else if (ev.kind === "tool_result") {
+      live.open = Math.max(0, (live.open || 0) - 1);
+      if (!live.open) { live.phase = "model"; live.tool = ""; live.since = now; live.progress = ""; }
+    } else if (ev.kind === "tool_progress") live.progress = ev.output || "";
+  }
+  renderWorkerLiveness(row);
+}
+// The status snapshot carries the server's view (server epoch ms).
+function applyWorkerLivenessSnapshot(row, worker, serverNow) {
+  if (!row || !worker || worker.status !== "running" || !worker.phase) return;
+  var offset = serverNow > 0 ? workerNow() - serverNow : 0;
+  var map = function (ms) { return ms > 0 ? ms + offset : 0; };
+  var prev = row._liveness || {};
+  var last = Math.max(map(worker.last_progress_at), prev.last || 0);
+  var samePhase = prev.phase === worker.phase && (prev.tool || "") === (worker.phase_tool || "");
+  row._liveness = {phase: worker.phase, tool: worker.phase_tool || "", since: map(worker.phase_since) || (samePhase && prev.since) || last,
+    last: last, progress: worker.tool_progress || (samePhase ? prev.progress || "" : ""), open: prev.open || 0};
+  renderWorkerLiveness(row);
+}
+function workerLivenessView(row) {
+  var live = row && row._liveness;
+  if (!live || !live.phase || row._taskStatus !== "running" || row._workerStatusUnconfirmed) return null;
+  var now = workerNow(), quiet = Math.max(0, now - (live.last || now)), phase = Math.max(0, now - (live.since || now));
+  var step = live.phase === "tool" ?
+    t("task.liveTool").replace("{tool}", toolDisplayName(live.tool || "tool")).replace("{time}", workerLiveDuration(phase)) :
+    t("task.liveModel").replace("{time}", workerLiveDuration(phase));
+  if (quiet >= WORKER_STALL_MS) return {stalled: true, text: t("task.stalled").replace("{time}", workerLiveDuration(quiet)) + " · " + step};
+  var parts = [step];
+  if (live.progress) parts.push(clip(live.progress, 90));
+  parts.push(t("task.liveLast").replace("{time}", workerLiveDuration(quiet)));
+  return {stalled: false, text: parts.join(" · ")};
+}
+function renderWorkerLiveness(row) {
+  // Minimal test doubles have no real DOM; the line is presentation only.
+  if (!row || !row._body || typeof row._body.insertBefore !== "function") return;
+  var view = workerLivenessView(row), node = row._livenessNode;
+  if (!view) {
+    if (node) node.hidden = true;
+    if (row._stallActions) row._stallActions.hidden = true;
+    workerLiveToggle(row, "stalled", false);
+  } else {
+    if (!node || node.parentNode !== row._body) {
+      node = row._livenessNode = el("div", "task-liveness");
+      if (typeof node.setAttribute === "function") node.setAttribute("role", "status");
+      row._body.insertBefore(node, row._body.firstChild);
+    }
+    node.hidden = false;
+    workerLiveToggle(node, "stalled", view.stalled);
+    setNodeText(node, view.text);
+    workerLiveToggle(row, "stalled", view.stalled);
+    if (view.stalled) addWorkerStallActions(row);
+    else if (row._stallActions) row._stallActions.hidden = true;
+  }
+  var item = row._taskID && workerOverview[row._taskID];
+  if (item && item.row === row && item.live) {
+    workerLiveToggle(item.button, "stalled", !!(view && view.stalled));
+    item.live.hidden = !view;
+    setNodeText(item.live, view ? view.text : "");
+  }
+  if (view) ensureWorkerLiveTimer();
+}
+function addWorkerStallActions(row) {
+  if (row._stallActions && row._stallActions.parentNode === row._body) { row._stallActions.hidden = false; return; }
+  var box = row._stallActions = el("div", "worker-stall-actions");
+  box.title = t("task.stalledHint");
+  var stop = el("button", "worker-stop", t("composer.stop"));
+  stop.type = "button";
+  stop.addEventListener("click", function (event) { if (event) event.preventDefault(); stopWorkerFromCard(row._taskID, false); });
+  var restart = el("button", "worker-restart", t("task.restart"));
+  restart.type = "button";
+  restart.title = t("task.stalledHint");
+  restart.addEventListener("click", function (event) { if (event) event.preventDefault(); stopWorkerFromCard(row._taskID, true); });
+  box.append(el("span", "worker-stall-hint", t("task.stalledHint")), stop, restart);
+  var anchor = row._livenessNode && row._livenessNode.parentNode === row._body ? row._livenessNode.nextSibling : row._body.firstChild;
+  row._body.insertBefore(box, anchor);
+}
+// Restart = stop the stuck run, then ask the coordinator to resume the worker
+// with its saved conversation (nothing is lost).
+function stopWorkerFromCard(id, restart) {
+  if (!id || typeof jpost !== "function") return Promise.resolve();
+  return jpost("/api/workers", {id: id, action: "stop"}).then(function () { return true; }, function (error) {
+    if (typeof toast === "function") toast(error.message);
+    return false;
+  }).then(function (ok) {
+    if (ok && restart) resumeWorkerFromCard(id);
+    workerStatusArmed = true;
+    return refreshWorkerStatusSnapshot();
+  });
+}
+function ensureWorkerLiveTimer() {
+  if (workerLiveTimer) return;
+  workerLiveTimer = setInterval(function () {
+    var any = false;
+    Object.keys(workerRows).forEach(function (id) {
+      var row = workerRows[id];
+      if (row && row.isConnected && row._liveness && row._taskStatus === "running") { any = true; renderWorkerLiveness(row); }
+    });
+    if (!any) { clearInterval(workerLiveTimer); workerLiveTimer = null; }
+  }, 1000);
 }
 
 function taskStatusLabel(status) {
@@ -2695,7 +2945,15 @@ function appendTaskBacklink(row) {
 }
 
 function findTaskRow(taskID, agentName, parentCallID, run) {
-  if (parentCallID) return toolRows[parentCallID] || null;
+  if (parentCallID) {
+    if (toolRows[parentCallID]) return toolRows[parentCallID];
+    // A card rebuilt from saved history (after the turn ended or a refresh)
+    // is not a live tool row, but it is still that call's card: progress of
+    // the worker it started must keep reaching it (1.0.36 dropped it, so the
+    // card said "working" while nothing ever appeared).
+    var rebuilt = taskID && workerRows[taskID];
+    return rebuilt && rebuilt._parentCallID === parentCallID ? rebuilt : null;
+  }
   if (taskID && workerRows[taskID]) {
     var latest = workerRows[taskID];
     if (run == null || (latest._taskRun || 0) === run) return latest;
@@ -2744,7 +3002,8 @@ function addWorkerProgress(ev) {
   }
   // Progress bound to this card's own call proves its run number (a card
   // rebuilt from history has none); status sync can then confirm it.
-  if (ev.run > 0 && !row._taskRun && ev.parent_call_id && toolRows[ev.parent_call_id] === row) row._taskRun = ev.run;
+  if (ev.run > 0 && !row._taskRun && ev.parent_call_id && (toolRows[ev.parent_call_id] === row || row._parentCallID === ev.parent_call_id)) row._taskRun = ev.run;
+  noteWorkerLiveEvent(row, ev);
   if (ev.kind === "started") {
     row._taskStatus = "running";
     row.classList.remove("done", "failed");
@@ -2788,6 +3047,25 @@ function addWorkerProgress(ev) {
   if (emptyActivity) emptyActivity.remove();
   if (!row._workerCalls) row._workerCalls = {};
   var item = ev.call_id ? row._workerCalls[ev.call_id] : null;
+  if (ev.kind === "tool_progress") {
+    // Live progress of a long tool (its latest output line): shown on its
+    // call and in the liveness line, never stored as activity.
+    if (item) {
+      var progressNode = item.querySelector(".activity-progress");
+      if (!progressNode) {
+        progressNode = el("span", "activity-progress");
+        var statusNode = item.querySelector(".activity-status");
+        if (statusNode && statusNode.parentNode) statusNode.parentNode.insertBefore(progressNode, statusNode);
+        else item.appendChild(progressNode);
+      }
+      setNodeText(progressNode, clip(ev.output || "", 120));
+    }
+    return true;
+  }
+  if (item && ev.kind === "tool_result") {
+    var staleProgress = item.querySelector(".activity-progress");
+    if (staleProgress) staleProgress.remove();
+  }
   if (ev.kind === "steering_delivered" || ev.kind === "steering_rejected") {
     var receiptKey = "steering:" + (ev.call_id || "");
     item = row._workerCalls[receiptKey];

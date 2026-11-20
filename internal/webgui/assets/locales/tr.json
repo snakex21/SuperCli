@@ -1215,5 +1215,13 @@
   "task.resumePrompt": "{id} ajanını send_message ile kaldığı yerden sürdür; kayıtlı konuşması geri yüklenir.",
   "task.queued": "kuyrukta (başlamayı bekliyor)",
   "task.activityLive": "Çalışıyor. Görünüm yeniden yüklenmeden önceki araç çağrıları burada gösterilmez; yenileri canlı görünür.",
-  "chat.jumpLatestNew": "{n} yeni"
+  "chat.jumpLatestNew": "{n} yeni",
+  "task.liveModel": "model düşünüyor · {time}",
+  "task.liveTool": "{tool} çalışıyor · {time}",
+  "task.liveLast": "son etkinlik {time} önce",
+  "task.stalled": "{time} boyunca ilerleme yok",
+  "task.stalledHint": "Uzun süredir ilerleme bildirilmedi. Yavaş bir model yanıtını veya uzun bir komutu bekliyor olabilir; takıldıysa durdurun veya yeniden başlatın.",
+  "task.restart": "Yeniden başlat",
+  "task.activityLoading": "Bu çalıştırmanın araç çağrıları yükleniyor…",
+  "background.working": "Arka planda çalışıyor ({n})"
 }

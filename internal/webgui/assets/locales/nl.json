@@ -1215,5 +1215,13 @@
   "task.resumePrompt": "Hervat {id} met send_message en zet zijn taak voort waar die stopte; zijn opgeslagen gesprek wordt hersteld.",
   "task.queued": "in wachtrij (wacht op start)",
   "task.activityLive": "Bezig. Toolaanroepen van vóór het herladen van de weergave staan hier niet; nieuwe verschijnen live.",
-  "chat.jumpLatestNew": "{n} nieuw"
+  "chat.jumpLatestNew": "{n} nieuw",
+  "task.liveModel": "model denkt na · {time}",
+  "task.liveTool": "{tool} bezig · {time}",
+  "task.liveLast": "laatste activiteit {time} geleden",
+  "task.stalled": "geen voortgang sinds {time}",
+  "task.stalledHint": "Er is al lange tijd geen voortgang gemeld. Mogelijk wacht hij op een traag modelantwoord of een lange opdracht; stop of herstart hem als hij vastzit.",
+  "task.restart": "Herstarten",
+  "task.activityLoading": "Gereedschapsaanroepen van deze run laden…",
+  "background.working": "Werkt op de achtergrond ({n})"
 }

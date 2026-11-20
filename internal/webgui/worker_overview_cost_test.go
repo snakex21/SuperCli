@@ -96,7 +96,11 @@ function legacyUpdate(id, agentName, status, activity, row) {
     item.label = el("span", "worker-overview-name");
     item.detail = el("span", "worker-overview-activity");
     item.state = el("span", "worker-overview-status");
-    item.button.append(item.label, item.detail, item.state);
+    // 1.0.37: the liveness line is part of the item; renderWorkerLiveness
+    // (shared, outside both renderers) fills it.
+    item.live = el("span", "worker-overview-live");
+    item.live.hidden = true;
+    item.button.append(item.label, item.detail, item.state, item.live);
     $("#worker-overview-list").appendChild(item.button);
   }
   item.run = row && row._taskRun || item.run || 0;
@@ -280,7 +284,10 @@ emit({type:'worker_progress',id:'worker-1',name:'code',kind:'finished',parent_ca
 check(item.row===live&&item.status==='running','stale finish clobbered current');
 for(let i=1;i<=8;i++)emit({type:'worker_progress',id:'worker-'+i,name:'code',kind:'finished',parent_call_id:i===1?'next':'parent'+i,run:i===1?2:1,status:'done'});
 check(!$('#worker-overview').open,'completion collapse not immediate');
-pruneWorkerOverview();check(!Object.keys(workerOverview).length&&$('#worker-overview').hidden,'prune failed');
+// 1.0.37: settled workers stay listed for a while; past that window they go.
+pruneWorkerOverview();check(Object.keys(workerOverview).length===8&&!$('#worker-overview').hidden,'recently settled workers pruned at once');
+const recent=WORKER_OVERVIEW_RECENT_MS;WORKER_OVERVIEW_RECENT_MS=0;
+pruneWorkerOverview();WORKER_OVERVIEW_RECENT_MS=recent;check(!Object.keys(workerOverview).length&&$('#worker-overview').hidden,'prune failed');
 resetWorkerOverview();check(!$('#worker-overview-list').children.length,'reset failed');
 Object.values(toolRows).forEach(r=>clearInterval(r._clock));
 return {samples,checks:'identical legacy/production paired DOM/history; focus; immediate lifecycle; ownership/ordinal; metadata/localization; prune/reset; unchanged zero mutations; DOM repair/new root; raw clipped activity; user toggle'};

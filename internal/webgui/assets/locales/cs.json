@@ -1215,5 +1215,13 @@
   "task.resumePrompt": "Obnov {id} přes send_message a pokračuj v jeho úkolu tam, kde skončil; jeho uložená konverzace se obnoví.",
   "task.queued": "ve frontě (čeká na spuštění)",
   "task.activityLive": "Pracuje. Volání nástrojů před znovunačtením zobrazení zde nejsou; nová se zobrazí živě.",
-  "chat.jumpLatestNew": "{n} nové"
+  "chat.jumpLatestNew": "{n} nové",
+  "task.liveModel": "model přemýšlí · {time}",
+  "task.liveTool": "{tool} běží · {time}",
+  "task.liveLast": "poslední aktivita před {time}",
+  "task.stalled": "žádný postup {time}",
+  "task.stalledHint": "Dlouho nebyl hlášen žádný postup. Agent možná čeká na pomalou odpověď modelu nebo na dlouhý příkaz; pokud uvízl, zastavte ho nebo ho spusťte znovu.",
+  "task.restart": "Spustit znovu",
+  "task.activityLoading": "Načítání volání nástrojů tohoto běhu…",
+  "background.working": "Pracuje na pozadí ({n})"
 }

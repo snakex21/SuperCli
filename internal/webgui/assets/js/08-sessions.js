@@ -81,7 +81,7 @@ async function loadSessions() {
     // Refreshing unchanged metadata should preserve rows, hover and keyboard
     // focus. Minute/locale/selection changes still refresh the visible labels.
     var snapshot = JSON.stringify([rows || [], activeSessionID, Object.keys(backgroundRunIDs()).sort(), Object.keys(failedRunIDs()).sort(), statsLocale(), Math.floor(Date.now() / 60000)]);
-    if (snapshot === sessionListSnapshot) return;
+    if (snapshot === sessionListSnapshot) { if (typeof renderSessionBackground === "function") renderSessionBackground(); return; }
     sessionListSnapshot = snapshot;
     list.innerHTML = "";
     if (!rows || !rows.length) {
@@ -161,6 +161,7 @@ async function loadSessions() {
       b.appendChild(actions);
       list.appendChild(b);
     });
+    if (typeof renderSessionBackground === "function") renderSessionBackground();
   } catch (e) {
     if (e.name === "AbortError" || stale()) return;
     sessionListSnapshot = null;
@@ -515,6 +516,10 @@ function buildHistoryFragment(messages, pager, prepend) {
             }
           }
           var taskRow = addHistoryTask(task, taskInfo && taskInfo.prompt, m.worker_activity);
+          // The card of this task call: live progress of the worker it
+          // started (parent_call_id) keeps updating it after the rebuild.
+          taskRow._parentCallID = receiptCall || "";
+          if (task.status === "running" || task.status === "created") taskRow._needsLiveJournal = true;
           bindWorkerObservations(taskRow, m);
           bindFullToolOutput(taskRow, m);
           var taskEntry = {row: taskRow, task: task, callSeq: historyCallSeqs[receiptCall]};
@@ -592,12 +597,17 @@ function renderLoadedTranscript(preserveScroll) {
   var oldTop = stage.scrollTop;
   stream.innerHTML = "";
   toolRows = {}; workerRows = {}; openToolOrder = [];
-  resetWorkerOverview();
+  // Same conversation: the worker panel stays and is re-bound below.
+  var keepOverview = typeof workerOverviewSession === "string" && !!workerOverviewSession &&
+    workerOverviewSession === transcriptSessionID && Object.keys(workerOverview).length > 0;
+  if (keepOverview) pauseWorkerStatusSync();
+  else resetWorkerOverview();
   lastTurn = null; workersSeen = [];
   hideWelcome();
   var older = transcriptHasMore ? historyPager() : null;
   if (older) stream.appendChild(older);
   stream.appendChild(buildHistoryFragment(loadedTranscriptMessages, older));
+  if (keepOverview) rebindWorkerOverview();
   // Rows own their complete lazy payloads and unresolved boundary messages.
   // The raw page wrappers are no longer read after this successful render.
   loadedTranscriptMessages = [];
@@ -691,6 +701,7 @@ async function resumeSession(id, session, fromQueue, fromSync) {
   try {
     if (typeof syncWatchSession === "function") await syncWatchSession(id);
     if (epoch !== projectEpoch || resumeSeq !== sessionResumeSeq) return false;
+    var fetchStartedAt = Date.now();
     var page = await j("/api/transcript?id=" + encodeURIComponent(id) + "&limit=" + transcriptPageSize,
       { signal: controller.signal });
     var msgs = page.messages || [];
@@ -708,6 +719,8 @@ async function resumeSession(id, session, fromQueue, fromSync) {
     renderLoadedTranscript(false);
     if (liveRun) reattachDetachedRun(id);
     else showFailedRun(id);
+    // A run that started elsewhere and is not shown yet keeps its message.
+    if (typeof syncAfterHistoryRender === "function") syncAfterHistoryRender(id, fetchStartedAt);
     loadSessions();
     renderStats();
     promptEl.focus();

@@ -231,6 +231,7 @@ func runWorkerLoopLocked(ctx context.Context, w *Worker, prompt string, workers 
 		w.ToolNames = nil
 		w.Runs++
 		w.activity = WorkerActivity{}
+		w.liveRunStarted(time.Now())
 	})
 	// Save "running" now (the record said "created", runs=0 for the whole
 	// run before): a restart then reconciles it as interrupted, and the GUI
@@ -245,6 +246,7 @@ func runWorkerLoopLocked(ctx context.Context, w *Worker, prompt string, workers 
 		if p := recover(); p != nil {
 			w.setState(func(w *Worker) {
 				w.Status, w.LastError, w.UpdatedAt = "failed", fmt.Sprintf("worker panicked: %v", p), time.Now()
+				w.liveRunEnded()
 			})
 			panic(p)
 		}
@@ -255,6 +257,7 @@ func runWorkerLoopLocked(ctx context.Context, w *Worker, prompt string, workers 
 		w.setState(func(w *Worker) {
 			w.Status = "failed"
 			w.LastError = "worker loop is nil"
+			w.liveRunEnded()
 		})
 		return "", fmt.Errorf("worker %s: loop is nil", w.ID)
 	}
@@ -273,6 +276,7 @@ func runWorkerLoopLocked(ctx context.Context, w *Worker, prompt string, workers 
 			}
 			w.UpdatedAt = time.Now()
 			w.LastError = err.Error()
+			w.liveRunEnded()
 		})
 		return "", err
 	}
@@ -282,16 +286,25 @@ func runWorkerLoopLocked(ctx context.Context, w *Worker, prompt string, workers 
 	var rejectedSteering []string
 	toolCalls := make(map[string]ToolCallEvent)
 	var evidence workerEvidenceLog
-	ui := workerUIActivity{Version: 1, ID: w.ID, Run: w.Snapshot().Runs, ParentCallID: invocation.callID, Calls: []workerUIToolCall{}}
-	defer func() { data := ui.encode(); w.setState(func(w *Worker) { w.uiActivity = data }) }()
+	ui := &workerUIActivity{Version: 1, ID: w.ID, Run: w.Snapshot().Runs, ParentCallID: invocation.callID, Calls: []workerUIToolCall{}}
+	// The journal is shared with LiveActivity readers: mutate it only under stateMu.
+	w.setState(func(w *Worker) { w.liveUI = ui })
+	defer func() {
+		w.setState(func(w *Worker) {
+			w.uiActivity = ui.encode()
+			w.liveRunEnded()
+		})
+	}()
 	defer func() { w.setState(func(w *Worker) { w.lastEvidence = evidence.text() }) }()
 	for ev := range events {
+		now := time.Now()
+		w.setState(func(w *Worker) { w.liveObserve(ev, now) })
 		switch e := ev.(type) {
 		case MessageEvent:
 			text.WriteString(e.Text)
 		case ToolCallEvent:
 			handle, partial := retainWorkerToolDetail(runCtx, w.Loop.toolOutputs, e, ToolResultEvent{})
-			ui.call(e, handle)
+			w.setState(func(*Worker) { ui.call(e, handle) })
 			// Commentary before a tool call is not the worker's final report.
 			// Keep only the final assistant turn; reasoning stays in its own loop.
 			text.Reset()
@@ -309,7 +322,7 @@ func runWorkerLoopLocked(ctx context.Context, w *Worker, prompt string, workers 
 			})
 		case ToolResultEvent:
 			handle, partial := retainWorkerToolDetail(runCtx, w.Loop.toolOutputs, toolCalls[e.ID], e)
-			ui.result(e, handle)
+			w.setState(func(*Worker) { ui.result(e, handle) })
 			activity := observedWorkerActivity("tool_result", e.ID, toolCalls[e.ID])
 			w.setState(func(w *Worker) { w.activity = activity })
 			evidence.add(toolCalls[e.ID], e)
@@ -327,6 +340,12 @@ func runWorkerLoopLocked(ctx context.Context, w *Worker, prompt string, workers 
 			}
 			emit(progress)
 			delete(toolCalls, e.ID)
+		case ToolProgressEvent:
+			// Live progress of a long tool (e.g. the last output line of a
+			// build): UI-only, never part of the report or evidence.
+			if e.Text != "" {
+				emit(WorkerProgressEvent{Kind: "tool_progress", CallID: e.ID, Tool: toolCalls[e.ID].Name, Output: toolcore.HeadTail(e.Text, 160, 0)})
+			}
 		case DoneEvent:
 			w.setState(func(w *Worker) {
 				w.TokensIn += e.Usage.Input

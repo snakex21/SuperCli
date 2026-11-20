@@ -1215,5 +1215,13 @@
   "task.resumePrompt": "Nastavi {id} putem send_message od mesta gde je stao; njegov sačuvani razgovor se vraća.",
   "task.queued": "u redu čekanja (čeka pokretanje)",
   "task.activityLive": "Radi. Pozivi alata pre ponovnog učitavanja prikaza ovde nisu prikazani; novi se pojavljuju uživo.",
-  "chat.jumpLatestNew": "{n} novo"
+  "chat.jumpLatestNew": "{n} novo",
+  "task.liveModel": "model razmišlja · {time}",
+  "task.liveTool": "{tool} radi · {time}",
+  "task.liveLast": "poslednja aktivnost pre {time}",
+  "task.stalled": "nema napretka {time}",
+  "task.stalledHint": "Dugo nije prijavljen napredak. Agent možda čeka spor odgovor modela ili dugu komandu; zaustavite ga ili ponovo pokrenite ako je zaglavio.",
+  "task.restart": "Ponovo pokreni",
+  "task.activityLoading": "Učitavanje poziva alata ovog pokretanja…",
+  "background.working": "Radi u pozadini ({n})"
 }

@@ -1215,5 +1215,13 @@
   "task.resumePrompt": "Jatka agenttia {id} send_message-työkalulla siitä, mihin se jäi; sen tallennettu keskustelu palautetaan.",
   "task.queued": "jonossa (odottaa käynnistystä)",
   "task.activityLive": "Työskentelee. Ennen näkymän uudelleenlatausta tehtyjä työkalukutsuja ei näytetä tässä; uudet näkyvät reaaliajassa.",
-  "chat.jumpLatestNew": "{n} uutta"
+  "chat.jumpLatestNew": "{n} uutta",
+  "task.liveModel": "malli miettii · {time}",
+  "task.liveTool": "{tool} käynnissä · {time}",
+  "task.liveLast": "viimeisin toiminta {time} sitten",
+  "task.stalled": "ei edistystä {time}",
+  "task.stalledHint": "Edistymistä ei ole raportoitu pitkään aikaan. Se voi odottaa hidasta mallin vastausta tai pitkää komentoa; pysäytä tai käynnistä se uudelleen, jos se on jumissa.",
+  "task.restart": "Käynnistä uudelleen",
+  "task.activityLoading": "Ladataan tämän ajon työkalukutsuja…",
+  "background.working": "Työskentelee taustalla ({n})"
 }
