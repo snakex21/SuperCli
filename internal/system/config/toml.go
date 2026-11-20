@@ -11,10 +11,12 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -586,7 +588,11 @@ func LoadToml(path string) (TomlConfig, error) {
 	if _, err := os.Stat(path); err != nil {
 		return cfg, nil // missing file (or directory) is OK
 	}
-	if _, err := toml.DecodeFile(path, &cfg); err != nil {
+	data, err := readConfigFile(path)
+	if err != nil {
+		return cfg, fmt.Errorf("config: load %s: %w", path, err)
+	}
+	if _, err := toml.Decode(string(data), &cfg); err != nil {
 		return cfg, fmt.Errorf("config: load %s: %w", path, err)
 	}
 	return cfg, nil
@@ -619,14 +625,64 @@ func SaveToml(path string, cfg TomlConfig) error {
 	for i := range cfg.Providers {
 		cfg.Providers[i].APIKey = sanitizeAPIKey(cfg.Providers[i].APIKey)
 	}
-	f, err := os.Create(path)
+	var buf bytes.Buffer
+	enc := toml.NewEncoder(&buf)
+	enc.Indent = ""
+	if err := enc.Encode(cfg); err != nil {
+		return err
+	}
+	return writeTomlAtomic(path, buf.Bytes())
+}
+
+// writeTomlAtomic replaces path in one step: the content goes to a temporary
+// file in the same directory, which is then renamed over the old file. A
+// reader (a turn reading its configuration, another load-modify-save) never
+// sees a truncated or half-written config.toml. Truncating in place let a turn
+// that started during a settings save run with an empty configuration (1.0.37).
+func writeTomlAtomic(path string, data []byte) error {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved // keep a symlinked config.toml a symlink
+	}
+	mode := os.FileMode(0o600)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".config-*.toml.tmp")
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	enc := toml.NewEncoder(f)
-	enc.Indent = ""
-	return enc.Encode(cfg)
+	tmpName := tmp.Name()
+	_, err = tmp.Write(data)
+	if err == nil {
+		err = tmp.Chmod(mode)
+	}
+	if err == nil {
+		err = tmp.Sync()
+	}
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	// Windows refuses to replace a file another process holds open without
+	// FILE_SHARE_DELETE (LoadToml shares it); such opens are short, so retry
+	// briefly.
+	for attempt := 0; ; attempt++ {
+		err = os.Rename(tmpName, path)
+		if err == nil || attempt >= 50 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err != nil {
+		// The file stays locked (antivirus, an editor): do not lose the
+		// save, write it in place as before.
+		_ = os.Remove(tmpName)
+		return os.WriteFile(path, data, mode)
+	}
+	return nil
 }
 
 // FindTomlPaths returns the global and project config.toml paths.

@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"database/sql"
 	"slices"
 )
 
@@ -21,7 +22,9 @@ func (s *Store) ReadDialogueExcerpt(ctx context.Context, sessionID string, tailC
 	if tailCount > 500 {
 		tailCount = 500
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	// Read-only: one snapshot without taking the writer lock (the store
+	// begins read-write transactions IMMEDIATE).
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, err
 	}

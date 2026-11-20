@@ -510,6 +510,8 @@ func TestFix1037BackgroundWorkerLivenessEndToEnd(t *testing.T) {
 	var sid string
 	app.eval(`activeSessionID`, &sid)
 	app.reload()
+	// saveUI persists the language after a debounce; a reload can come first.
+	app.setLanguage("pl")
 	app.eval(`(async()=>{await loadSessions();await resumeSession(`+jsString(sid)+`,sessionByID[`+jsString(sid)+`]||null);return true;})()`, nil)
 	app.waitJS("journal rebuilt after refresh", `(()=>{const c=[...document.querySelectorAll('#stream .task-row')].pop();return c&&c.querySelectorAll('.task-activity-item').length>=2;})()`, 15*time.Second)
 	app.eval(`(()=>{const c=[...document.querySelectorAll('#stream .task-row')].pop();c.open=true;c._body.hidden=false;return true;})()`, nil)

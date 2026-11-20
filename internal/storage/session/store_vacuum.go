@@ -14,10 +14,19 @@ const sessionJournalSizeLimit = 32 << 20 // 32 MiB
 // already-incremental file rewrites header meta[6] and therefore needs the
 // write lock on every new connection (it would wait busy_timeout behind any
 // other writer, e.g. the GUI and TUI sharing the file).
+//
+// _txlock=immediate: every read-write transaction takes the write lock at
+// BEGIN, where busy_timeout applies. A deferred transaction that read first
+// and then wrote failed at once with SQLITE_BUSY / SQLITE_BUSY_SNAPSHOT when
+// another connection wrote meanwhile (busy_timeout cannot help an upgrade from
+// a stale WAL snapshot): a message added to the queue just as a turn started
+// was rejected with "database is locked" (1.0.37). Read-only transactions stay
+// deferred.
 const sessionDSNPragmas = "?_pragma=busy_timeout(5000)" +
 	"&_pragma=journal_mode(WAL)" +
 	"&_pragma=journal_size_limit(33554432)" +
-	"&_pragma=foreign_keys(1)"
+	"&_pragma=foreign_keys(1)" +
+	"&_txlock=immediate"
 
 // initAutoVacuum enables incremental auto_vacuum on a brand-new, still empty
 // database, before migrate() creates the first table. Setting the pragma after
