@@ -274,6 +274,15 @@ type TomlConfig struct {
 	// not set its own step budget.
 	TaskMaxSteps int `toml:"task_max_steps"`
 
+	// MaxParallelAgents caps how many delegated workers run at the same
+	// time. nil = built-in default (DefaultMaxParallelAgents); 0 = no limit.
+	// High values multiply cost and provider rate limits (HTTP 429), and a
+	// local LM Studio server answers one request at a time anyway.
+	MaxParallelAgents *int `toml:"max_parallel_agents,omitempty"`
+	// MaxParallelAgentsPerProvider optionally caps running workers per
+	// provider name (e.g. {"lmstudio" = 1}); absent or 0 = no own cap.
+	MaxParallelAgentsPerProvider map[string]int `toml:"max_parallel_agents_per_provider,omitempty"`
+
 	// TaskModel routes delegated `task` workers to a different model
 	// than the coordinator. Two forms, matching existing conventions:
 	// "model-id" keeps the coordinator's transport and swaps only the

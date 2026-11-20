@@ -190,6 +190,13 @@ func settingTextValue(c *config.TomlConfig, key string) string {
 		return config.EffectiveCostCurrency(*c)
 	case "task_model":
 		return c.TaskModel
+	case "max_parallel_agents":
+		if c.MaxParallelAgents == nil {
+			return ""
+		}
+		return strconv.Itoa(*c.MaxParallelAgents)
+	case "max_parallel_agents_per_provider":
+		return config.FormatProviderAgentLimits(c.MaxParallelAgentsPerProvider)
 	case "task_reasoning_effort":
 		return c.TaskReasoningEffort
 	case "advisor_reasoning_effort":
@@ -249,6 +256,24 @@ func (m Model) settingsCommitText() (tea.Model, tea.Cmd) {
 		}
 		maxRetries = v
 	}
+	var parallelAgents *int
+	var providerAgents map[string]int
+	if r.key == "max_parallel_agents" {
+		v, err := config.ParseMaxParallelAgents(buf)
+		if err != nil {
+			m.menu.formErr = err.Error()
+			return m, nil
+		}
+		parallelAgents = v
+	}
+	if r.key == "max_parallel_agents_per_provider" {
+		v, err := config.ParseProviderAgentLimits(buf)
+		if err != nil {
+			m.menu.formErr = err.Error()
+			return m, nil
+		}
+		providerAgents = v
+	}
 	if r.key == "cost_currency" && buf != "" {
 		code, err := fx.NormalizeCurrency(buf)
 		if err != nil {
@@ -291,6 +316,10 @@ func (m Model) settingsCommitText() (tea.Model, tea.Cmd) {
 			c.FallbackModels = parseCommandList(buf)
 		case "max_retries":
 			c.MaxRetries = maxRetries
+		case "max_parallel_agents":
+			c.MaxParallelAgents = parallelAgents
+		case "max_parallel_agents_per_provider":
+			c.MaxParallelAgentsPerProvider = providerAgents
 		}
 	})
 }

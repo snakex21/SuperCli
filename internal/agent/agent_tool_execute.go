@@ -46,7 +46,7 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	// Avoid repository preflight, backend probes and loop/schema setup for a
 	// task that cannot start. TryAdd still checks atomically after preparation,
 	// since another concurrent delegation may take a slot in the meantime.
-	if err := a.Workers.checkActiveLimit(); err != nil {
+	if err := a.Workers.checkActiveLimit(a.workerProviderName(ar)); err != nil {
 		return tools.Result{Err: fmt.Errorf("task: %w", err)}, nil
 	}
 
@@ -226,7 +226,7 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	// TryAdd enforces the global active-worker cap (see
 	// DefaultMaxActiveWorkers): failing fast here keeps the coordinator's
 	// turn moving instead of silently queueing behind a full pool.
-	w, err := workers.TryAdd(ar.Agent, ar.Prompt, loop)
+	w, err := workers.TryAddFor(a.workerProviderName(ar), ar.Agent, ar.Prompt, loop)
 	if err != nil {
 		return tools.Result{Err: fmt.Errorf("task: %w", err)}, nil
 	}
@@ -373,3 +373,14 @@ func (a *AgentTool) runDraftVerify(ctx context.Context, w *Worker, ar agentArgs,
 // reviseInstruction composes the concrete follow-up sent back to the worker on
 // a REVISE round: the big model's instruction, plus the red sieve output as
 // hard evidence the worker must satisfy.
+
+// workerProviderName is the provider a new worker's model calls go to.
+func (a *AgentTool) workerProviderName(ar agentArgs) string {
+	if ar.Advise && a.AdvisorProvider != nil {
+		return "" // the advisor backend has no configured name here
+	}
+	if a.WorkerProvider != nil && a.WorkerProviderName != "" {
+		return a.WorkerProviderName
+	}
+	return a.CoordinatorProviderName
+}

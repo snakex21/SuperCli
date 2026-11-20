@@ -47,30 +47,98 @@ func (r *WorkerRegistry) Add(agentName, description string, loop *Loop) *Worker 
 // workers; Add (no cap) stays for callers/tests that manage their own
 // concurrency.
 func (r *WorkerRegistry) TryAdd(agentName, description string, loop *Loop) (*Worker, error) {
+	return r.TryAddFor("", agentName, description, loop)
+}
+
+// TryAddFor is TryAdd for a worker whose model calls go to provider (the
+// per-provider cap of max_parallel_agents_per_provider applies to it).
+func (r *WorkerRegistry) TryAddFor(provider, agentName, description string, loop *Loop) (*Worker, error) {
 	if r == nil {
 		return nil, fmt.Errorf("worker registry is nil")
 	}
-	return r.add(agentName, description, loop, true)
+	return r.add(agentName, description, loop, true, provider)
+}
+
+// SetConcurrencyLimits applies the settings: max nil = built-in default
+// (env SUPERCLI_MAX_ACTIVE_WORKERS or DefaultMaxActiveWorkers), 0 = no
+// limit; perProvider caps running workers per provider name (0 = none).
+// Running workers are never stopped by a lower limit; it applies to the
+// next start.
+func (r *WorkerRegistry) SetConcurrencyLimits(max *int, perProvider map[string]int) {
+	if r == nil {
+		return
+	}
+	limit := envPositiveInt("SUPERCLI_MAX_ACTIVE_WORKERS", DefaultMaxActiveWorkers)
+	if max != nil && *max >= 0 {
+		limit = *max
+	}
+	var per map[string]int
+	for name, n := range perProvider {
+		if name = strings.ToLower(strings.TrimSpace(name)); name != "" && n > 0 {
+			if per == nil {
+				per = map[string]int{}
+			}
+			per[name] = n
+		}
+	}
+	r.mu.Lock()
+	r.maxActive = limit
+	r.providerLimits = per
+	r.mu.Unlock()
+}
+
+// ConcurrencyLimits reports the caps in force (0 = unlimited).
+func (r *WorkerRegistry) ConcurrencyLimits() (max int, perProvider map[string]int) {
+	if r == nil {
+		return 0, nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make(map[string]int, len(r.providerLimits))
+	for k, v := range r.providerLimits {
+		out[k] = v
+	}
+	return r.maxActive, out
 }
 
 // checkActiveLimit is an early observation, not a slot reservation. A nil
 // registry has no workers yet; AgentTool creates it when registering the loop.
-func (r *WorkerRegistry) checkActiveLimit() error {
+func (r *WorkerRegistry) checkActiveLimit(provider ...string) error {
 	if r == nil {
 		return nil
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.checkActiveLimitLocked()
+	return r.checkActiveLimitLocked(provider...)
 }
 
 // Caller holds the registry read or write lock.
-func (r *WorkerRegistry) checkActiveLimitLocked() error {
+func (r *WorkerRegistry) checkActiveLimitLocked(provider ...string) error {
 	if r.maxActive > 0 {
 		if active := r.activeCountLocked(); active >= r.maxActive {
 			return fmt.Errorf(
-				"worker limit reached: %d workers active (max %d) — wait for a worker to finish or stop one with task_stop before starting or continuing another task",
+				"worker limit reached: %d workers active (max %d, setting max_parallel_agents) — wait for a worker to finish or stop one with task_stop before starting or continuing another task",
 				active, r.maxActive)
+		}
+	}
+	name := ""
+	if len(provider) > 0 {
+		name = strings.ToLower(strings.TrimSpace(provider[0]))
+	}
+	if limit := r.providerLimits[name]; name != "" && limit > 0 {
+		active := 0
+		for _, w := range r.workers {
+			if strings.EqualFold(w.provider, name) {
+				switch w.status() {
+				case "created", "running":
+					active++
+				}
+			}
+		}
+		if active >= limit {
+			return fmt.Errorf(
+				"worker limit for provider %s reached: %d workers active (max %d, setting max_parallel_agents_per_provider) — wait for a worker to finish or stop one with task_stop",
+				name, active, limit)
 		}
 	}
 	return nil
@@ -92,20 +160,24 @@ func (r *WorkerRegistry) startContinuation(w *Worker) error {
 	case "created", "running":
 		return fmt.Errorf("worker %s is already running; its current task must finish before a follow-up", w.ID)
 	}
-	if err := r.checkActiveLimitLocked(); err != nil {
+	if err := r.checkActiveLimitLocked(w.provider); err != nil {
 		return err
 	}
 	w.setState(func(w *Worker) { w.Status = "running" })
 	return nil
 }
 
-func (r *WorkerRegistry) add(agentName, description string, loop *Loop, enforceLimit bool) (*Worker, error) {
+func (r *WorkerRegistry) add(agentName, description string, loop *Loop, enforceLimit bool, provider ...string) (*Worker, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if enforceLimit {
-		if err := r.checkActiveLimitLocked(); err != nil {
+		if err := r.checkActiveLimitLocked(provider...); err != nil {
 			return nil, err
 		}
+	}
+	providerName := ""
+	if len(provider) > 0 {
+		providerName = strings.ToLower(strings.TrimSpace(provider[0]))
 	}
 	id := fmt.Sprintf("worker-%d", r.seq.Add(1))
 	now := time.Now()
@@ -118,6 +190,7 @@ func (r *WorkerRegistry) add(agentName, description string, loop *Loop, enforceL
 		UpdatedAt:   now,
 		Status:      "created",
 		registry:    r,
+		provider:    providerName,
 	}
 	r.workers[id] = w
 	r.evictLocked()

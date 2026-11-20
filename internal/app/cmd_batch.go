@@ -265,17 +265,18 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 	// and lets this (big) model judge the diff + evidence ("small drafts,
 	// big verdict").
 	at, atErr := wireAgentTool(agentToolWiring{
-		loop:               l,
-		registry:           reg,
-		provider:           mainProvider,
-		caps:               caps,
-		tomlCfg:            tomlCfg,
-		taskWorkerProvider: taskWorkerProvider,
-		taskWorkerCfg:      taskWorkerCfg,
-		advisorProvider:    advisorProvider,
-		home:               home,
-		delegationOff:      !orchMode.delegationEnabled(),
-		coordinatorMode:    orchMode.hard(),
+		loop:                    l,
+		registry:                reg,
+		provider:                mainProvider,
+		caps:                    caps,
+		tomlCfg:                 tomlCfg,
+		taskWorkerProvider:      taskWorkerProvider,
+		taskWorkerCfg:           taskWorkerCfg,
+		advisorProvider:         advisorProvider,
+		home:                    home,
+		coordinatorProviderName: config.RuntimeProviderName(tomlCfg, contextCfg),
+		delegationOff:           !orchMode.delegationEnabled(),
+		coordinatorMode:         orchMode.hard(),
 	})
 	if atErr != nil {
 		fatal("init agent tool", atErr)

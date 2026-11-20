@@ -78,6 +78,10 @@ type Worker struct {
 	cancel   context.CancelFunc
 	stopped  bool
 
+	// provider names the backend the worker's model calls go to (for the
+	// per-provider concurrency cap); immutable after setup.
+	provider string
+
 	// Persistence identity (worker_persist.go), immutable after setup.
 	sessionID string
 	baseDir   string
@@ -287,10 +291,13 @@ type WorkerRegistry struct {
 	// evicted keeps compact summaries of finished workers pruned by the
 	// retention policy, so references by id stay answerable. Guarded by mu.
 	evicted map[string]EvictedWorker
-	// retention/maxActive are set once at construction (env-overridable
-	// constants) and read-only afterwards.
-	retention int
-	maxActive int
+	// retention is set once at construction (env-overridable constant).
+	// maxActive (0 = unlimited) and providerLimits come from settings
+	// (max_parallel_agents[_per_provider]) via SetConcurrencyLimits and
+	// are guarded by mu.
+	retention      int
+	maxActive      int
+	providerLimits map[string]int
 	// store persists resumable workers (worker_persist.go). Guarded by mu.
 	store WorkerStore
 }

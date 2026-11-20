@@ -30,6 +30,8 @@ type fix1037Provider struct {
 	hold      chan struct{}
 	toolSteps int32
 	holdWake  atomic.Bool
+	// slowQueued delays the first token of a "QUEUED..." turn (nanoseconds).
+	slowQueued atomic.Int64
 
 	parentCalls, workerCalls atomic.Int32
 	mu                       sync.Mutex
@@ -96,6 +98,13 @@ func (p *fix1037Provider) Complete(ctx context.Context, msgs []llm.Message, defs
 			}
 		}
 		return workerSteeringWireDeltas(llm.Delta{Content: "Wake acknowledged.", FinishReason: "stop"}), nil
+	}
+	if d := p.slowQueued.Load(); d > 0 && strings.HasPrefix(user, "QUEUED") && last.Role != llm.RoleTool && !wake {
+		select { // slow first token
+		case <-time.After(time.Duration(d)):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 	switch {
 	case strings.HasPrefix(user, "SPAWN"):
@@ -545,4 +554,136 @@ func TestFix1037BackgroundWorkerLivenessEndToEnd(t *testing.T) {
 	if !v.BadgeHidden || v.Composer || v.SideBg != "" {
 		t.Fatalf("background state not cleared after the worker finished: %+v", v)
 	}
+}
+
+// Debug: record which code path removes a user bubble containing the
+// queued text (removeChild/remove/replaceChildren/innerHTML on #stream).
+const fix1037TraceRemovals = `(()=>{window.__rm=[];const has=n=>n&&n.nodeType===1&&window.__queuedText&&n.textContent.includes(window.__queuedText)&&(n.matches('.msg-user')||n.querySelector('.msg-user'));
+const note=(how)=>window.__rm.push(how+' @'+performance.now().toFixed(0)+' '+(new Error().stack||'').split('\n').slice(2,9).map(s=>s.trim()).join(' | '));
+const rc=Node.prototype.removeChild;Node.prototype.removeChild=function(c){if(has(c))note('removeChild');return rc.call(this,c);};
+const rm=Element.prototype.remove;Element.prototype.remove=function(){if(has(this))note('remove');return rm.call(this);};
+const st=document.querySelector('#stream');const d=Object.getOwnPropertyDescriptor(Element.prototype,'innerHTML');
+Object.defineProperty(st,'innerHTML',{configurable:true,get(){return d.get.call(this);},set(v){if(has(this))note('innerHTML');d.set.call(this,v);}});
+const rcs=Element.prototype.replaceChildren;Element.prototype.replaceChildren=function(){if(this===st&&has(this))note('replaceChildren');return rcs.apply(this,arguments);};
+return true;})()`
+
+// Item 3, single view, orchestrator conditions: a background worker finishes
+// around the end of the coordinator's turn while a message is queued, so the
+// automatic wake-up turn races the queued message's turn.
+func TestFix1037QueuedMessageSingleViewRacesWakeTurn(t *testing.T) {
+	for _, offset := range []time.Duration{-150 * time.Millisecond, 0, 120 * time.Millisecond, 600 * time.Millisecond} {
+		t.Run(offset.String(), func(t *testing.T) { fix1037SingleViewRace(t, offset, 0, 4*time.Second) })
+	}
+	// The wake-up turn claims the conversation first (the queued turn's
+	// request is slower to leave the browser).
+	t.Run("wake-first-long", func(t *testing.T) { fix1037SingleViewRace(t, 0, 400*time.Millisecond, 4*time.Second) })
+	t.Run("wake-first-short", func(t *testing.T) { fix1037SingleViewRace(t, 0, 400*time.Millisecond, 1500*time.Millisecond) })
+	// The window is hidden and shown while the queued turn waits for the
+	// automatic turn (the app follows its own turn through sync then).
+	t.Run("wake-first-refocus", func(t *testing.T) { fix1037SingleViewRace(t, 0, 400*time.Millisecond, -1500*time.Millisecond) })
+}
+
+func fix1037SingleViewRace(t *testing.T, offset, chatDelay, wakeHold time.Duration) {
+	p := newFix1037Provider(0)
+	p.slowQueued.Store(int64(3 * time.Second))
+	app := fix1037StartApp(t, p)
+	app.eval(fix1037Observe, nil)
+	app.eval(fix1037SlowHistory, nil)
+	app.eval(`(()=>{const L=m=>window.__obs.log.push(m+' '+performance.now().toFixed(0));
+ const d=dispatchQueuedTask;dispatchQueuedTask=function(){L('dispatch');return d.apply(this,arguments);};
+ const sp=sendPrompt;sendPrompt=function(t){L('send '+String(t).slice(0,12));return sp.apply(this,arguments);};
+ const h=syncHandleFrame;syncHandleFrame=function(f){if(f.type!=='run_event'||(f.event&&/session_activity|done/.test(f.event.type)))L('frame '+f.type+(f.event?':'+f.event.type:'')+(f.auto?' auto':''));return h.apply(this,arguments);};
+ return true;})()`, nil)
+	app.send("SPAWN one worker")
+	app.waitJS("spawn turn done", `!streaming&&document.querySelector('#stream').textContent.includes('Spawned a background')`, 15*time.Second)
+	p.holdWake.Store(true)
+	app.send("HOLD user turn")
+	app.waitJS("user turn running", `streaming===true&&document.querySelector('#stream').textContent.includes('HOLD user turn')`, 10*time.Second)
+	if chatDelay > 0 {
+		app.eval(`(()=>{const f=window.fetch;window.fetch=function(u,o){if(String(u)==='/api/chat'&&o&&o.method==='POST'&&String(o.body).includes('QUEUED'))return new Promise(r=>setTimeout(r,`+fmt.Sprint(chatDelay.Milliseconds())+`)).then(()=>f.call(this,u,o));return f.call(this,u,o);};return true;})()`, nil)
+	}
+	app.eval(`window.__queuedText='QUEUED-SINGLE-VIEW';true`, nil)
+	app.eval(fix1037TraceRemovals, nil)
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+		var dump string
+		_ = app.page.Eval(context.Background(), `JSON.stringify({log:window.__obs.log,rm:window.__rm,gaps:window.__obs.gaps.length,q:promptQueue.map(x=>x.text),pause:pauseQueue,ev:[...document.querySelectorAll('#stream .event-line')].map(n=>n.textContent)})`, &dump)
+		t.Logf("dump: %s", dump)
+	})
+	app.send("QUEUED-SINGLE-VIEW message")
+	app.waitJS("queue row", `[...document.querySelectorAll('#prompt-queue .queue-text')].some(n=>n.textContent.includes('QUEUED-SINGLE-VIEW'))`, 10*time.Second)
+	if offset < 0 {
+		p.step <- struct{}{}
+		time.Sleep(-offset)
+		p.hold <- struct{}{}
+	} else {
+		p.hold <- struct{}{}
+		time.Sleep(offset)
+		p.step <- struct{}{}
+	}
+	if wakeHold < 0 {
+		wakeHold = -wakeHold
+		time.Sleep(700 * time.Millisecond)
+		app.eval(fix1037HideShow, nil)
+	}
+	time.Sleep(wakeHold)
+	p.hold <- struct{}{} // release a held wake turn, if one started
+	p.hold <- struct{}{}
+	app.waitJS("queued reply", `document.querySelector('#stream').textContent.includes('REPLY to QUEUED-SINGLE-VIEW')`, 30*time.Second)
+	time.Sleep(2500 * time.Millisecond)
+	var obs struct {
+		Gaps    []float64 `json:"gaps"`
+		Bubbles int       `json:"bubbles"`
+		Log     []string  `json:"log"`
+		Rm      []string  `json:"rm"`
+	}
+	app.eval(`(()=>({gaps:window.__obs.gaps,log:window.__obs.log,rm:window.__rm,bubbles:[...document.querySelectorAll('#stream .msg-user')].filter(n=>n.textContent.includes('QUEUED-SINGLE-VIEW')).length}))()`, &obs)
+	p.mu.Lock()
+	t.Logf("provider: %v", p.trace)
+	p.mu.Unlock()
+	t.Logf("log=%v", obs.Log)
+	for _, r := range obs.Rm {
+		t.Logf("removed: %s", r)
+	}
+	if len(obs.Gaps) > 0 {
+		t.Fatalf("queued message disappeared for %d observation(s) (%.0f..%.0f ms)", len(obs.Gaps), obs.Gaps[0], obs.Gaps[len(obs.Gaps)-1])
+	}
+	if obs.Bubbles != 1 {
+		t.Fatalf("queued message bubbles = %d, want 1", obs.Bubbles)
+	}
+	// Settled tail blocks (no longer "live") must not be virtualized: a culled
+	// tail block is a message that vanishes for seconds in WebView2.
+	var cv string
+	app.eval(`(()=>{const b=[...document.querySelectorAll('#stream .msg-user')].filter(n=>n.textContent.includes('QUEUED-SINGLE-VIEW')).pop();return b.classList.contains('transcript-live')+' '+getComputedStyle(b).contentVisibility;})()`, &cv)
+	if !strings.HasSuffix(cv, " visible") {
+		t.Fatalf("queued bubble at the tail is virtualized: %s", cv)
+	}
+}
+
+// 1.0.37: the settings show "Max. parallel agents" with a warning when it is
+// unlimited or high (rate limits, cost, local LM Studio serializes requests).
+func TestFix1037ParallelAgentsSettingWarns(t *testing.T) {
+	app := audit130StartApp(t, 1280, 900)
+	app.setLanguage("pl")
+	state := func() (label, warn string) {
+		var out struct {
+			Label string `json:"label"`
+			Warn  string `json:"warn"`
+		}
+		app.eval(`(async()=>{openPanel('modes');for(let i=0;i<60;i++){const r=[...document.querySelectorAll('.knob-row')].find(r=>r.querySelector('.k-name')&&r.querySelector('.k-name').title.endsWith('max_parallel_agents'));if(r){const w=r.querySelector('.k-warn');return {label:r.querySelector('.k-name').firstChild.textContent,warn:w?w.textContent:''};}await new Promise(r=>setTimeout(r,50));}return {label:'',warn:''};})()`, &out)
+		return out.Label, out.Warn
+	}
+	label, warn := state()
+	if label != "Maks. równoległych agentów" || warn != "" {
+		t.Fatalf("default row: label=%q warn=%q", label, warn)
+	}
+	app.eval(`jpost('/api/config',{key:'max_parallel_agents',value:'0'}).then(()=>true)`, nil)
+	app.eval(`(async()=>{await sections.modes();return true;})()`, nil)
+	_, warn = state()
+	if !strings.Contains(warn, "429") || !strings.Contains(warn, "LM Studio") {
+		t.Fatalf("unlimited without warning: %q", warn)
+	}
+	app.cleanShot("1037_parallel_agents_setting", false)
 }

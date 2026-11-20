@@ -28,6 +28,9 @@ type agentToolWiring struct {
 	delegationOff      bool
 	coordinatorMode    bool
 	checkpoint         func(tools.Tool) tools.Tool
+	// coordinatorProviderName names the coordinator's backend (per-provider
+	// worker cap when workers share it).
+	coordinatorProviderName string
 }
 
 // wireAgentTool builds AgentTool, applies task limits / draft-verify /
@@ -54,6 +57,10 @@ func wireAgentTool(w agentToolWiring) (*agent.AgentTool, error) {
 	// runaway safety net. Tokens remain a hard cap (0 = no cap).
 	at.MaxSteps = w.tomlCfg.TaskMaxSteps
 	at.MaxTokens = w.tomlCfg.TaskMaxTokens
+	// max_parallel_agents (nil = default 6, 0 = unlimited) and the optional
+	// per-provider caps (max_parallel_agents_per_provider).
+	at.Workers.SetConcurrencyLimits(w.tomlCfg.MaxParallelAgents, w.tomlCfg.MaxParallelAgentsPerProvider)
+	at.CoordinatorProviderName = w.coordinatorProviderName
 	// Model-per-task: hand the worker backend (built above from
 	// `task_model`) to the task tool. The lazy ping (first delegation
 	// only, 5s cap) is a GET /v1/models probe — cheap and universal for
@@ -64,6 +71,7 @@ func wireAgentTool(w agentToolWiring) (*agent.AgentTool, error) {
 	if w.taskWorkerProvider != nil {
 		at.WorkerProvider = w.taskWorkerProvider
 		at.WorkerContextProvider = config.RuntimeProviderName(w.tomlCfg, w.taskWorkerCfg)
+		at.WorkerProviderName = at.WorkerContextProvider
 		profile := execution.Resolve(w.taskWorkerCfg, w.tomlCfg, w.caps, envTruthy("SUPERCLI_CATALOG_HOIST"))
 		at.WorkerProfile = &profile
 		if u := w.taskWorkerCfg.BaseURL; u != "" &&

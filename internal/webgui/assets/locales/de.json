@@ -1223,5 +1223,14 @@
   "task.stalledHint": "Seit längerer Zeit wurde kein Fortschritt gemeldet. Der Agent wartet vielleicht auf eine langsame Modellantwort oder einen langen Befehl; stoppe oder starte ihn neu, wenn er hängt.",
   "task.restart": "Neu starten",
   "task.activityLoading": "Werkzeugaufrufe dieses Laufs werden geladen…",
-  "background.working": "Arbeitet im Hintergrund ({n})"
+  "background.working": "Arbeitet im Hintergrund ({n})",
+  "setting.max_parallel_agents.label": "Max. parallele Agenten",
+  "setting.max_parallel_agents.desc": "Wie viele Hilfsagenten gleichzeitig arbeiten dürfen. Leer = Standard (6); 0 = kein Limit.",
+  "setting.max_parallel_agents_per_provider.label": "Parallele Agenten pro Anbieter",
+  "setting.max_parallel_agents_per_provider.desc": "Optionales Limit pro Anbieter: Anbieter=Zahl, getrennt durch ';' (z. B. lmstudio=1; openrouter=4).",
+  "setting.max_parallel_agents.warn": "Viele parallele Agenten vervielfachen die Kosten und stoßen an Anbieterlimits (HTTP 429, mit Wartezeit wiederholt); ein lokaler LM-Studio-Server beantwortet nur eine Anfrage gleichzeitig, weitere Agenten warten nur.",
+  "setting.value.unlimited": "kein Limit",
+  "setting.value.none": "keine",
+  "modes.desc.max_parallel_agents": "Wie viele Hilfsagenten gleichzeitig arbeiten dürfen. Leer = Standard (6); 0 = kein Limit.",
+  "modes.desc.max_parallel_agents_per_provider": "Optionales Limit pro Anbieter: Anbieter=Zahl, getrennt durch ';' (z. B. lmstudio=1; openrouter=4)."
 }

@@ -1223,5 +1223,14 @@
   "task.stalledHint": "Ilgą laiką nepranešta apie pažangą. Jis gali laukti lėto modelio atsakymo arba ilgos komandos; jei užstrigo, sustabdykite arba paleiskite iš naujo.",
   "task.restart": "Paleisti iš naujo",
   "task.activityLoading": "Įkeliami šio vykdymo įrankių iškvietimai…",
-  "background.working": "Dirba fone ({n})"
+  "background.working": "Dirba fone ({n})",
+  "setting.max_parallel_agents.label": "Maks. lygiagrečių agentų",
+  "setting.max_parallel_agents.desc": "Kiek pagalbinių agentų gali dirbti vienu metu. Tuščia = numatytasis (6); 0 = be ribos.",
+  "setting.max_parallel_agents_per_provider.label": "Lygiagretūs agentai vienam teikėjui",
+  "setting.max_parallel_agents_per_provider.desc": "Neprivalomas ribojimas vienam teikėjui: teikėjas=skaičius, atskirta ';' (pvz., lmstudio=1; openrouter=4).",
+  "setting.max_parallel_agents.warn": "Daug lygiagrečių agentų padaugina sąnaudas ir pasiekia teikėjo ribas (HTTP 429, kartojama su pauze); vietinis LM Studio vienu metu aptarnauja vieną užklausą, papildomi agentai tik laukia.",
+  "setting.value.unlimited": "be ribos",
+  "setting.value.none": "nėra",
+  "modes.desc.max_parallel_agents": "Kiek pagalbinių agentų gali dirbti vienu metu. Tuščia = numatytasis (6); 0 = be ribos.",
+  "modes.desc.max_parallel_agents_per_provider": "Neprivalomas ribojimas vienam teikėjui: teikėjas=skaičius, atskirta ';' (pvz., lmstudio=1; openrouter=4)."
 }

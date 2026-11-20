@@ -213,7 +213,9 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		usageStore = us
 		assistantSeqBefore, _ = usageStore.LatestMessageSeq(ctx, sid, string(llm.RoleAssistant))
 		if sink := e.usageCallSink(usageStore, sid); sink != nil {
-			ctx = llm.WithCallSink(ctx, sink)
+			// Durable: background workers of this turn keep recording
+			// their usage after the turn ends.
+			ctx = llm.WithDurableCallSink(ctx, sink)
 		}
 	}
 	ctx = llm.WithCallSink(ctx, telemetryCallSink(telemetry))

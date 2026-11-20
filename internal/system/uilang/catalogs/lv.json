@@ -1097,5 +1097,11 @@
   "tui.wake.started": "[automātisks gājiens — nav jūsu ziņa] saņemti %d fona aģentu rezultāti",
   "tui.wake.held": "[fona rezultāti aizturēti] %d atskaites gaida jūsu nākamo ziņu — sasniegts %d automātisko pamodināšanu ierobežojums",
   "tui.provider_rename.hint": "Mainiet nosaukumu, lai pārdēvētu šo pakalpojumu sniedzēju. Iestatījumi, modeļu izvēles un saglabātās sesijas, kas to izmanto, tiek atjauninātas.",
-  "tui.provider_rename.done": "Pakalpojumu sniedzējs %s pārdēvēts par %s."
+  "tui.provider_rename.done": "Pakalpojumu sniedzējs %s pārdēvēts par %s.",
+  "tui.setting_max_parallel_agents.label": "Maks. paralēlo aģentu",
+  "tui.setting_max_parallel_agents.desc": "Cik palīgaģentu var strādāt vienlaikus. Tukšs = noklusējums (6); 0 = bez ierobežojuma. Daudz paralēlu aģentu pavairo izmaksas un sasniedz sniedzēja ierobežojumus (HTTP 429, atkārto ar pauzi); lokālais LM Studio apstrādā vienu pieprasījumu vienlaikus, papildu aģenti tikai gaida.",
+  "tui.setting_max_parallel_agents_per_provider.label": "Paralēlie aģenti uz pakalpojumu sniedzēju",
+  "tui.setting_max_parallel_agents_per_provider.desc": "Neobligāts ierobežojums uz sniedzēju: sniedzējs=skaitlis, atdalīts ar ';' (piem., lmstudio=1; openrouter=4).",
+  "tui.setting_value.unlimited": "bez ierobežojuma",
+  "tui.setting_value.none": "nav"
 }

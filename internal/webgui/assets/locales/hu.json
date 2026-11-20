@@ -1223,5 +1223,14 @@
   "task.stalledHint": "Hosszú ideje nem jelzett előrehaladást. Lehet, hogy lassú modellválaszra vagy hosszú parancsra vár; ha elakadt, állítsa le vagy indítsa újra.",
   "task.restart": "Újraindítás",
   "task.activityLoading": "A futás eszközhívásainak betöltése…",
-  "background.working": "A háttérben dolgozik ({n})"
+  "background.working": "A háttérben dolgozik ({n})",
+  "setting.max_parallel_agents.label": "Max. párhuzamos ügynök",
+  "setting.max_parallel_agents.desc": "Hány segédügynök dolgozhat egyszerre. Üres = alapértelmezett (6); 0 = korlátlan.",
+  "setting.max_parallel_agents_per_provider.label": "Párhuzamos ügynökök szolgáltatónként",
+  "setting.max_parallel_agents_per_provider.desc": "Opcionális korlát szolgáltatónként: szolgáltató=szám ';'-vel elválasztva (pl. lmstudio=1; openrouter=4).",
+  "setting.max_parallel_agents.warn": "Sok párhuzamos ügynök megsokszorozza a költséget és eléri a szolgáltatói korlátokat (HTTP 429, várakozással újrapróbálva); a helyi LM Studio egyszerre egy kérést szolgál ki, a további ügynökök csak várnak.",
+  "setting.value.unlimited": "korlátlan",
+  "setting.value.none": "nincs",
+  "modes.desc.max_parallel_agents": "Hány segédügynök dolgozhat egyszerre. Üres = alapértelmezett (6); 0 = korlátlan.",
+  "modes.desc.max_parallel_agents_per_provider": "Opcionális korlát szolgáltatónként: szolgáltató=szám ';'-vel elválasztva (pl. lmstudio=1; openrouter=4)."
 }

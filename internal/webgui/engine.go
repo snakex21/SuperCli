@@ -202,6 +202,8 @@ type Engine struct {
 	// running in another project cannot be continued twice at once.
 	sessionRunMu sync.Mutex
 	sessionRuns  map[string]chan struct{}
+	// sessionWakeRuns marks conversations held by an automatic wake-up turn.
+	sessionWakeRuns map[string]bool
 }
 
 // NewEngine builds the provider and capability registry from the

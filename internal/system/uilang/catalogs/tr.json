@@ -1097,5 +1097,11 @@
   "tui.wake.started": "[otomatik tur — sizin mesajınız değil] %d arka plan ajanı sonucu geldi",
   "tui.wake.held": "[arka plan sonuçları bekletiliyor] %d rapor bir sonraki mesajınızı bekliyor — %d otomatik uyandırma sınırına ulaşıldı",
   "tui.provider_rename.hint": "Bu sağlayıcıyı yeniden adlandırmak için adı değiştirin. Onu kullanan ayarlar, model seçimleri ve kayıtlı oturumlar güncellenir.",
-  "tui.provider_rename.done": "%s sağlayıcısının yeni adı: %s."
+  "tui.provider_rename.done": "%s sağlayıcısının yeni adı: %s.",
+  "tui.setting_max_parallel_agents.label": "Maks. paralel ajan",
+  "tui.setting_max_parallel_agents.desc": "Aynı anda kaç yardımcı ajan çalışabilir. Boş = varsayılan (6); 0 = sınırsız. Çok sayıda paralel ajan maliyeti katlar ve sağlayıcı sınırlarına takılır (HTTP 429, bekleyerek yeniden denenir); yerel LM Studio sunucusu aynı anda bir isteğe yanıt verir, fazla ajanlar yalnızca bekler.",
+  "tui.setting_max_parallel_agents_per_provider.label": "Sağlayıcı başına paralel ajan",
+  "tui.setting_max_parallel_agents_per_provider.desc": "Sağlayıcı başına isteğe bağlı sınır: sağlayıcı=sayı, ';' ile ayrılır (ör. lmstudio=1; openrouter=4).",
+  "tui.setting_value.unlimited": "sınırsız",
+  "tui.setting_value.none": "yok"
 }

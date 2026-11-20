@@ -1223,5 +1223,14 @@
   "task.stalledHint": "Inga framsteg har rapporterats på länge. Den kanske väntar på ett långsamt modellsvar eller ett långt kommando; stoppa eller starta om den om den har fastnat.",
   "task.restart": "Starta om",
   "task.activityLoading": "Läser in verktygsanropen för den här körningen…",
-  "background.working": "Arbetar i bakgrunden ({n})"
+  "background.working": "Arbetar i bakgrunden ({n})",
+  "setting.max_parallel_agents.label": "Max parallella agenter",
+  "setting.max_parallel_agents.desc": "Hur många hjälpagenter som får arbeta samtidigt. Tomt = standard (6); 0 = ingen gräns.",
+  "setting.max_parallel_agents_per_provider.label": "Parallella agenter per leverantör",
+  "setting.max_parallel_agents_per_provider.desc": "Valfri gräns per leverantör: leverantör=tal separerat med ';' (t.ex. lmstudio=1; openrouter=4).",
+  "setting.max_parallel_agents.warn": "Många parallella agenter mångdubblar kostnaden och slår i leverantörens gränser (HTTP 429, försöks igen med väntan); en lokal LM Studio-server svarar på en begäran i taget, så extra agenter bara väntar.",
+  "setting.value.unlimited": "ingen gräns",
+  "setting.value.none": "ingen",
+  "modes.desc.max_parallel_agents": "Hur många hjälpagenter som får arbeta samtidigt. Tomt = standard (6); 0 = ingen gräns.",
+  "modes.desc.max_parallel_agents_per_provider": "Valfri gräns per leverantör: leverantör=tal separerat med ';' (t.ex. lmstudio=1; openrouter=4)."
 }

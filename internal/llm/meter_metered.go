@@ -142,6 +142,37 @@ func WithCallSink(ctx context.Context, sink CallSink) context.Context {
 	return context.WithValue(ctx, callSinkCtxKey{}, sinks)
 }
 
+type durableCallSinkCtxKey struct{}
+
+// WithDurableCallSink attaches sink like WithCallSink and also marks it to
+// follow work that outlives the request: a background worker started by the
+// turn keeps reporting its model calls (per-session usage and cost rows)
+// after the turn has ended. Per-turn telemetry must use WithCallSink.
+func WithDurableCallSink(ctx context.Context, sink CallSink) context.Context {
+	if sink == nil {
+		return ctx
+	}
+	ctx = WithCallSink(ctx, sink)
+	prev, _ := ctx.Value(durableCallSinkCtxKey{}).([]CallSink)
+	sinks := make([]CallSink, 0, len(prev)+1)
+	sinks = append(sinks, prev...)
+	sinks = append(sinks, sink)
+	return context.WithValue(ctx, durableCallSinkCtxKey{}, sinks)
+}
+
+// CarryDurableCallSinks attaches src's durable sinks to dst (a context that
+// is detached from src, e.g. a background worker's).
+func CarryDurableCallSinks(dst, src context.Context) context.Context {
+	if dst == nil || src == nil {
+		return dst
+	}
+	sinks, _ := src.Value(durableCallSinkCtxKey{}).([]CallSink)
+	for _, sink := range sinks {
+		dst = WithDurableCallSink(dst, sink)
+	}
+	return dst
+}
+
 func callSinksFromContext(ctx context.Context) []CallSink {
 	if ctx == nil {
 		return nil

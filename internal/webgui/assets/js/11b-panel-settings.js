@@ -75,7 +75,7 @@ var settingGroups = [
   ["set.group.display", ["show_generation_speed", "assistant_edit", "assistant_edit_model_sees", "cost_currency", "update_notify"]],
   ["set.group.memory", ["memory"]],
   ["set.group.agent", ["queue_merge", "orchestrator", "navigator", "orchestrator_model", "task_model", "task_reasoning_effort",
-    "task_parallel", "task_max_steps", "task_max_tokens", "advisor_model", "advisor_reasoning_effort", "review_model", "review_reasoning_effort"]],
+    "task_parallel", "task_max_steps", "task_max_tokens", "max_parallel_agents", "max_parallel_agents_per_provider", "advisor_model", "advisor_reasoning_effort", "review_model", "review_reasoning_effort"]],
   ["set.group.context", ["thinking", "discard_previous_reasoning", "context_policy", "context_window", "prune_protect_tokens",
     "memory_briefing_tokens", "compact_model", "stable_toolset", "cache_prompt", "preflight_repo"]],
   ["set.group.darwin", ["darwin", "darwin_parallel", "darwin_models", "darwin_judge_model", "darwin_pool_size", "darwin_reasoning_effort", "darwin_auto_merge"]],
@@ -83,10 +83,18 @@ var settingGroups = [
   ["set.group.startup", ["default_model", "default_provider"]]
 ];
 
+// Mirrors config.ParallelAgentsHigh: unlimited (0) or above 8 warns.
+function parallelAgentsHigh(raw) {
+  var v = String(raw == null ? "" : raw).trim().toLowerCase();
+  if (!v) return false;
+  if (v === "0" || v === "unlimited" || v === "bez limitu" || v === "inf" || v === "∞") return true;
+  var n = Number(v);
+  return Number.isFinite(n) && n > 8;
+}
 function knobDisplayValue(k) {
   var key = ({on:"set.state.on", off:"set.state.off", auto:"set.state.auto", parallel:"setting.value.parallel", sequential:"setting.value.sequential",
     "default (700/300 by tier)":"setting.value.memoryBudget", "default (spec or 10)":"setting.value.workerSteps", "default (no cap)":"setting.value.noCap",
-    "default (coordinator's model)":"setting.value.coordinator", "default (main model)":"setting.value.main", "default (active model)":"setting.value.active", "default (worker model)":"setting.value.worker",
+    "default (coordinator's model)":"setting.value.coordinator", "unlimited":"setting.value.unlimited", "default (none)":"setting.value.none", "default (main model)":"setting.value.main", "default (active model)":"setting.value.active", "default (worker model)":"setting.value.worker",
     "off (no automatic paid fallback)":"setting.value.noFallback", "none (diff-only verdict)":"setting.value.diffOnly"})[k.value];
   if (key) return t(key);
   if (k.value === "default (off)") return t("setting.value.number").replace("{n}", t("set.state.off"));
@@ -113,7 +121,7 @@ function currencyOptionLabel(code, names) {
 var modeKeys = [
   "queue_merge",
   "orchestrator", "navigator", "orchestrator_model", "task_model", "task_reasoning_effort", "task_parallel",
-  "task_max_steps", "task_max_tokens", "advisor_model", "advisor_reasoning_effort", "review_model", "review_reasoning_effort", "darwin_reasoning_effort",
+  "task_max_steps", "task_max_tokens", "max_parallel_agents", "max_parallel_agents_per_provider", "advisor_model", "advisor_reasoning_effort", "review_model", "review_reasoning_effort", "darwin_reasoning_effort",
   "darwin", "darwin_parallel", "darwin_models", "darwin_judge_model", "darwin_auto_merge",
   "draft_verify", "draft_verify_max_rounds", "verify_commands", "compact_model",
   "context_policy", "context_window", "prune_protect_tokens", "memory_briefing_tokens",
@@ -226,6 +234,12 @@ function knobRow(k, currencyCodes, section) {
       if (input.value.trim() !== (k.raw || "")) post(input.value.trim());
     });
     row.appendChild(input);
+    // Many parallel agents: rate limits (429), cost, local servers serialize.
+    if (k.key === "max_parallel_agents" && parallelAgentsHigh(k.raw)) {
+      var warn = el("div", "k-warn", t("setting.max_parallel_agents.warn"));
+      warn.setAttribute("role", "note");
+      name.appendChild(warn);
+    }
   } else {
     row.appendChild(el("span", "k-val", knobDisplayValue(k)));
   }

@@ -620,18 +620,19 @@ func Main() {
 	configureInvocationPersistence(loop, sessStore, checkpointCtrl)
 
 	at, err := wireAgentTool(agentToolWiring{
-		loop:               loop,
-		registry:           registry,
-		provider:           mainProvider,
-		caps:               caps,
-		tomlCfg:            tomlCfg,
-		taskWorkerProvider: taskWorkerProvider,
-		taskWorkerCfg:      taskWorkerCfg,
-		advisorProvider:    advisorProvider,
-		home:               home,
-		delegationOff:      supercliDelegationDisabled,
-		coordinatorMode:    supercliCoordinatorMode,
-		checkpoint:         checkpointSpec,
+		loop:                    loop,
+		registry:                registry,
+		provider:                mainProvider,
+		caps:                    caps,
+		tomlCfg:                 tomlCfg,
+		taskWorkerProvider:      taskWorkerProvider,
+		taskWorkerCfg:           taskWorkerCfg,
+		advisorProvider:         advisorProvider,
+		home:                    home,
+		coordinatorProviderName: config.RuntimeProviderName(tomlCfg, coordinatorCfg),
+		delegationOff:           supercliDelegationDisabled,
+		coordinatorMode:         supercliCoordinatorMode,
+		checkpoint:              checkpointSpec,
 	})
 	if err != nil {
 		fatal("init agent tool", err)

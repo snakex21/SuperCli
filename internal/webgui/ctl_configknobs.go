@@ -80,6 +80,8 @@ func knobDefs() []knobDef {
 		{"memory_briefing_tokens", "hard token budget for the session-start memory briefing", knobInt, true},
 		{"task_max_steps", "cap on model turns a delegated worker may take", knobInt, true},
 		{"task_max_tokens", "cap on a delegated worker's total token spend", knobInt, true},
+		{"max_parallel_agents", "how many delegated workers may run at the same time; empty = default 6, 0 or unlimited = no limit. High values multiply cost and provider rate limits (HTTP 429); a local LM Studio server answers one request at a time", knobText, true},
+		{"max_parallel_agents_per_provider", "optional cap per provider, provider=number separated by ';' (e.g. lmstudio=1; openrouter=4); empty = none", knobText, true},
 		{"task_model", "worker model/host for task delegation (\"model\" or \"provider/model\"; empty = coordinator's model)", knobText, true},
 		{"task_reasoning_effort", "worker thinking level; empty = inherit main model", knobText, true},
 		{"advisor_reasoning_effort", "advisor thinking level; empty = inherit main model", knobText, true},
@@ -207,6 +209,20 @@ func knobValue(c *config.TomlConfig, key string) (value, source, raw string) {
 		return intKnob(c.TaskMaxSteps, "spec or 10")
 	case "task_max_tokens":
 		return intKnob(int(c.TaskMaxTokens), "no cap")
+	case "max_parallel_agents":
+		if c.MaxParallelAgents == nil || *c.MaxParallelAgents < 0 {
+			return "default (" + strconv.Itoa(config.DefaultMaxParallelAgents) + ")", "default", ""
+		}
+		if *c.MaxParallelAgents == 0 {
+			return "unlimited", "manual", "0"
+		}
+		return strconv.Itoa(*c.MaxParallelAgents), "manual", strconv.Itoa(*c.MaxParallelAgents)
+	case "max_parallel_agents_per_provider":
+		if len(c.MaxParallelAgentsPerProvider) == 0 {
+			return "default (none)", "default", ""
+		}
+		v := config.FormatProviderAgentLimits(c.MaxParallelAgentsPerProvider)
+		return v, "manual", v
 	case "task_model":
 		if strings.TrimSpace(c.TaskModel) == "" {
 			return "default (coordinator's model)", "default", ""
@@ -400,6 +416,8 @@ func knobDefault(key string) string {
 		return "off"
 	case "max_retries":
 		return "5"
+	case "max_parallel_agents":
+		return strconv.Itoa(config.DefaultMaxParallelAgents)
 	default:
 		return ""
 	}

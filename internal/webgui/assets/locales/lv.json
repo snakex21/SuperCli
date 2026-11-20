@@ -1223,5 +1223,14 @@
   "task.stalledHint": "Ilgu laiku nav ziņots par progresu. Tas, iespējams, gaida lēnu modeļa atbildi vai garu komandu; ja tas ir iestrēdzis, apturiet vai restartējiet to.",
   "task.restart": "Restartēt",
   "task.activityLoading": "Ielādē šīs palaišanas rīku izsaukumus…",
-  "background.working": "Strādā fonā ({n})"
+  "background.working": "Strādā fonā ({n})",
+  "setting.max_parallel_agents.label": "Maks. paralēlo aģentu",
+  "setting.max_parallel_agents.desc": "Cik palīgaģentu var strādāt vienlaikus. Tukšs = noklusējums (6); 0 = bez ierobežojuma.",
+  "setting.max_parallel_agents_per_provider.label": "Paralēlie aģenti uz pakalpojumu sniedzēju",
+  "setting.max_parallel_agents_per_provider.desc": "Neobligāts ierobežojums uz sniedzēju: sniedzējs=skaitlis, atdalīts ar ';' (piem., lmstudio=1; openrouter=4).",
+  "setting.max_parallel_agents.warn": "Daudz paralēlu aģentu pavairo izmaksas un sasniedz sniedzēja ierobežojumus (HTTP 429, atkārto ar pauzi); lokālais LM Studio apstrādā vienu pieprasījumu vienlaikus, papildu aģenti tikai gaida.",
+  "setting.value.unlimited": "bez ierobežojuma",
+  "setting.value.none": "nav",
+  "modes.desc.max_parallel_agents": "Cik palīgaģentu var strādāt vienlaikus. Tukšs = noklusējums (6); 0 = bez ierobežojuma.",
+  "modes.desc.max_parallel_agents_per_provider": "Neobligāts ierobežojums uz sniedzēju: sniedzējs=skaitlis, atdalīts ar ';' (piem., lmstudio=1; openrouter=4)."
 }

@@ -1097,5 +1097,11 @@
   "tui.wake.started": "[tur automat — nu este mesajul tău] au sosit %d rezultat(e) de la agenți în fundal",
   "tui.wake.held": "[rezultate din fundal reținute] %d raport(e) așteaptă următorul tău mesaj — s-a atins limita de %d treziri automate",
   "tui.provider_rename.hint": "Schimbă numele pentru a redenumi acest furnizor. Setările, alegerile de model și sesiunile salvate care îl folosesc sunt actualizate.",
-  "tui.provider_rename.done": "Furnizorul %s a fost redenumit în %s."
+  "tui.provider_rename.done": "Furnizorul %s a fost redenumit în %s.",
+  "tui.setting_max_parallel_agents.label": "Max. agenți în paralel",
+  "tui.setting_max_parallel_agents.desc": "Câți agenți auxiliari pot lucra simultan. Gol = implicit (6); 0 = fără limită. Mulți agenți în paralel multiplică costul și ating limitele furnizorului (HTTP 429, reîncercat cu pauză); un server LM Studio local răspunde la o cerere odată, agenții în plus doar așteaptă.",
+  "tui.setting_max_parallel_agents_per_provider.label": "Agenți în paralel per furnizor",
+  "tui.setting_max_parallel_agents_per_provider.desc": "Limită opțională per furnizor: furnizor=număr separate prin ';' (ex. lmstudio=1; openrouter=4).",
+  "tui.setting_value.unlimited": "fără limită",
+  "tui.setting_value.none": "niciuna"
 }

@@ -1223,5 +1223,14 @@
   "task.stalledHint": "Uzun süredir ilerleme bildirilmedi. Yavaş bir model yanıtını veya uzun bir komutu bekliyor olabilir; takıldıysa durdurun veya yeniden başlatın.",
   "task.restart": "Yeniden başlat",
   "task.activityLoading": "Bu çalıştırmanın araç çağrıları yükleniyor…",
-  "background.working": "Arka planda çalışıyor ({n})"
+  "background.working": "Arka planda çalışıyor ({n})",
+  "setting.max_parallel_agents.label": "Maks. paralel ajan",
+  "setting.max_parallel_agents.desc": "Aynı anda kaç yardımcı ajan çalışabilir. Boş = varsayılan (6); 0 = sınırsız.",
+  "setting.max_parallel_agents_per_provider.label": "Sağlayıcı başına paralel ajan",
+  "setting.max_parallel_agents_per_provider.desc": "Sağlayıcı başına isteğe bağlı sınır: sağlayıcı=sayı, ';' ile ayrılır (ör. lmstudio=1; openrouter=4).",
+  "setting.max_parallel_agents.warn": "Çok sayıda paralel ajan maliyeti katlar ve sağlayıcı sınırlarına takılır (HTTP 429, bekleyerek yeniden denenir); yerel LM Studio sunucusu aynı anda bir isteğe yanıt verir, fazla ajanlar yalnızca bekler.",
+  "setting.value.unlimited": "sınırsız",
+  "setting.value.none": "yok",
+  "modes.desc.max_parallel_agents": "Aynı anda kaç yardımcı ajan çalışabilir. Boş = varsayılan (6); 0 = sınırsız.",
+  "modes.desc.max_parallel_agents_per_provider": "Sağlayıcı başına isteğe bağlı sınır: sağlayıcı=sayı, ';' ile ayrılır (ör. lmstudio=1; openrouter=4)."
 }

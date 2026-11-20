@@ -146,6 +146,20 @@ func knobSet(c *config.TomlConfig, key, val string) error {
 		return setInt(&c.MemoryBriefingTokens)
 	case "task_max_steps":
 		return setInt(&c.TaskMaxSteps)
+	case "max_parallel_agents":
+		n, err := config.ParseMaxParallelAgents(val)
+		if err != nil {
+			return err
+		}
+		c.MaxParallelAgents = n
+		return nil
+	case "max_parallel_agents_per_provider":
+		m, err := config.ParseProviderAgentLimits(val)
+		if err != nil {
+			return err
+		}
+		c.MaxParallelAgentsPerProvider = m
+		return nil
 	case "task_max_tokens":
 		n := 0
 		if err := setInt(&n); err != nil {

@@ -35,6 +35,13 @@ func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Pr
 		return fmt.Errorf("wire task delegation: %w", err)
 	}
 	at.Workers = e.workers
+	// max_parallel_agents (nil = default 6, 0 = unlimited) and the optional
+	// per-provider caps apply to the next worker start.
+	e.workers.SetConcurrencyLimits(tc.MaxParallelAgents, tc.MaxParallelAgentsPerProvider)
+	e.mu.RLock()
+	coordinatorCfg := e.cfg
+	e.mu.RUnlock()
+	at.CoordinatorProviderName = e.providerNameForConfig(coordinatorCfg)
 	at.MaxSteps = tc.TaskMaxSteps
 	at.MaxTokens = tc.TaskMaxTokens
 	at.WorkerReasoningEffort = tc.TaskReasoningEffort
@@ -46,6 +53,7 @@ func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Pr
 		at.WorkerProvider = wp
 		if workerCfg != nil {
 			at.WorkerContextProvider = e.providerNameForConfig(*workerCfg)
+			at.WorkerProviderName = at.WorkerContextProvider
 			hoist := strings.EqualFold(strings.TrimSpace(os.Getenv("SUPERCLI_CATALOG_HOIST")), "true") || strings.TrimSpace(os.Getenv("SUPERCLI_CATALOG_HOIST")) == "1"
 			profile := execution.Resolve(*workerCfg, tc, caps, hoist)
 			at.WorkerProfile = &profile

@@ -1097,5 +1097,11 @@
   "tui.wake.started": "[automatischer Zug — nicht Ihre Nachricht] %d Ergebnis(se) von Hintergrund-Agenten eingetroffen",
   "tui.wake.held": "[Hintergrundergebnisse zurückgehalten] %d Bericht(e) warten auf Ihre nächste Nachricht — Limit von %d automatischen Weckvorgängen erreicht",
   "tui.provider_rename.hint": "Ändere den Namen, um diesen Anbieter umzubenennen. Einstellungen, Modellauswahlen und gespeicherte Sitzungen, die ihn verwenden, werden aktualisiert.",
-  "tui.provider_rename.done": "Anbieter %s in %s umbenannt."
+  "tui.provider_rename.done": "Anbieter %s in %s umbenannt.",
+  "tui.setting_max_parallel_agents.label": "Max. parallele Agenten",
+  "tui.setting_max_parallel_agents.desc": "Wie viele Hilfsagenten gleichzeitig arbeiten dürfen. Leer = Standard (6); 0 = kein Limit. Viele parallele Agenten vervielfachen die Kosten und stoßen an Anbieterlimits (HTTP 429, mit Wartezeit wiederholt); ein lokaler LM-Studio-Server beantwortet nur eine Anfrage gleichzeitig, weitere Agenten warten nur.",
+  "tui.setting_max_parallel_agents_per_provider.label": "Parallele Agenten pro Anbieter",
+  "tui.setting_max_parallel_agents_per_provider.desc": "Optionales Limit pro Anbieter: Anbieter=Zahl, getrennt durch ';' (z. B. lmstudio=1; openrouter=4).",
+  "tui.setting_value.unlimited": "kein Limit",
+  "tui.setting_value.none": "keine"
 }

@@ -1097,5 +1097,11 @@
   "tui.wake.started": "[tour automatique — pas votre message] %d résultat(s) d'agents en arrière-plan reçu(s)",
   "tui.wake.held": "[résultats en arrière-plan retenus] %d rapport(s) attendent votre prochain message — limite de %d réveils automatiques atteinte",
   "tui.provider_rename.hint": "Modifiez le nom pour renommer ce fournisseur. Les paramètres, choix de modèles et sessions enregistrées qui l’utilisent sont mis à jour.",
-  "tui.provider_rename.done": "Fournisseur %s renommé en %s."
+  "tui.provider_rename.done": "Fournisseur %s renommé en %s.",
+  "tui.setting_max_parallel_agents.label": "Agents parallèles max.",
+  "tui.setting_max_parallel_agents.desc": "Nombre d’agents auxiliaires pouvant travailler en même temps. Vide = par défaut (6) ; 0 = sans limite. De nombreux agents parallèles multiplient le coût et atteignent les limites du fournisseur (HTTP 429, réessayé avec délai) ; un serveur LM Studio local traite une requête à la fois, les agents en plus attendent.",
+  "tui.setting_max_parallel_agents_per_provider.label": "Agents parallèles par fournisseur",
+  "tui.setting_max_parallel_agents_per_provider.desc": "Limite facultative par fournisseur : fournisseur=nombre séparés par ';' (ex. lmstudio=1; openrouter=4).",
+  "tui.setting_value.unlimited": "sans limite",
+  "tui.setting_value.none": "aucune"
 }

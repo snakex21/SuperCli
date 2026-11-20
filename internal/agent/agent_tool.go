@@ -61,6 +61,11 @@ type AgentTool struct {
 	// actual configured connection, independent of whether it is local HTTP or
 	// remote HTTP. Empty inherits the parent's connection identity.
 	WorkerContextProvider string
+	// WorkerProviderName / CoordinatorProviderName name the backends the
+	// worker's calls go to (task_model or the coordinator's), for the
+	// per-provider concurrency cap max_parallel_agents_per_provider.
+	WorkerProviderName      string
+	CoordinatorProviderName string
 	// AdvisorProvider, when non-nil, runs advise:true calls (config
 	// `advisor_model`), e.g. a cloud model advising a local one. Nil = the
 	// advisor uses the normal worker backend.

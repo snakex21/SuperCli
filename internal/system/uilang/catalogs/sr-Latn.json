@@ -1097,5 +1097,11 @@
   "tui.wake.started": "[automatski potez — nije vaša poruka] stiglo je %d rezultata pozadinskih agenata",
   "tui.wake.held": "[pozadinski rezultati zadržani] %d izveštaja čeka vašu sledeću poruku — dostignuto ograničenje od %d automatskih buđenja",
   "tui.provider_rename.hint": "Promenite naziv da biste preimenovali ovog provajdera. Podešavanja, izbori modela i sačuvane sesije koje ga koriste se ažuriraju.",
-  "tui.provider_rename.done": "Provajder %s preimenovan u %s."
+  "tui.provider_rename.done": "Provajder %s preimenovan u %s.",
+  "tui.setting_max_parallel_agents.label": "Maks. paralelnih agenata",
+  "tui.setting_max_parallel_agents.desc": "Koliko pomoćnih agenata može raditi istovremeno. Prazno = podrazumevano (6); 0 = bez ograničenja. Mnogo paralelnih agenata umnožava trošak i udara u limite dobavljača (HTTP 429, ponavlja se sa zadrškom); lokalni LM Studio obrađuje jedan zahtev odjednom, dodatni agenti samo čekaju.",
+  "tui.setting_max_parallel_agents_per_provider.label": "Paralelni agenti po dobavljaču",
+  "tui.setting_max_parallel_agents_per_provider.desc": "Opcioni limit po dobavljaču: dobavljač=broj odvojeno sa ';' (npr. lmstudio=1; openrouter=4).",
+  "tui.setting_value.unlimited": "bez ograničenja",
+  "tui.setting_value.none": "nema"
 }

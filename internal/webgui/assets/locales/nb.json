@@ -1223,5 +1223,14 @@
   "task.stalledHint": "Ingen fremdrift er rapportert på lenge. Den venter kanskje på et tregt modellsvar eller en lang kommando; stopp eller start den på nytt hvis den har kjørt seg fast.",
   "task.restart": "Start på nytt",
   "task.activityLoading": "Laster inn verktøykallene for denne kjøringen…",
-  "background.working": "Arbeider i bakgrunnen ({n})"
+  "background.working": "Arbeider i bakgrunnen ({n})",
+  "setting.max_parallel_agents.label": "Maks. parallelle agenter",
+  "setting.max_parallel_agents.desc": "Hvor mange hjelpeagenter som kan arbeide samtidig. Tom = standard (6); 0 = ingen grense.",
+  "setting.max_parallel_agents_per_provider.label": "Parallelle agenter per leverandør",
+  "setting.max_parallel_agents_per_provider.desc": "Valgfri grense per leverandør: leverandør=tall skilt med ';' (f.eks. lmstudio=1; openrouter=4).",
+  "setting.max_parallel_agents.warn": "Mange parallelle agenter mangedobler kostnaden og treffer leverandørens grenser (HTTP 429, prøves igjen med venting); en lokal LM Studio-server svarer på én forespørsel om gangen, så ekstra agenter bare venter.",
+  "setting.value.unlimited": "ingen grense",
+  "setting.value.none": "ingen",
+  "modes.desc.max_parallel_agents": "Hvor mange hjelpeagenter som kan arbeide samtidig. Tom = standard (6); 0 = ingen grense.",
+  "modes.desc.max_parallel_agents_per_provider": "Valgfri grense per leverandør: leverandør=tall skilt med ';' (f.eks. lmstudio=1; openrouter=4)."
 }

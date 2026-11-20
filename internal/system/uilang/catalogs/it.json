@@ -1097,5 +1097,11 @@
   "tui.wake.started": "[turno automatico — non è un tuo messaggio] arrivati %d risultato/i di agenti in background",
   "tui.wake.held": "[risultati in background trattenuti] %d report attendono il tuo prossimo messaggio — raggiunto il limite di %d risvegli automatici",
   "tui.provider_rename.hint": "Cambia il nome per rinominare questo provider. Impostazioni, scelte di modello e sessioni salvate che lo usano vengono aggiornate.",
-  "tui.provider_rename.done": "Provider %s rinominato in %s."
+  "tui.provider_rename.done": "Provider %s rinominato in %s.",
+  "tui.setting_max_parallel_agents.label": "Max agenti in parallelo",
+  "tui.setting_max_parallel_agents.desc": "Quanti agenti ausiliari possono lavorare contemporaneamente. Vuoto = predefinito (6); 0 = nessun limite. Molti agenti in parallelo moltiplicano i costi e raggiungono i limiti del provider (HTTP 429, ritentato con attesa); un server LM Studio locale gestisce una richiesta alla volta, gli agenti in più attendono soltanto.",
+  "tui.setting_max_parallel_agents_per_provider.label": "Agenti in parallelo per provider",
+  "tui.setting_max_parallel_agents_per_provider.desc": "Limite facoltativo per provider: provider=numero separati da ';' (es. lmstudio=1; openrouter=4).",
+  "tui.setting_value.unlimited": "nessun limite",
+  "tui.setting_value.none": "nessuno"
 }

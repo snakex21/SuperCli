@@ -1223,5 +1223,14 @@
   "task.stalledHint": "Dolgo ni bil sporočen noben napredek. Agent morda čaka na počasen odgovor modela ali dolg ukaz; če se je zataknil, ga ustavite ali znova zaženite.",
   "task.restart": "Znova zaženi",
   "task.activityLoading": "Nalaganje klicev orodij tega zagona…",
-  "background.working": "Dela v ozadju ({n})"
+  "background.working": "Dela v ozadju ({n})",
+  "setting.max_parallel_agents.label": "Najv. vzporednih agentov",
+  "setting.max_parallel_agents.desc": "Koliko pomožnih agentov lahko dela hkrati. Prazno = privzeto (6); 0 = brez omejitve.",
+  "setting.max_parallel_agents_per_provider.label": "Vzporedni agenti na ponudnika",
+  "setting.max_parallel_agents_per_provider.desc": "Neobvezna omejitev na ponudnika: ponudnik=število, ločeno z ';' (npr. lmstudio=1; openrouter=4).",
+  "setting.max_parallel_agents.warn": "Veliko vzporednih agentov pomnoži stroške in zadene omejitve ponudnika (HTTP 429, ponovljeno z zamikom); lokalni LM Studio obdela eno zahtevo naenkrat, dodatni agenti le čakajo.",
+  "setting.value.unlimited": "brez omejitve",
+  "setting.value.none": "brez",
+  "modes.desc.max_parallel_agents": "Koliko pomožnih agentov lahko dela hkrati. Prazno = privzeto (6); 0 = brez omejitve.",
+  "modes.desc.max_parallel_agents_per_provider": "Neobvezna omejitev na ponudnika: ponudnik=število, ločeno z ';' (npr. lmstudio=1; openrouter=4)."
 }

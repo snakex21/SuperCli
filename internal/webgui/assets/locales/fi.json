@@ -1223,5 +1223,14 @@
   "task.stalledHint": "Edistymistä ei ole raportoitu pitkään aikaan. Se voi odottaa hidasta mallin vastausta tai pitkää komentoa; pysäytä tai käynnistä se uudelleen, jos se on jumissa.",
   "task.restart": "Käynnistä uudelleen",
   "task.activityLoading": "Ladataan tämän ajon työkalukutsuja…",
-  "background.working": "Työskentelee taustalla ({n})"
+  "background.working": "Työskentelee taustalla ({n})",
+  "setting.max_parallel_agents.label": "Rinnakkaisia agentteja enintään",
+  "setting.max_parallel_agents.desc": "Montako apuagenttia voi työskennellä yhtä aikaa. Tyhjä = oletus (6); 0 = ei rajaa.",
+  "setting.max_parallel_agents_per_provider.label": "Rinnakkaiset agentit palveluntarjoajaa kohti",
+  "setting.max_parallel_agents_per_provider.desc": "Valinnainen raja palveluntarjoajaa kohti: tarjoaja=luku ';'-merkillä eroteltuna (esim. lmstudio=1; openrouter=4).",
+  "setting.max_parallel_agents.warn": "Monta rinnakkaista agenttia moninkertaistaa kustannukset ja osuu palveluntarjoajan rajoihin (HTTP 429, yritetään uudelleen odottaen); paikallinen LM Studio vastaa yhteen pyyntöön kerrallaan, joten ylimääräiset agentit vain odottavat.",
+  "setting.value.unlimited": "ei rajaa",
+  "setting.value.none": "ei mitään",
+  "modes.desc.max_parallel_agents": "Montako apuagenttia voi työskennellä yhtä aikaa. Tyhjä = oletus (6); 0 = ei rajaa.",
+  "modes.desc.max_parallel_agents_per_provider": "Valinnainen raja palveluntarjoajaa kohti: tarjoaja=luku ';'-merkillä eroteltuna (esim. lmstudio=1; openrouter=4)."
 }

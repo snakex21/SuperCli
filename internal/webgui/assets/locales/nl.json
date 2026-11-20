@@ -1223,5 +1223,14 @@
   "task.stalledHint": "Er is al lange tijd geen voortgang gemeld. Mogelijk wacht hij op een traag modelantwoord of een lange opdracht; stop of herstart hem als hij vastzit.",
   "task.restart": "Herstarten",
   "task.activityLoading": "Gereedschapsaanroepen van deze run laden…",
-  "background.working": "Werkt op de achtergrond ({n})"
+  "background.working": "Werkt op de achtergrond ({n})",
+  "setting.max_parallel_agents.label": "Max. parallelle agents",
+  "setting.max_parallel_agents.desc": "Hoeveel hulpagents tegelijk mogen werken. Leeg = standaard (6); 0 = geen limiet.",
+  "setting.max_parallel_agents_per_provider.label": "Parallelle agents per provider",
+  "setting.max_parallel_agents_per_provider.desc": "Optionele limiet per provider: provider=getal gescheiden door ';' (bijv. lmstudio=1; openrouter=4).",
+  "setting.max_parallel_agents.warn": "Veel parallelle agents vermenigvuldigen de kosten en raken providerlimieten (HTTP 429, opnieuw geprobeerd met wachttijd); een lokale LM Studio-server beantwoordt één verzoek tegelijk, extra agents wachten alleen.",
+  "setting.value.unlimited": "geen limiet",
+  "setting.value.none": "geen",
+  "modes.desc.max_parallel_agents": "Hoeveel hulpagents tegelijk mogen werken. Leeg = standaard (6); 0 = geen limiet.",
+  "modes.desc.max_parallel_agents_per_provider": "Optionele limiet per provider: provider=getal gescheiden door ';' (bijv. lmstudio=1; openrouter=4)."
 }

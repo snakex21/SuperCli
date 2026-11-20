@@ -581,6 +581,11 @@ button.side-cost:focus-visible { outline: 2px solid var(--accent); outline-offse
    otherwise cull the just-streamed assistant block when tool rows are appended
    below it, which looks exactly like the tool call replaced the answer. */
 .stream > .transcript-live { content-visibility: visible; }
+/* The tail of the transcript is what the reader looks at and where blocks
+   change state between turns (live -> settled while the next, e.g. queued,
+   message is appended). Never virtualize it: a culled tail block is exactly a
+   message that vanishes for a few seconds and comes back (1.0.37). */
+.stream > :nth-last-child(-n+8) { content-visibility: visible; }
 .history-older {
   align-self: center; min-height: 28px; padding: 3px 12px;
   border-bottom: 1px solid var(--line); color: var(--faint);
@@ -2631,3 +2636,9 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
 }
 .status-dot.background:not(.busy):not(.pending) { background: var(--status-running); animation: pulse 1.6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .status-dot.background { animation: none; } }
+/* 1.0.37: max_parallel_agents warning (unlimited or > 8). */
+.knob-row .k-warn {
+  display: block; margin-top: 4px; padding: 4px 8px; border-radius: 6px;
+  font-size: var(--fs-xs); line-height: 1.45; color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+}

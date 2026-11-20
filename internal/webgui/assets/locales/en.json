@@ -1223,5 +1223,14 @@
   "task.stalledHint": "No progress has been reported for a long time. It may be waiting for a slow model reply or a long command; stop or restart it if it is stuck.",
   "task.restart": "Restart",
   "task.activityLoading": "Loading this run's tool calls…",
-  "background.working": "Working in background ({n})"
+  "background.working": "Working in background ({n})",
+  "setting.max_parallel_agents.label": "Max. parallel agents",
+  "setting.max_parallel_agents.desc": "How many helper agents may run at the same time. Empty = default (6); 0 = no limit.",
+  "setting.max_parallel_agents_per_provider.label": "Parallel agents per provider",
+  "setting.max_parallel_agents_per_provider.desc": "Optional cap per provider: provider=number separated by ';' (e.g. lmstudio=1; openrouter=4).",
+  "setting.max_parallel_agents.warn": "Many parallel agents multiply cost and hit provider rate limits (HTTP 429, retried with backoff); a local LM Studio server answers one request at a time, so extra agents only wait.",
+  "setting.value.unlimited": "no limit",
+  "setting.value.none": "none",
+  "modes.desc.max_parallel_agents": "How many helper agents may run at the same time. Empty = default (6); 0 = no limit.",
+  "modes.desc.max_parallel_agents_per_provider": "Optional cap per provider: provider=number separated by ';' (e.g. lmstudio=1; openrouter=4)."
 }

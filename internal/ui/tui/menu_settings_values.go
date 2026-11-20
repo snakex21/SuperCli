@@ -154,6 +154,10 @@ func settingResetKey(c *config.TomlConfig, key string) {
 		c.PruneProtectTokens = 0
 	case "task_max_steps":
 		c.TaskMaxSteps = 0
+	case "max_parallel_agents":
+		c.MaxParallelAgents = nil
+	case "max_parallel_agents_per_provider":
+		c.MaxParallelAgentsPerProvider = nil
 	case "task_max_tokens":
 		c.TaskMaxTokens = 0
 	case "task_model":
@@ -287,6 +291,19 @@ func (m Model) settingValueSource(r settingRow, c *config.TomlConfig) (value, so
 		return m.intDisplay(c.PruneProtectTokens, m.tr("tui.setting_value.98f9ec1cd2"))
 	case "task_max_steps":
 		return m.intDisplay(c.TaskMaxSteps, m.tr("tui.setting_value.c5d9c16664"))
+	case "max_parallel_agents":
+		if c.MaxParallelAgents == nil || *c.MaxParallelAgents < 0 {
+			return m.tr("tui.setting_value.1a9561da73") + strconv.Itoa(config.DefaultMaxParallelAgents) + ")", "default"
+		}
+		if *c.MaxParallelAgents == 0 {
+			return m.tr("tui.setting_value.unlimited"), "manual"
+		}
+		return strconv.Itoa(*c.MaxParallelAgents), "manual"
+	case "max_parallel_agents_per_provider":
+		if len(c.MaxParallelAgentsPerProvider) == 0 {
+			return m.tr("tui.setting_value.1a9561da73") + m.tr("tui.setting_value.none") + ")", "default"
+		}
+		return config.FormatProviderAgentLimits(c.MaxParallelAgentsPerProvider), "manual"
 	case "task_max_tokens":
 		return m.intDisplay(int(c.TaskMaxTokens), m.tr("tui.setting_value.5b63281580"))
 	case "task_model":

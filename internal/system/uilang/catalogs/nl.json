@@ -1097,5 +1097,11 @@
   "tui.wake.started": "[automatische beurt — niet uw bericht] %d resultaat/resultaten van achtergrondagenten ontvangen",
   "tui.wake.held": "[achtergrondresultaten vastgehouden] %d rapport(en) wachten op uw volgende bericht — limiet van %d automatische activeringen bereikt",
   "tui.provider_rename.hint": "Wijzig de naam om deze provider te hernoemen. Instellingen, modelkeuzes en opgeslagen sessies die hem gebruiken worden bijgewerkt.",
-  "tui.provider_rename.done": "Provider %s hernoemd naar %s."
+  "tui.provider_rename.done": "Provider %s hernoemd naar %s.",
+  "tui.setting_max_parallel_agents.label": "Max. parallelle agents",
+  "tui.setting_max_parallel_agents.desc": "Hoeveel hulpagents tegelijk mogen werken. Leeg = standaard (6); 0 = geen limiet. Veel parallelle agents vermenigvuldigen de kosten en raken providerlimieten (HTTP 429, opnieuw geprobeerd met wachttijd); een lokale LM Studio-server beantwoordt één verzoek tegelijk, extra agents wachten alleen.",
+  "tui.setting_max_parallel_agents_per_provider.label": "Parallelle agents per provider",
+  "tui.setting_max_parallel_agents_per_provider.desc": "Optionele limiet per provider: provider=getal gescheiden door ';' (bijv. lmstudio=1; openrouter=4).",
+  "tui.setting_value.unlimited": "geen limiet",
+  "tui.setting_value.none": "geen"
 }

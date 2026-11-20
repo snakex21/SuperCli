@@ -1223,5 +1223,14 @@
   "task.stalledHint": "Dlho nebol hlásený žiadny postup. Agent možno čaká na pomalú odpoveď modelu alebo na dlhý príkaz; ak uviazol, zastavte ho alebo ho spustite znova.",
   "task.restart": "Spustiť znova",
   "task.activityLoading": "Načítavajú sa volania nástrojov tohto behu…",
-  "background.working": "Pracuje na pozadí ({n})"
+  "background.working": "Pracuje na pozadí ({n})",
+  "setting.max_parallel_agents.label": "Max. paralelných agentov",
+  "setting.max_parallel_agents.desc": "Koľko pomocných agentov môže pracovať súčasne. Prázdne = predvolené (6); 0 = bez limitu.",
+  "setting.max_parallel_agents_per_provider.label": "Paralelní agenti na poskytovateľa",
+  "setting.max_parallel_agents_per_provider.desc": "Voliteľný limit na poskytovateľa: poskytovateľ=číslo oddelené ';' (napr. lmstudio=1; openrouter=4).",
+  "setting.max_parallel_agents.warn": "Veľa paralelných agentov násobí náklady a naráža na limity poskytovateľa (HTTP 429, opakované s oneskorením); lokálny server LM Studio vybavuje jednu požiadavku naraz, ďalší agenti len čakajú.",
+  "setting.value.unlimited": "bez limitu",
+  "setting.value.none": "žiadny",
+  "modes.desc.max_parallel_agents": "Koľko pomocných agentov môže pracovať súčasne. Prázdne = predvolené (6); 0 = bez limitu.",
+  "modes.desc.max_parallel_agents_per_provider": "Voliteľný limit na poskytovateľa: poskytovateľ=číslo oddelené ';' (napr. lmstudio=1; openrouter=4)."
 }

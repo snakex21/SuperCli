@@ -77,6 +77,16 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.TaskMaxSteps != 0 {
 		dst.TaskMaxSteps = src.TaskMaxSteps
 	}
+	if src.MaxParallelAgents != nil {
+		v := *src.MaxParallelAgents
+		dst.MaxParallelAgents = &v
+	}
+	if len(src.MaxParallelAgentsPerProvider) > 0 {
+		dst.MaxParallelAgentsPerProvider = make(map[string]int, len(src.MaxParallelAgentsPerProvider))
+		for k, v := range src.MaxParallelAgentsPerProvider {
+			dst.MaxParallelAgentsPerProvider[k] = v
+		}
+	}
 	if src.TaskMaxTokens != 0 {
 		dst.TaskMaxTokens = src.TaskMaxTokens
 	}

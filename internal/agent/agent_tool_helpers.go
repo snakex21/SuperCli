@@ -278,6 +278,9 @@ func (a *AgentTool) startBackgroundWorker(parentCtx context.Context, w *Worker, 
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
+		// Usage/cost recorders of the session follow the worker after the
+		// coordinator's turn ends (1.0.37: such calls were not recorded).
+		ctx = llm.CarryDurableCallSinks(ctx, parentCtx)
 		defer borrow.Close()
 		ctx = borrow.Bind(ctx)
 		if invocation.callID != "" || invocation.checks != nil {

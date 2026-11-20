@@ -1097,5 +1097,11 @@
   "tui.wake.started": "[automatický tah — není to vaše zpráva] dorazilo %d výsledků agentů na pozadí",
   "tui.wake.held": "[výsledky na pozadí pozdrženy] %d zpráv čeká na vaši další zprávu — dosažen limit %d automatických probuzení",
   "tui.provider_rename.hint": "Změňte název a poskytovatel se přejmenuje. Nastavení, volby modelů a uložené relace, které ho používají, se aktualizují.",
-  "tui.provider_rename.done": "Poskytovatel %s přejmenován na %s."
+  "tui.provider_rename.done": "Poskytovatel %s přejmenován na %s.",
+  "tui.setting_max_parallel_agents.label": "Max. paralelních agentů",
+  "tui.setting_max_parallel_agents.desc": "Kolik pomocných agentů může pracovat současně. Prázdné = výchozí (6); 0 = bez limitu. Mnoho paralelních agentů násobí náklady a naráží na limity poskytovatele (HTTP 429, opakováno s prodlevou); lokální server LM Studio vyřizuje jeden požadavek najednou, další agenti jen čekají.",
+  "tui.setting_max_parallel_agents_per_provider.label": "Paralelní agenti na poskytovatele",
+  "tui.setting_max_parallel_agents_per_provider.desc": "Volitelný limit na poskytovatele: poskytovatel=číslo oddělené ';' (např. lmstudio=1; openrouter=4).",
+  "tui.setting_value.unlimited": "bez limitu",
+  "tui.setting_value.none": "žádný"
 }

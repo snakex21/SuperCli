@@ -1223,5 +1223,14 @@
   "task.stalledHint": "No se ha informado de progreso durante mucho tiempo. Puede estar esperando una respuesta lenta del modelo o un comando largo; detenlo o reinícialo si está atascado.",
   "task.restart": "Reiniciar",
   "task.activityLoading": "Cargando las llamadas a herramientas de esta ejecución…",
-  "background.working": "Trabajando en segundo plano ({n})"
+  "background.working": "Trabajando en segundo plano ({n})",
+  "setting.max_parallel_agents.label": "Máx. agentes en paralelo",
+  "setting.max_parallel_agents.desc": "Cuántos agentes auxiliares pueden trabajar a la vez. Vacío = predeterminado (6); 0 = sin límite.",
+  "setting.max_parallel_agents_per_provider.label": "Agentes en paralelo por proveedor",
+  "setting.max_parallel_agents_per_provider.desc": "Límite opcional por proveedor: proveedor=número separado por ';' (p. ej. lmstudio=1; openrouter=4).",
+  "setting.max_parallel_agents.warn": "Muchos agentes en paralelo multiplican el coste y alcanzan los límites del proveedor (HTTP 429, reintentado con espera); un servidor local de LM Studio atiende una solicitud a la vez, así que los agentes extra solo esperan.",
+  "setting.value.unlimited": "sin límite",
+  "setting.value.none": "ninguno",
+  "modes.desc.max_parallel_agents": "Cuántos agentes auxiliares pueden trabajar a la vez. Vacío = predeterminado (6); 0 = sin límite.",
+  "modes.desc.max_parallel_agents_per_provider": "Límite opcional por proveedor: proveedor=número separado por ';' (p. ej. lmstudio=1; openrouter=4)."
 }

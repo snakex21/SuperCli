@@ -1097,5 +1097,11 @@
   "tui.wake.started": "[automaatne käik — mitte sinu sõnum] taustaagentidelt saabus %d tulemust",
   "tui.wake.held": "[taustatulemused peatatud] %d aruannet ootab sinu järgmist sõnumit — %d automaatse äratuse piir on täis",
   "tui.provider_rename.hint": "Muuda nime, et teenusepakkuja ümber nimetada. Seda kasutavad seaded, mudelivalikud ja salvestatud seansid uuendatakse.",
-  "tui.provider_rename.done": "Teenusepakkuja %s uus nimi on %s."
+  "tui.provider_rename.done": "Teenusepakkuja %s uus nimi on %s.",
+  "tui.setting_max_parallel_agents.label": "Max paralleelseid agente",
+  "tui.setting_max_parallel_agents.desc": "Mitu abiagenti võib korraga töötada. Tühi = vaikimisi (6); 0 = piiranguta. Paljud paralleelsed agendid mitmekordistavad kulu ja tabavad pakkuja piiranguid (HTTP 429, korratakse ootega); kohalik LM Studio vastab korraga ühele päringule, lisaagendid ainult ootavad.",
+  "tui.setting_max_parallel_agents_per_provider.label": "Paralleelsed agendid teenusepakkuja kohta",
+  "tui.setting_max_parallel_agents_per_provider.desc": "Valikuline piirang teenusepakkuja kohta: pakkuja=arv, eraldatud ';' (nt lmstudio=1; openrouter=4).",
+  "tui.setting_value.unlimited": "piiranguta",
+  "tui.setting_value.none": "puudub"
 }

@@ -1097,5 +1097,11 @@
   "tui.wake.started": "[automatikus kör — nem az Ön üzenete] %d háttérügynök-eredmény érkezett",
   "tui.wake.held": "[háttéreredmények visszatartva] %d jelentés várja a következő üzenetét — elérte a(z) %d automatikus ébresztés korlátját",
   "tui.provider_rename.hint": "Módosítsd a nevet a szolgáltató átnevezéséhez. Az azt használó beállítások, modellválasztások és mentett munkamenetek frissülnek.",
-  "tui.provider_rename.done": "%s szolgáltató átnevezve erre: %s."
+  "tui.provider_rename.done": "%s szolgáltató átnevezve erre: %s.",
+  "tui.setting_max_parallel_agents.label": "Max. párhuzamos ügynök",
+  "tui.setting_max_parallel_agents.desc": "Hány segédügynök dolgozhat egyszerre. Üres = alapértelmezett (6); 0 = korlátlan. Sok párhuzamos ügynök megsokszorozza a költséget és eléri a szolgáltatói korlátokat (HTTP 429, várakozással újrapróbálva); a helyi LM Studio egyszerre egy kérést szolgál ki, a további ügynökök csak várnak.",
+  "tui.setting_max_parallel_agents_per_provider.label": "Párhuzamos ügynökök szolgáltatónként",
+  "tui.setting_max_parallel_agents_per_provider.desc": "Opcionális korlát szolgáltatónként: szolgáltató=szám ';'-vel elválasztva (pl. lmstudio=1; openrouter=4).",
+  "tui.setting_value.unlimited": "korlátlan",
+  "tui.setting_value.none": "nincs"
 }

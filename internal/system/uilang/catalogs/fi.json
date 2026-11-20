@@ -1097,5 +1097,11 @@
   "tui.wake.started": "[automaattinen vuoro — ei sinun viestisi] taustalla toimivilta agenteilta saapui %d tulosta",
   "tui.wake.held": "[taustatulokset pidätetty] %d raporttia odottaa seuraavaa viestiäsi — %d automaattisen herätyksen raja saavutettu",
   "tui.provider_rename.hint": "Muuta nimeä nimetäksesi palveluntarjoajan uudelleen. Sitä käyttävät asetukset, mallivalinnat ja tallennetut istunnot päivitetään.",
-  "tui.provider_rename.done": "Palveluntarjoaja %s nimettiin uudelleen: %s."
+  "tui.provider_rename.done": "Palveluntarjoaja %s nimettiin uudelleen: %s.",
+  "tui.setting_max_parallel_agents.label": "Rinnakkaisia agentteja enintään",
+  "tui.setting_max_parallel_agents.desc": "Montako apuagenttia voi työskennellä yhtä aikaa. Tyhjä = oletus (6); 0 = ei rajaa. Monta rinnakkaista agenttia moninkertaistaa kustannukset ja osuu palveluntarjoajan rajoihin (HTTP 429, yritetään uudelleen odottaen); paikallinen LM Studio vastaa yhteen pyyntöön kerrallaan, joten ylimääräiset agentit vain odottavat.",
+  "tui.setting_max_parallel_agents_per_provider.label": "Rinnakkaiset agentit palveluntarjoajaa kohti",
+  "tui.setting_max_parallel_agents_per_provider.desc": "Valinnainen raja palveluntarjoajaa kohti: tarjoaja=luku ';'-merkillä eroteltuna (esim. lmstudio=1; openrouter=4).",
+  "tui.setting_value.unlimited": "ei rajaa",
+  "tui.setting_value.none": "ei mitään"
 }

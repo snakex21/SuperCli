@@ -1097,5 +1097,11 @@
   "tui.wake.started": "[automatisk tur — ikke din melding] %d resultat(er) fra bakgrunnsagenter mottatt",
   "tui.wake.held": "[bakgrunnsresultater holdt tilbake] %d rapport(er) venter på din neste melding — grensen på %d automatiske oppvåkninger er nådd",
   "tui.provider_rename.hint": "Endre navnet for å gi leverandøren nytt navn. Innstillinger, modellvalg og lagrede økter som bruker den, oppdateres.",
-  "tui.provider_rename.done": "Leverandøren %s har fått nytt navn: %s."
+  "tui.provider_rename.done": "Leverandøren %s har fått nytt navn: %s.",
+  "tui.setting_max_parallel_agents.label": "Maks. parallelle agenter",
+  "tui.setting_max_parallel_agents.desc": "Hvor mange hjelpeagenter som kan arbeide samtidig. Tom = standard (6); 0 = ingen grense. Mange parallelle agenter mangedobler kostnaden og treffer leverandørens grenser (HTTP 429, prøves igjen med venting); en lokal LM Studio-server svarer på én forespørsel om gangen, så ekstra agenter bare venter.",
+  "tui.setting_max_parallel_agents_per_provider.label": "Parallelle agenter per leverandør",
+  "tui.setting_max_parallel_agents_per_provider.desc": "Valgfri grense per leverandør: leverandør=tall skilt med ';' (f.eks. lmstudio=1; openrouter=4).",
+  "tui.setting_value.unlimited": "ingen grense",
+  "tui.setting_value.none": "ingen"
 }

@@ -1223,5 +1223,14 @@
   "task.stalledHint": "Od dłuższego czasu nie zgłoszono postępu. Agent może czekać na wolną odpowiedź modelu albo na długie polecenie; jeśli utknął, zatrzymaj go lub uruchom ponownie.",
   "task.restart": "Uruchom ponownie",
   "task.activityLoading": "Wczytywanie wywołań narzędzi tego przebiegu…",
-  "background.working": "Pracuje w tle ({n})"
+  "background.working": "Pracuje w tle ({n})",
+  "setting.max_parallel_agents.label": "Maks. równoległych agentów",
+  "setting.max_parallel_agents.desc": "Ilu agentów pomocniczych może pracować jednocześnie. Puste = domyślnie (6); 0 = bez limitu.",
+  "setting.max_parallel_agents_per_provider.label": "Równolegli agenci na dostawcę",
+  "setting.max_parallel_agents_per_provider.desc": "Opcjonalny limit na dostawcę: dostawca=liczba, rozdzielone ';' (np. lmstudio=1; openrouter=4).",
+  "setting.max_parallel_agents.warn": "Wielu równoległych agentów mnoży koszt i trafia w limity dostawcy (HTTP 429, ponawiane z odstępem); lokalny LM Studio obsługuje jedno zapytanie naraz, więc dodatkowi agenci tylko czekają.",
+  "setting.value.unlimited": "bez limitu",
+  "setting.value.none": "brak",
+  "modes.desc.max_parallel_agents": "Ilu agentów pomocniczych może pracować jednocześnie. Puste = domyślnie (6); 0 = bez limitu.",
+  "modes.desc.max_parallel_agents_per_provider": "Opcjonalny limit na dostawcę: dostawca=liczba, rozdzielone ';' (np. lmstudio=1; openrouter=4)."
 }

@@ -1223,5 +1223,14 @@
   "task.stalledHint": "Dugo nije prijavljen napredak. Agent možda čeka spor odgovor modela ili dugu naredbu; zaustavite ga ili ponovno pokrenite ako je zapeo.",
   "task.restart": "Ponovno pokreni",
   "task.activityLoading": "Učitavanje poziva alata ovog pokretanja…",
-  "background.working": "Radi u pozadini ({n})"
+  "background.working": "Radi u pozadini ({n})",
+  "setting.max_parallel_agents.label": "Maks. paralelnih agenata",
+  "setting.max_parallel_agents.desc": "Koliko pomoćnih agenata može raditi istodobno. Prazno = zadano (6); 0 = bez ograničenja.",
+  "setting.max_parallel_agents_per_provider.label": "Paralelni agenti po pružatelju",
+  "setting.max_parallel_agents_per_provider.desc": "Neobavezno ograničenje po pružatelju: pružatelj=broj odvojeno s ';' (npr. lmstudio=1; openrouter=4).",
+  "setting.max_parallel_agents.warn": "Mnogo paralelnih agenata umnožava trošak i nailazi na ograničenja pružatelja (HTTP 429, ponavlja se uz odgodu); lokalni LM Studio obrađuje jedan zahtjev odjednom, dodatni agenti samo čekaju.",
+  "setting.value.unlimited": "bez ograničenja",
+  "setting.value.none": "nema",
+  "modes.desc.max_parallel_agents": "Koliko pomoćnih agenata može raditi istodobno. Prazno = zadano (6); 0 = bez ograničenja.",
+  "modes.desc.max_parallel_agents_per_provider": "Neobavezno ograničenje po pružatelju: pružatelj=broj odvojeno s ';' (npr. lmstudio=1; openrouter=4)."
 }

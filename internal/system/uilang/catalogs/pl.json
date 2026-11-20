@@ -1097,5 +1097,11 @@
   "tui.wake.started": "[automatyczna tura — to nie Twoja wiadomość] dotarły wyniki agentów w tle: %d",
   "tui.wake.held": "[wyniki w tle wstrzymane] %d raport(ów) czeka na Twoją następną wiadomość — osiągnięto limit %d automatycznych wybudzeń",
   "tui.provider_rename.hint": "Zmień nazwę, aby przemianować tego dostawcę. Ustawienia, wybory modeli i zapisane sesje, które go używają, zostaną zaktualizowane.",
-  "tui.provider_rename.done": "Zmieniono nazwę dostawcy %s na %s."
+  "tui.provider_rename.done": "Zmieniono nazwę dostawcy %s na %s.",
+  "tui.setting_max_parallel_agents.label": "Maks. równoległych agentów",
+  "tui.setting_max_parallel_agents.desc": "Ilu agentów pomocniczych może pracować jednocześnie. Puste = domyślnie (6); 0 = bez limitu. Wielu równoległych agentów mnoży koszt i trafia w limity dostawcy (HTTP 429, ponawiane z odstępem); lokalny LM Studio obsługuje jedno zapytanie naraz, więc dodatkowi agenci tylko czekają.",
+  "tui.setting_max_parallel_agents_per_provider.label": "Równolegli agenci na dostawcę",
+  "tui.setting_max_parallel_agents_per_provider.desc": "Opcjonalny limit na dostawcę: dostawca=liczba, rozdzielone ';' (np. lmstudio=1; openrouter=4).",
+  "tui.setting_value.unlimited": "bez limitu",
+  "tui.setting_value.none": "brak"
 }

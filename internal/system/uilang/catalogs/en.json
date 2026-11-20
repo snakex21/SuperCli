@@ -1097,5 +1097,11 @@
   "tui.wake.started": "[automatic turn — not your message] %d background agent result(s) arrived",
   "tui.wake.held": "[background results held] %d report(s) wait for your next message — automatic wake-up limit %d reached",
   "tui.provider_rename.hint": "Change the name to rename this provider. Settings, model choices and saved sessions that use it are updated.",
-  "tui.provider_rename.done": "Provider %s renamed to %s."
+  "tui.provider_rename.done": "Provider %s renamed to %s.",
+  "tui.setting_max_parallel_agents.label": "Max. parallel agents",
+  "tui.setting_max_parallel_agents.desc": "How many helper agents may run at the same time. Empty = default (6); 0 = no limit. Many parallel agents multiply cost and hit provider rate limits (HTTP 429, retried with backoff); a local LM Studio server answers one request at a time, so extra agents only wait.",
+  "tui.setting_max_parallel_agents_per_provider.label": "Parallel agents per provider",
+  "tui.setting_max_parallel_agents_per_provider.desc": "Optional cap per provider: provider=number separated by ';' (e.g. lmstudio=1; openrouter=4).",
+  "tui.setting_value.unlimited": "no limit",
+  "tui.setting_value.none": "none"
 }

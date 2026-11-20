@@ -1223,5 +1223,14 @@
   "task.stalledHint": "Pikka aega pole edenemisest teatatud. See võib oodata aeglast mudeli vastust või pikka käsku; kui see on kinni jäänud, peata või taaskäivita see.",
   "task.restart": "Taaskäivita",
   "task.activityLoading": "Selle käivituse tööriistakutsete laadimine…",
-  "background.working": "Töötab taustal ({n})"
+  "background.working": "Töötab taustal ({n})",
+  "setting.max_parallel_agents.label": "Max paralleelseid agente",
+  "setting.max_parallel_agents.desc": "Mitu abiagenti võib korraga töötada. Tühi = vaikimisi (6); 0 = piiranguta.",
+  "setting.max_parallel_agents_per_provider.label": "Paralleelsed agendid teenusepakkuja kohta",
+  "setting.max_parallel_agents_per_provider.desc": "Valikuline piirang teenusepakkuja kohta: pakkuja=arv, eraldatud ';' (nt lmstudio=1; openrouter=4).",
+  "setting.max_parallel_agents.warn": "Paljud paralleelsed agendid mitmekordistavad kulu ja tabavad pakkuja piiranguid (HTTP 429, korratakse ootega); kohalik LM Studio vastab korraga ühele päringule, lisaagendid ainult ootavad.",
+  "setting.value.unlimited": "piiranguta",
+  "setting.value.none": "puudub",
+  "modes.desc.max_parallel_agents": "Mitu abiagenti võib korraga töötada. Tühi = vaikimisi (6); 0 = piiranguta.",
+  "modes.desc.max_parallel_agents_per_provider": "Valikuline piirang teenusepakkuja kohta: pakkuja=arv, eraldatud ';' (nt lmstudio=1; openrouter=4)."
 }

@@ -1223,5 +1223,14 @@
   "task.stalledHint": "Nu s-a raportat niciun progres de mult timp. Poate așteaptă un răspuns lent al modelului sau o comandă lungă; oprește-l sau repornește-l dacă s-a blocat.",
   "task.restart": "Repornește",
   "task.activityLoading": "Se încarcă apelurile de instrumente ale acestei rulări…",
-  "background.working": "Lucrează în fundal ({n})"
+  "background.working": "Lucrează în fundal ({n})",
+  "setting.max_parallel_agents.label": "Max. agenți în paralel",
+  "setting.max_parallel_agents.desc": "Câți agenți auxiliari pot lucra simultan. Gol = implicit (6); 0 = fără limită.",
+  "setting.max_parallel_agents_per_provider.label": "Agenți în paralel per furnizor",
+  "setting.max_parallel_agents_per_provider.desc": "Limită opțională per furnizor: furnizor=număr separate prin ';' (ex. lmstudio=1; openrouter=4).",
+  "setting.max_parallel_agents.warn": "Mulți agenți în paralel multiplică costul și ating limitele furnizorului (HTTP 429, reîncercat cu pauză); un server LM Studio local răspunde la o cerere odată, agenții în plus doar așteaptă.",
+  "setting.value.unlimited": "fără limită",
+  "setting.value.none": "niciuna",
+  "modes.desc.max_parallel_agents": "Câți agenți auxiliari pot lucra simultan. Gol = implicit (6); 0 = fără limită.",
+  "modes.desc.max_parallel_agents_per_provider": "Limită opțională per furnizor: furnizor=număr separate prin ';' (ex. lmstudio=1; openrouter=4)."
 }

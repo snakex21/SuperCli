@@ -1097,5 +1097,11 @@
   "tui.wake.started": "[automatinis ėjimas — ne jūsų žinutė] gauta %d foninių agentų rezultatų",
   "tui.wake.held": "[foniniai rezultatai sulaikyti] %d ataskaitų laukia jūsų kitos žinutės — pasiektas %d automatinių pažadinimų limitas",
   "tui.provider_rename.hint": "Pakeiskite pavadinimą, kad pervadintumėte šį tiekėją. Jį naudojantys nustatymai, modelių pasirinkimai ir išsaugotos sesijos atnaujinami.",
-  "tui.provider_rename.done": "Tiekėjas %s pervadintas į %s."
+  "tui.provider_rename.done": "Tiekėjas %s pervadintas į %s.",
+  "tui.setting_max_parallel_agents.label": "Maks. lygiagrečių agentų",
+  "tui.setting_max_parallel_agents.desc": "Kiek pagalbinių agentų gali dirbti vienu metu. Tuščia = numatytasis (6); 0 = be ribos. Daug lygiagrečių agentų padaugina sąnaudas ir pasiekia teikėjo ribas (HTTP 429, kartojama su pauze); vietinis LM Studio vienu metu aptarnauja vieną užklausą, papildomi agentai tik laukia.",
+  "tui.setting_max_parallel_agents_per_provider.label": "Lygiagretūs agentai vienam teikėjui",
+  "tui.setting_max_parallel_agents_per_provider.desc": "Neprivalomas ribojimas vienam teikėjui: teikėjas=skaičius, atskirta ';' (pvz., lmstudio=1; openrouter=4).",
+  "tui.setting_value.unlimited": "be ribos",
+  "tui.setting_value.none": "nėra"
 }
