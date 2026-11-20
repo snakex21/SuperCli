@@ -109,7 +109,9 @@ func TestSlowWorkspaceSnapshotDoesNotBlockOtherAgentsWrite(t *testing.T) {
 	var once sync.Once
 	setSnapshotScanHook(func(string) {
 		once.Do(func() { close(started) })
-		time.Sleep(10 * time.Millisecond) // ~4 s for the whole tree
+		// ~4 s for the whole tree; stays active while the other agent writes
+		// (its scoped capture visits one path).
+		time.Sleep(10 * time.Millisecond)
 	})
 	defer func() { WholeSnapshotBudget = savedBudget; setSnapshotScanHook(nil) }()
 
@@ -125,7 +127,6 @@ func TestSlowWorkspaceSnapshotDoesNotBlockOtherAgentsWrite(t *testing.T) {
 		cmd <- result{notice, err, time.Since(begin)}
 	}()
 	<-started
-	setSnapshotScanHook(nil) // the other agent's own scoped capture is fast
 	begin := time.Now()
 	_, err := turn.ensureBeforeForToolNotice(context.Background(), "create_file", []byte(`{"path":"src/new.txt","content":"x"}`))
 	writeWait := time.Since(begin)
