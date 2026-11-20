@@ -111,9 +111,7 @@ func (m *Manager) addDynamicExclude(rel string) bool {
 	}
 	m.excludeMu.Lock()
 	defer m.excludeMu.Unlock()
-	if m.rules.names == nil {
-		m.initRulesLocked()
-	}
+	m.ensureRulesLocked()
 	for _, p := range m.dynamicPaths {
 		if pathEqual(p, rel) {
 			return false
@@ -123,6 +121,20 @@ func (m *Manager) addDynamicExclude(rel string) bool {
 	m.rules.paths = append(m.rules.paths, rel)
 	m.refreshExcludesLocked()
 	return true
+}
+
+// ensureRulesLocked initializes the rules of a Manager not built by Open
+// (tests construct legacy managers with a literal excludes string, which then
+// is the base). Caller holds excludeMu.
+func (m *Manager) ensureRulesLocked() {
+	if m.rules.names != nil {
+		return
+	}
+	if m.baseExcludes == "" {
+		m.baseExcludes = m.excludes
+	}
+	m.initRulesLocked()
+	m.refreshExcludesLocked()
 }
 
 func (m *Manager) initRulesLocked() {
@@ -163,10 +175,7 @@ func (m *Manager) refreshExcludesLocked() {
 func (m *Manager) currentExcludes() (string, bool) {
 	m.excludeMu.Lock()
 	defer m.excludeMu.Unlock()
-	if m.rules.names == nil {
-		m.initRulesLocked()
-		m.refreshExcludesLocked()
-	}
+	m.ensureRulesLocked()
 	return m.excludes, m.excludesDirty
 }
 
@@ -183,10 +192,7 @@ func (m *Manager) markExcludesWritten(content string) {
 func (m *Manager) buildExcluded(p string) bool {
 	m.excludeMu.Lock()
 	defer m.excludeMu.Unlock()
-	if m.rules.names == nil {
-		m.initRulesLocked()
-		m.refreshExcludesLocked()
-	}
+	m.ensureRulesLocked()
 	parts := strings.Split(p, "/")
 	// The last segment of a file path is a file name, not a directory.
 	dirs := parts
