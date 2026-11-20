@@ -224,6 +224,12 @@ type TomlConfig struct {
 	// update); further reports wait for the next message or the GUI's
 	// Resume button. A turn with progress restores the budget. 0 = 20.
 	BackgroundWakeMaxAuto int `toml:"background_wake_max_auto"`
+	// CheckpointExclude adjusts what checkpoints skip besides .gitignore and
+	// the built-in build caches/outputs (node_modules, .zig-cache, zig-out,
+	// zig-global, target, build, dist, .gradle, __pycache__, .venv, ...):
+	// "name" or "dir/sub/" adds a directory, a pattern with * adds a
+	// gitignore line, "!name" checkpoints a built-in name again.
+	CheckpointExclude []string `toml:"checkpoint_exclude,omitempty"`
 
 	// CachePrompt hints local llama.cpp-family servers to reuse the KV
 	// prompt cache across turns (`"cache_prompt": true` in the request).

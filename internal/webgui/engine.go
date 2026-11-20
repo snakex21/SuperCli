@@ -561,12 +561,14 @@ func (e *Engine) checkpointManager(home string) (*checkpoint.Manager, error) {
 	e.checkpointMu.Lock()
 	defer e.checkpointMu.Unlock()
 	if manager := e.checkpoints[key]; manager != nil {
+		manager.SetExcludeRules(e.tomlConfigAt(home).CheckpointExclude) // settings may have changed
 		return manager, nil
 	}
 	manager, err := checkpoint.Open(abs, e.dataDir)
 	if err != nil {
 		return nil, err
 	}
+	manager.SetExcludeRules(e.tomlConfigAt(home).CheckpointExclude)
 	manager.SetUserReceiptValidator(func(ctx context.Context, sid string, seq int, id int64) (bool, error) {
 		return store.IsCurrentUserReceipt(ctx, sid, session.MessageReceipt{Seq: seq, ID: id})
 	})

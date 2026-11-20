@@ -277,6 +277,7 @@ func Main() {
 	sessionID := fmt.Sprintf("sess-%d", time.Now().UnixNano())
 	var checkpointCtrl *checkpoint.Controller
 	if manager, cpErr := checkpoint.Open(home, dataDir); cpErr == nil {
+		manager.SetExcludeRules(tomlCfg.CheckpointExclude)
 		checkpointCtrl = checkpoint.NewController(manager, sessionID)
 	} else if cpErr != checkpoint.ErrUnavailable {
 		log.Printf("checkpoint: %v", cpErr)

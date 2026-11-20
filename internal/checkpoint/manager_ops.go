@@ -20,6 +20,16 @@ func (m *Manager) capture(ctx context.Context) (string, error) {
 
 func (m *Manager) ensureRepoLocked(ctx context.Context) error {
 	if m.repoReady {
+		// Build-cache exclusions can grow at runtime (a command declared a
+		// Zig cache directory, settings changed).
+		content, dirty := m.currentExcludes()
+		if !dirty {
+			return nil
+		}
+		if err := os.WriteFile(filepath.Join(m.repo, "info", "exclude"), []byte(content), 0600); err != nil {
+			return err
+		}
+		m.markExcludesWritten(content)
 		return nil
 	}
 	existing := true
@@ -43,7 +53,8 @@ func (m *Manager) ensureRepoLocked(ctx context.Context) error {
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	if string(old) != m.excludes {
+	excludes, _ := m.currentExcludes()
+	if string(old) != excludes {
 		if err := m.requireUsageCensusLocked(); err != nil {
 			return err
 		}
@@ -54,10 +65,11 @@ func (m *Manager) ensureRepoLocked(ctx context.Context) error {
 				return err
 			}
 		}
-		if err := os.WriteFile(excludePath, []byte(m.excludes), 0600); err != nil {
+		if err := os.WriteFile(excludePath, []byte(excludes), 0600); err != nil {
 			return err
 		}
 	}
+	m.markExcludesWritten(excludes)
 	if err := m.pinRecordsLocked(ctx, m.records); err != nil {
 		return err
 	}

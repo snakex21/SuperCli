@@ -65,7 +65,13 @@ func (t *Turn) ensureBeforeForToolNotice(ctx context.Context, name string, args 
 		return "", err
 	}
 	if !known {
-		err := t.ensureWholeBeforeLocked(ctx)
+		capture := t.ensureWholeBeforeLocked
+		if name == "ctx_execute" {
+			workdir, _ := t.manager.commandWorkdirRoot(args)
+			t.manager.noteCommandCaches(args, workdir)
+			capture = func(ctx context.Context) error { return budgetedSnapshot(ctx, t.ensureWholeBeforeLocked) }
+		}
+		err := capture(ctx)
 		if err == nil || name != "ctx_execute" || !errors.Is(err, ErrSnapshotLimit) {
 			return "", err
 		}
@@ -82,7 +88,7 @@ func (t *Turn) ensureBeforeForToolNotice(ctx context.Context, name string, args 
 // baseline and the returned notice is appended to the visible tool result.
 func (t *Turn) limitedCommandBeforeLocked(ctx context.Context, args json.RawMessage, limitErr error) (string, error) {
 	if root, ok := t.manager.commandWorkdirRoot(args); ok {
-		err := t.ensureScopedBeforeLocked(ctx, []string{root})
+		err := budgetedSnapshot(ctx, func(ctx context.Context) error { return t.ensureScopedBeforeLocked(ctx, []string{root}) })
 		if err == nil {
 			return fmt.Sprintf("[Checkpoint ograniczony do workdir %q: caly workspace przekracza limit snapshotu (%v). Zmiany tej komendy poza %q NIE zostana cofniete przez undo.]", root, limitErr, root), nil
 		}

@@ -372,6 +372,7 @@ user instructions and project instructions.
 | `background_wake` | `each` | what happens when a `task{async:true}` worker finishes after the coordinator's turn ended: `each` starts an automatic turn per completion (close completions batched), `all` waits until no background worker of the conversation is running, `off` keeps the report for your next message (and restores the old blocking wait at the end of a turn) |
 | `background_wake_debounce_ms` | 0 = 1500 | completions within this window share one automatic turn |
 | `background_wake_max_auto` | 0 = 20 | consecutive automatic turns without progress (no worker started/resumed, file change, command or goal update); a turn with progress resets the count; further reports wait for Resume or your next message (loop guard). GUI: Settings → Modes |
+| `checkpoint_exclude` | empty | extra directories checkpoints (undo) skip, besides `.gitignore` and the built-in build caches/outputs (`.zig-cache`, `zig-cache`, `zig-out`, `zig-global`, `node_modules`, `target`, `build`, `dist`, `.gradle`, `__pycache__`, `.venv`, …): `"name"` or `"dir/sub/"`, a pattern with `*` is a gitignore line, `"!build"` checkpoints a built-in name again. Zig cache directories a command declares (`ZIG_GLOBAL_CACHE_DIR`, `ZIG_LOCAL_CACHE_DIR`, `--cache-dir`, `--global-cache-dir`) are skipped automatically; a command whose whole-workspace snapshot takes over 8 s runs with a narrower or no checkpoint and a visible note |
 
 ## Misc
 

@@ -177,6 +177,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.BackgroundWakeMaxAuto != 0 {
 		dst.BackgroundWakeMaxAuto = src.BackgroundWakeMaxAuto
 	}
+	if len(src.CheckpointExclude) > 0 {
+		dst.CheckpointExclude = append([]string(nil), src.CheckpointExclude...)
+	}
 	if src.CachePrompt != nil {
 		dst.CachePrompt = src.CachePrompt
 	}

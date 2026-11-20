@@ -67,6 +67,11 @@ type Manager struct {
 	home, repo, meta     string
 	dataDir              string
 	excludes             string
+	baseExcludes         string
+	excludeMu            sync.Mutex
+	excludesDirty        bool
+	rules                excludeRules
+	dynamicPaths         []string
 	excludedDataRel      string
 	repoReady            bool
 	records              []Record
@@ -116,7 +121,11 @@ func Open(home, dataDir string) (*Manager, error) {
 		m.excludedDataRel = filepath.ToSlash(rel)
 		excludes += "/" + escapeExcludePath(m.excludedDataRel) + "/\n"
 	}
-	m.excludes = excludes
+	m.baseExcludes = excludes
+	m.excludeMu.Lock()
+	m.initRulesLocked()
+	m.refreshExcludesLocked()
+	m.excludeMu.Unlock()
 	m.gate, err = NewStoreGate(dataAbs)
 	if err != nil {
 		return nil, err

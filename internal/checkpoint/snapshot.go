@@ -61,7 +61,7 @@ func (m *Manager) snapshotExcluded(p string) bool {
 			return true
 		}
 	}
-	return false
+	return m.buildExcluded(p)
 }
 
 // preflightSnapshot only reads file metadata. In particular a rejected full
@@ -104,6 +104,9 @@ func (m *Manager) preflightSnapshot(ctx context.Context, roots, protected []stri
 		p = filepath.ToSlash(p)
 		if m.snapshotExcluded(p) || scopeContains(protected, p) {
 			return nil
+		}
+		if hook := scanHook.Load(); hook != nil {
+			(*hook)(p)
 		}
 		full := filepath.Join(m.home, filepath.FromSlash(p))
 		if !within(m.home, full) {
@@ -174,6 +177,9 @@ func (m *Manager) preflightSnapshot(ctx context.Context, roots, protected []stri
 			rel = filepath.ToSlash(rel)
 			if m.snapshotExcluded(rel) || scopeContains(protected, rel) {
 				return nil
+			}
+			if info.IsDir() && m.buildExcludedDir(rel) {
+				return nil // a build cache/output directory is never walked
 			}
 			visited++
 			if visited > maxSnapshotFiles*2 {
