@@ -89,6 +89,9 @@ function tn(key, n) {
 var SYSTEM_TEXTS = [
   { key: "notice.preflight", re: /^preflight: repo context ~(\d+) tok \(project turn\)$/, args: ["n"] },
   { key: "notice.loopWarning", re: /^repeated tool evidence: loop warning injected$/, args: [] },
+  // Keep in sync with agent.ReviewNoChanges / reviewVerifyFailedF.
+  { key: "task.reviewNoChanges", re: /^review: no file changes were recorded in this run$/, args: [] },
+  { key: "task.reviewVerifyFailed", re: /^review: verify command failed: (.+?) \(exit (-?\d+)\)(?: — [\s\S]*)?$/, args: ["command", "code"] },
   // Keep in sync with agent.EmptyReplyNotice.
   { key: "notice.emptyReply", re: /^empty reply: the model returned no answer; ask again or choose another model$/, args: [] },
   // Retry progress is "3/5" or "12/∞" (max_retries = -1); keep in sync with llm.rateLimitNotice and the TUI localizeNotice.

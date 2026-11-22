@@ -1249,5 +1249,21 @@
   "task.stopWorker": "Ferma",
   "task.stopWorkerHint": "Ferma solo questo agente di supporto; la conversazione continua",
   "task.stopFailed": "Impossibile fermare l’agente. Riprova.",
-  "notice.emptyReply": "Il modello non ha restituito alcuna risposta. Chiedi di nuovo o scegli un altro modello."
+  "notice.emptyReply": "Il modello non ha restituito alcuna risposta. Chiedi di nuovo o scegli un altro modello.",
+  "task.needsReview": "da verificare",
+  "task.reviewNoChanges": "L’agente ha segnalato successo ma non ha modificato alcun file.",
+  "task.reviewVerifyFailed": "Il controllo del progetto è fallito dopo le modifiche dell’agente: {command} (codice {code}).",
+  "storage.recovered": "Il database {file} era danneggiato. La sua copia è in {backup}; SuperCli è partito con uno nuovo.",
+  "task.blocked": "bloccato",
+  "task.blockedResume": "Ripresa automatica bloccata — fai clic su Riprendi se vuoi",
+  "task.blockedTask": "Nessun nuovo agente avviato senza la tua richiesta",
+  "task.blockedStop": "Agente non fermato senza la tua richiesta",
+  "task.blockedDetails": "Dettagli",
+  "task.sum.running": "al lavoro",
+  "task.sum.failed": "con errore",
+  "task.sum.review": "da verificare",
+  "task.sum.interrupted": "interrotto|interrotti",
+  "task.sum.stopped": "fermato|fermati",
+  "task.sum.done": "pronto|pronti",
+  "task.sum.unknown": "non confermato|non confermati"
 }

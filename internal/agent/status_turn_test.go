@@ -31,6 +31,19 @@ func TestIsStatusQuestion(t *testing.T) {
 		{"jak działa ten kod?", false},
 		{"jak idzie praca nad tym wielkim refaktorem modułu zapisu świata", false},
 		{"", false},
+		// Review 1.0.39: mixed status + instruction, and status words used
+		// in an ordinary question, are normal messages (never blocked).
+		{"status: przetestuj build", false},
+		{"jak tam, napisz testy do parsera", false},
+		{"what's the status of the build, deploy it", false},
+		{"jak idzie? i przy okazji zbadaj błąd", false},
+		{"co tam jest w pliku config.go?", false},
+		{"jak tam działa ta funkcja?", false},
+		{"status of the deploy", false},
+		{"jak idzie budowanie? popraw testy", false},
+		{"jak idzie z tym?", true},
+		{"how is it going so far?", true},
+		{"no i co tam", true},
 	} {
 		if got := isStatusQuestion(tc.prompt); got != tc.want {
 			t.Errorf("isStatusQuestion(%q) = %v, want %v", tc.prompt, got, tc.want)
@@ -176,5 +189,35 @@ func TestStatusQuestionDoesNotStartOrResumeWorkers(t *testing.T) {
 	runTurnText(t, f.parent, "wznów worker-1")
 	if s := w.Snapshot(); s.Runs != 2 {
 		t.Fatalf("explicit resume: runs = %d, want 2", s.Runs)
+	}
+}
+
+// Resume/stop of a failed or stopped worker in a user turn needs a message
+// that names the worker without a negation (or the UI button, whose message
+// names it). Keyword guesses are not a go-ahead.
+func TestNamesWorkerWithoutNegation(t *testing.T) {
+	for _, tc := range []struct {
+		prompt, action string
+		want           bool
+	}{
+		{"wznów worker-7", "resume", true},
+		{"Wznów worker-7 przez send_message i kontynuuj jego zadanie od miejsca przerwania; jego zapisana rozmowa zostanie przywrócona.", "resume", true},
+		{"kontynuuj workera 7", "resume", true},
+		{"resume worker 7 please", "resume", true},
+		{"nie wznawiaj go", "resume", false},
+		{"nie wznawiaj worker-7", "resume", false},
+		{"don't resume worker-7", "resume", false},
+		{"tak, ale co to za plik?", "resume", false},
+		{"ile to 7 plików?", "resume", false},
+		{"wznów go", "resume", false},
+		{"worker-7 nie, ale worker-8 tak", "resume", false},
+		{"zatrzymaj worker-7", "stop", true},
+		{"zatrzymaj worker-7", "resume", false},
+		{"nie zatrzymuj worker-7", "stop", false},
+		{"co robi worker-70?", "resume", false},
+	} {
+		if got := namesWorkerWithoutNegation(tc.prompt, "worker-7", tc.action); got != tc.want {
+			t.Errorf("%s %q = %v, want %v", tc.action, tc.prompt, got, tc.want)
+		}
 	}
 }

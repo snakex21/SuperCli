@@ -1249,5 +1249,21 @@
   "task.stopWorker": "Stabdyti",
   "task.stopWorkerHint": "Sustabdyti tik šį pagalbinį agentą; pokalbis tęsiasi",
   "task.stopFailed": "Agento sustabdyti nepavyko. Bandykite dar kartą.",
-  "notice.emptyReply": "Modelis negrąžino atsakymo. Paklauskite dar kartą arba pasirinkite kitą modelį."
+  "notice.emptyReply": "Modelis negrąžino atsakymo. Paklauskite dar kartą arba pasirinkite kitą modelį.",
+  "task.needsReview": "reikia patikrinti",
+  "task.reviewNoChanges": "Agentas pranešė apie sėkmę, bet nepakeitė nė vieno failo.",
+  "task.reviewVerifyFailed": "Projekto patikra nepavyko po agento pakeitimų: {command} (kodas {code}).",
+  "storage.recovered": "Duomenų bazė {file} buvo sugadinta. Jos kopija yra {backup}; SuperCli pradėjo su nauja.",
+  "task.blocked": "užblokuota",
+  "task.blockedResume": "Automatinis tęsimas užblokuotas — spustelėkite Tęsti, jei norite",
+  "task.blockedTask": "Be jūsų prašymo naujas agentas nepaleistas",
+  "task.blockedStop": "Agentas nesustabdytas be jūsų prašymo",
+  "task.blockedDetails": "Išsami informacija",
+  "task.sum.running": "dirba",
+  "task.sum.failed": "su klaida",
+  "task.sum.review": "patikrinti",
+  "task.sum.interrupted": "nutrauktas|nutraukti|nutrauktų",
+  "task.sum.stopped": "sustabdytas|sustabdyti|sustabdytų",
+  "task.sum.done": "baigtas|baigti|baigtų",
+  "task.sum.unknown": "nepatvirtintas|nepatvirtinti|nepatvirtintų"
 }

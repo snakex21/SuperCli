@@ -95,8 +95,11 @@ type Engine struct {
 	prefillProfiles *llm.PrefillProfiles
 	questionMu      sync.Mutex
 	questions       map[string]tools.AskRequest
-	perfMu          sync.RWMutex
-	perf            map[string]providerCallPerformance
+	// pendingQuestions: unanswered questions of background workers per
+	// conversation (background_questions.go); guarded by questionMu.
+	pendingQuestions map[string]map[string]pendingQuestion
+	perfMu           sync.RWMutex
+	perf             map[string]providerCallPerformance
 	// offTurn counts model calls the GUI makes OUTSIDE any agent turn
 	// (titles, run summaries, folder/document indexing, vision). They
 	// belong to no turn, so no turn summary can carry them, but they

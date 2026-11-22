@@ -174,6 +174,9 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.BackgroundWakeDebounceMS != 0 {
 		dst.BackgroundWakeDebounceMS = src.BackgroundWakeDebounceMS
 	}
+	if src.CommandTimeoutMS != 0 {
+		dst.CommandTimeoutMS = src.CommandTimeoutMS
+	}
 	if src.BackgroundWakeMaxAuto != 0 {
 		dst.BackgroundWakeMaxAuto = src.BackgroundWakeMaxAuto
 	}

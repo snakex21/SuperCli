@@ -1249,5 +1249,21 @@
   "task.stopWorker": "Parar",
   "task.stopWorkerHint": "Parar apenas este agente auxiliar; a conversa continua",
   "task.stopFailed": "Não foi possível parar o agente. Tente novamente.",
-  "notice.emptyReply": "O modelo não retornou resposta. Pergunte novamente ou escolha outro modelo."
+  "notice.emptyReply": "O modelo não retornou resposta. Pergunte novamente ou escolha outro modelo.",
+  "task.needsReview": "requer revisão",
+  "task.reviewNoChanges": "O agente relatou sucesso, mas não alterou nenhum arquivo.",
+  "task.reviewVerifyFailed": "A verificação do projeto falhou após as alterações do agente: {command} (código {code}).",
+  "storage.recovered": "O banco de dados {file} estava danificado. A cópia está em {backup}; o SuperCli começou com um novo.",
+  "task.blocked": "bloqueado",
+  "task.blockedResume": "Retomada automática bloqueada — clique em Retomar se quiser",
+  "task.blockedTask": "Nenhum novo agente iniciado sem o seu pedido",
+  "task.blockedStop": "Agente não parado sem o seu pedido",
+  "task.blockedDetails": "Detalhes",
+  "task.sum.running": "trabalhando",
+  "task.sum.failed": "com erro",
+  "task.sum.review": "para revisar",
+  "task.sum.interrupted": "interrompido|interrompidos",
+  "task.sum.stopped": "parado|parados",
+  "task.sum.done": "pronto|prontos",
+  "task.sum.unknown": "não confirmado|não confirmados"
 }

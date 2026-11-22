@@ -35,6 +35,18 @@ function workspaceDisplayName(path) {
 $("#open-project-folder").addEventListener("click", function () {
   if (activeWorkspacePath) openWorkspaceFolder(activeWorkspacePath);
 });
+// A damaged database was moved aside at startup and a fresh one started:
+// say so once per copy, with where the old data is.
+var reportedStorageRecoveries = {};
+function reportStorageRecoveries(list) {
+  (list || []).forEach(function (r) {
+    if (!r || !r.backup || reportedStorageRecoveries[r.backup]) return;
+    reportedStorageRecoveries[r.backup] = true;
+    var text = t("storage.recovered").replace("{file}", r.file || "").replace("{backup}", r.backup);
+    if (typeof addEventLine === "function") addEventLine(text, "error", "error");
+    if (typeof toast === "function") toast(text);
+  });
+}
 async function checkHealth() {
   var dot = $("#status-dot");
   try {
@@ -51,6 +63,7 @@ async function checkHealth() {
     activeModelID = model;
     $("#model-name").textContent = modelDisplayName(model);
     if (modelChanged && model) loadReasoning();
+    reportStorageRecoveries(h.storage_recoveries);
     return h;
   } catch (e) {
     dot.className = "status-dot err";

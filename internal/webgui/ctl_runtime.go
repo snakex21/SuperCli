@@ -32,6 +32,9 @@ type webWorker struct {
 	// process-wide, so the GUI adopts a snapshot for a card restored from
 	// history (no run number) only when it is this conversation's worker.
 	Session string `json:"session,omitempty"`
+	// Review: the run ended "done" but needs a look (no file changes, or a
+	// red verify command); the card shows "needs review", not "done".
+	Review string `json:"review,omitempty"`
 	// Liveness of a running worker (server epoch ms; 0 when idle): its
 	// current phase ("model" or "tool"), since when, the latest observable
 	// progress and the running tool's live progress line.
@@ -54,7 +57,7 @@ func workerDTO(s agent.Snapshot) webWorker {
 		Status: s.Status, LastError: s.LastError, TokensIn: s.TokensIn,
 		TokensOut: s.TokensOut, Steps: s.Steps, ToolNames: s.ToolNames,
 		Run: s.Runs, UpdatedAt: s.UpdatedAt.UnixMilli(), Activity: activity,
-		Session: s.SessionID,
+		Session: s.SessionID, Review: s.Review,
 	}
 	if live := s.Live; live.Phase != "" {
 		dto.Phase, dto.PhaseTool, dto.ToolProgress = live.Phase, live.Tool, live.ToolProgress

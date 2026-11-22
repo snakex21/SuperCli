@@ -1249,5 +1249,21 @@
   "task.stopWorker": "Stopp",
   "task.stopWorkerHint": "Stopp bare denne hjelpeagenten; samtalen fortsetter",
   "task.stopFailed": "Kunne ikke stoppe agenten. Prøv igjen.",
-  "notice.emptyReply": "Modellen ga ikke noe svar. Spør igjen eller velg en annen modell."
+  "notice.emptyReply": "Modellen ga ikke noe svar. Spør igjen eller velg en annen modell.",
+  "task.needsReview": "må kontrolleres",
+  "task.reviewNoChanges": "Agenten meldte suksess, men endret ingen filer.",
+  "task.reviewVerifyFailed": "Prosjektsjekken feilet etter agentens endringer: {command} (kode {code}).",
+  "storage.recovered": "Databasen {file} var skadet. En kopi ligger i {backup}; SuperCli startet med en ny.",
+  "task.blocked": "blokkert",
+  "task.blockedResume": "Automatisk gjenopptak blokkert — klikk Gjenoppta hvis du vil",
+  "task.blockedTask": "Ingen ny agent startet uten din forespørsel",
+  "task.blockedStop": "Agenten ble ikke stoppet uten din forespørsel",
+  "task.blockedDetails": "Detaljer",
+  "task.sum.running": "jobber",
+  "task.sum.failed": "feilet",
+  "task.sum.review": "må kontrolleres",
+  "task.sum.interrupted": "avbrutt",
+  "task.sum.stopped": "stoppet",
+  "task.sum.done": "ferdig|ferdige",
+  "task.sum.unknown": "ubekreftet|ubekreftede"
 }

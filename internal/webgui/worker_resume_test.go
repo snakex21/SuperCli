@@ -29,8 +29,10 @@ func (*resumedQuestionProvider) Complete(_ context.Context, messages []llm.Messa
 		}
 	}
 	var call *llm.ToolCall
-	// An automatic turn reads a worker report: answer, never delegate again.
-	if last.Role == llm.RoleUser && last.Name != llm.WorkerNotificationName && !strings.Contains(user, "<task-notification>") {
+	// A naive model: it reacts to the latest user-role message, including
+	// a worker report in an automatic turn (it would delegate again; the
+	// system has to stop that, not this fixture).
+	if last.Role == llm.RoleUser {
 		switch {
 		case strings.HasPrefix(strings.TrimSpace(user), "worker-fixture-resume"):
 			call = &llm.ToolCall{ID: "question-call", Name: "ask_user", Arguments: `{"question":"Resume choice?","options":[{"label":"A"},{"label":"B"}]}`}
@@ -142,7 +144,12 @@ func TestResumedWorkerQuestionAndProgressUseNewWebRun(t *testing.T) {
 			report = true
 		}
 	}
-	if !progress || !report {
+	if !progress || !report || !questionClosed {
 		t.Fatalf("progress=%v report=%v questionClosed=%v", progress, report, questionClosed)
+	}
+	// Automatic turns read the reports; the system refused the naive
+	// re-delegation of the same task, so exactly one worker exists.
+	if n := len(eng.workers.List()); n != 1 {
+		t.Fatalf("automatic turns started %d workers, want 1", n)
 	}
 }

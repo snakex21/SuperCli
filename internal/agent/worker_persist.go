@@ -232,6 +232,7 @@ func (a *AgentTool) restoreWorker(ctx context.Context, id string) (*Worker, erro
 	if a.ParentLoop != nil {
 		w.progress = func(ev WorkerProgressEvent) { a.ParentLoop.Emit(ev) }
 	}
+	a.installReview(w)
 	return w, nil
 }
 

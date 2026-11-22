@@ -1650,8 +1650,14 @@ async function sendPrompt(text, attachments, draft, queuedItem, dispatchScope) {
           }
         } catch (recoverErr) {}
       }
-      addEventLine(t("chat.streamEnded"), "error", "error");
-      setRunState("idle", t("common.error"));
+      if (run.stopRequested || (run.abortCtl && run.abortCtl.signal && run.abortCtl.signal.aborted)) {
+        // The user's Stop: a normal end, not "the stream ended unexpectedly".
+        addEventLine(t("chat.stopped"), "", "stop");
+        setRunState("idle", t("composer.stopped"));
+      } else {
+        addEventLine(t("chat.streamEnded"), "error", "error");
+        setRunState("idle", t("common.error"));
+      }
     }
   } catch (e) {
     acceptanceUncertain = true;

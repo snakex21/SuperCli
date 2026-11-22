@@ -566,6 +566,12 @@ function buildHistoryFragment(messages, pager, prepend) {
         }
         row.appendChild(body);
         appendStream(row);
+        if ((persistedName === "task" || persistedName === "send_message" || persistedName === "task_stop") &&
+            /(^|\s|: )refused:/.test(String(m.content || "")) && typeof applyRefusedDelegation === "function") {
+          // A declined delegation call reads as a quiet note in history too.
+          row._stat = historyStat;
+          applyRefusedDelegation(row, persistedName, String(m.content));
+        }
         appendToolMediaPreview(row, m.content, persistedName, /^error:/i.test(String(m.content || "")));
         // User-only preview thumbnails saved with the tool result record.
         if (Array.isArray(m.tool_previews) && m.tool_previews.length) appendNativeToolImages(row, m.tool_previews);
@@ -713,6 +719,7 @@ async function resumeSession(id, session, fromQueue, fromSync) {
     activeSessionID = id;
     composerDraftStore.restore("session:" + id);
     transcriptSessionID = id;
+    if (typeof restorePendingQuestions === "function") restorePendingQuestions(id);
     loadedTranscriptMessages = msgs;
     transcriptHasMore = !!page.has_more;
     transcriptBeforeSeq = page.before_seq || 0;

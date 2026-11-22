@@ -4,6 +4,8 @@
 package session
 
 import (
+	"supercli/internal/storage"
+
 	"context"
 	"database/sql"
 	"fmt"
@@ -65,6 +67,12 @@ func OpenStore(home string) (*Store, error) {
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		return nil, fmt.Errorf("session.OpenStore: mkdir: %w", err)
 	}
+	// A damaged sessions.db is moved aside (never deleted) and a fresh one
+	// is started; the host reports the copy (storage.Recoveries).
+	return storage.OpenRecovering(filepath.Join(home, "sessions.db"), func() (*Store, error) { return openStore(home) })
+}
+
+func openStore(home string) (*Store, error) {
 	dsn := filepath.Join(home, "sessions.db") + sessionDSNPragmas
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {

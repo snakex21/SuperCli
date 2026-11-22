@@ -28,6 +28,7 @@ const (
 	panelSlowBrief = "Projekt: port Minecraft Java 1.12 do Zig (przeczytaj AGENTS.md). Zig: build-migration/tools/zig-x86_64-windows-0.15.2/zig.exe.\nCEL: dodać pająka, szkieleta i creepera w zwykłym świecie (zig-engine/src/native_world_mob_spawning_species.zig)."
 	panelFailBrief = "Projekt: port Minecraft Java 1.12 do Zig.\nCEL: naprawić 3 testy zapisu nocy w zig-engine/src/native_night_world_save_tests.zig"
 	panelOKBrief   = "Projekt: port Minecraft Java 1.12 do Zig.\nCEL: dodać ikony pancerza do HUD"
+	panelNoopBrief = "Projekt: port Minecraft Java 1.12 do Zig.\nCEL: poprawić animację chodzenia zombie"
 )
 
 type panelProvider struct {
@@ -60,7 +61,14 @@ func (p *panelProvider) Complete(ctx context.Context, msgs []llm.Message, defs [
 		case strings.Contains(firstUser, "zapisu nocy"):
 			return nil, errors.New("sse: stream error: stream ID 387; INTERNAL_ERROR; received from peer (HTTP 400)")
 		case strings.Contains(firstUser, "ikony pancerza"):
+			// A real change first, then the report: the card says "done".
+			if msgs[len(msgs)-1].Role != llm.RoleTool {
+				return workerSteeringWireCall("armor-write", "create_file", map[string]any{"path": "hud_armor_icons.zig", "content": "pub const armor_icons = 4;\n"})
+			}
 			return workerSteeringWireDeltas(llm.Delta{Content: "Dodałem ikony pancerza do HUD. Testy HUD pancerza: 22/22.", FinishReason: "stop"}), nil
+		case strings.Contains(firstUser, "animację chodzenia"):
+			// "Fixed" without touching a file: the card says "needs review".
+			return workerSteeringWireDeltas(llm.Delta{Content: "Animacja chodzenia zombie jest poprawiona.", FinishReason: "stop"}), nil
 		default:
 			out := make(chan llm.Delta, 4)
 			go func() {
@@ -102,12 +110,12 @@ func (p *panelProvider) Complete(ctx context.Context, msgs []llm.Message, defs [
 		// A careless model tries to resume work on a status question.
 		return workerSteeringWireCall("status-resume", "send_message", map[string]any{"to": "worker-2", "message": "Wznowienie po błędzie: kontynuuj."})
 	case last.Role == llm.RoleTool:
-		return workerSteeringWireDeltas(llm.Delta{Content: "Uruchomiłem trzech agentów w tle. Napiszę, gdy skończą.", FinishReason: "stop"}), nil
+		return workerSteeringWireDeltas(llm.Delta{Content: "Uruchomiłem czterech agentów w tle. Napiszę, gdy skończą.", FinishReason: "stop"}), nil
 	case freshReport:
 		return workerSteeringWireDeltas(llm.Delta{Content: "Raport przyszedł; szczegóły są na kartach agentów.", FinishReason: "stop"}), nil
 	case strings.Contains(user, "Rozpocznij"):
-		out := make(chan llm.Delta, 4)
-		for i, brief := range []string{panelSlowBrief, panelFailBrief, panelOKBrief} {
+		out := make(chan llm.Delta, 8)
+		for i, brief := range []string{panelSlowBrief, panelFailBrief, panelOKBrief, panelNoopBrief} {
 			out <- llm.Delta{ToolCall: &llm.ToolCall{ID: fmt.Sprintf("spawn-%d", i+1), Name: "task", Arguments: fmt.Sprintf(`{"agent":"code","prompt":%s}`, jsString(brief))}}
 		}
 		out <- llm.Delta{FinishReason: "tool_calls"}
@@ -147,7 +155,13 @@ func TestDelegationPanelStatesAndStatusQuestionBrowser(t *testing.T) {
 	shots := os.Getenv("SUPERCLI_UI_SHOTS")
 	ctx, cancel := context.WithTimeout(t.Context(), 150*time.Second)
 	t.Cleanup(cancel)
-	dir := t.TempDir()
+	// A deferred checkpoint may still hold its lease file for a moment after
+	// the engine closes (Windows refuses to delete it); clean up best-effort.
+	dir, err := os.MkdirTemp("", "panel-browser-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	if shots != "" {
 		dir = filepath.Join(shots, "data")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -204,9 +218,9 @@ func TestDelegationPanelStatesAndStatusQuestionBrowser(t *testing.T) {
 	}
 
 	app.send("Rozpocznij pracę nad mobami, nocą i HUD.")
-	app.waitJS("three delegation cards", `document.querySelectorAll('#stream .task-row').length>=3`, 20*time.Second)
+	app.waitJS("four delegation cards", `document.querySelectorAll('#stream .task-row').length>=4`, 20*time.Second)
 	app.waitJS("states: working, error, finished",
-		`(()=>{const s=document.querySelector('#worker-overview-summary').textContent;return s.includes('1 pracuje')&&s.includes('1 błąd')&&s.includes('1 gotowe');})()`, 20*time.Second)
+		`(()=>{const s=document.querySelector('#worker-overview-summary').textContent;return s.includes('1 pracuje')&&s.includes('1 z błędem')&&s.includes('1 do sprawdzenia')&&s.includes('1 gotowy');})()`, 20*time.Second)
 	app.waitJS("turn finished", `!streaming`, 20*time.Second)
 
 	var facts struct {

@@ -1249,5 +1249,21 @@
   "task.stopWorker": "Zastavit",
   "task.stopWorkerHint": "Zastavit jen tohoto pomocného agenta; konverzace pokračuje",
   "task.stopFailed": "Agenta se nepodařilo zastavit. Zkuste to znovu.",
-  "notice.emptyReply": "Model nevrátil žádnou odpověď. Zeptejte se znovu nebo zvolte jiný model."
+  "notice.emptyReply": "Model nevrátil žádnou odpověď. Zeptejte se znovu nebo zvolte jiný model.",
+  "task.needsReview": "vyžaduje kontrolu",
+  "task.reviewNoChanges": "Agent ohlásil úspěch, ale nezměnil žádný soubor.",
+  "task.reviewVerifyFailed": "Kontrola projektu po změnách agenta selhala: {command} (kód {code}).",
+  "storage.recovered": "Databáze {file} byla poškozená. Její kopie je v {backup}; SuperCli začal s novou.",
+  "task.blocked": "zablokováno",
+  "task.blockedResume": "Automatické obnovení zablokováno — klikněte na Obnovit, pokud chcete",
+  "task.blockedTask": "Bez vašeho požadavku nebyl spuštěn žádný nový agent",
+  "task.blockedStop": "Agent nebyl zastaven bez vašeho požadavku",
+  "task.blockedDetails": "Podrobnosti",
+  "task.sum.running": "pracuje|pracují|pracuje|pracuje",
+  "task.sum.failed": "s chybou",
+  "task.sum.review": "ke kontrole",
+  "task.sum.interrupted": "přerušený|přerušené|přerušených|přerušených",
+  "task.sum.stopped": "zastavený|zastavené|zastavených|zastavených",
+  "task.sum.done": "hotový|hotové|hotových|hotových",
+  "task.sum.unknown": "nepotvrzený|nepotvrzené|nepotvrzených|nepotvrzených"
 }

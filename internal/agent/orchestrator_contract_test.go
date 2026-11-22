@@ -14,6 +14,8 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -21,6 +23,7 @@ import (
 
 	"supercli/internal/llm"
 	"supercli/internal/tools"
+	"supercli/internal/tools/ctxexec"
 )
 
 func tcall(id, name, args string) llm.Delta {
@@ -157,26 +160,135 @@ func drainExt(ch chan Event) {
 // never the worker it started.
 func TestContractTurnCancelDoesNotStopBackgroundWorker(t *testing.T) {
 	release := make(chan struct{})
+	inTurn := make(chan struct{})
 	f, _ := contractFixture(t, true,
 		[][]llm.Delta{callStep(tcall("t1", "task", `{"prompt":"compile the project"}`)), say("Delegated.")},
 		[][]llm.Delta{say("BUILD_OK")})
 	f.child.onCalled = func(int) { <-release }
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// The coordinator's second model call is still streaming when the user
+	// presses Stop (or sends "interrupt and send"): the turn is live.
+	f.coordinator.onCalled = func(n int) {
+		if n == 1 {
+			close(inTurn)
+			<-ctx.Done()
+		}
+	}
 	events, err := f.parent.Run(ctx, "Skompiluj projekt.")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for range events {
+	drained := make(chan struct{})
+	go func() {
+		for range events {
+		}
+		close(drained)
+	}()
+	select {
+	case <-inTurn:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the turn never reached its second model call")
 	}
 	w := f.task.Workers.List()[0]
 	waitWorker(t, w, "should be running", func(s Snapshot) bool { return s.Status == "running" })
-	cancel() // the user's Stop / next message ends the turn's context
-	time.Sleep(50 * time.Millisecond)
+	cancel() // Stop while the turn runs
+	select {
+	case <-drained:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the stopped turn did not end")
+	}
 	if s := w.Snapshot(); s.Status != "running" {
-		t.Fatalf("canceling the turn changed the worker: %s (%s)", s.Status, s.LastError)
+		t.Fatalf("stopping the turn changed the worker: %s (%s)", s.Status, s.LastError)
 	}
 	close(release)
 	waitWorker(t, w, "should finish on its own", func(s Snapshot) bool { return s.Status == "done" })
+}
+
+// Stop of one worker (its own button) stops that worker only.
+func TestContractStopOneBackgroundWorker(t *testing.T) {
+	release := make(chan struct{})
+	f, _ := contractFixture(t, true,
+		[][]llm.Delta{
+			callStep(tcall("t1", "task", `{"prompt":"A: spider"}`), tcall("t2", "task", `{"prompt":"B: skeleton"}`)),
+			say("Two workers started."),
+		},
+		[][]llm.Delta{say("DONE"), say("DONE")})
+	f.child.onCalled = func(int) { <-release }
+	runTurnWithin(t, f.parent, "Zrób oba.", 3*time.Second)
+	workers := f.task.Workers.List()
+	if len(workers) != 2 {
+		t.Fatalf("workers = %d", len(workers))
+	}
+	for _, w := range workers {
+		waitWorker(t, w, "should run", func(s Snapshot) bool { return s.Status == "running" })
+	}
+	if err := f.task.Workers.Stop(workers[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	waitWorker(t, workers[0], "should be stopped", func(s Snapshot) bool { return s.Status == "stopped" })
+	waitWorker(t, workers[1], "should finish", func(s Snapshot) bool { return s.Status == "done" })
+}
+
+// Two follow-ups to one worker at the same moment: one starts, the other
+// gets "already running" as its own result, and no false report is
+// delivered to the conversation (it would wake it for nothing).
+func TestContractParallelContinuationsStartOnce(t *testing.T) {
+	release := make(chan struct{})
+	f, ext := contractFixture(t, true,
+		[][]llm.Delta{
+			callStep(tcall("t1", "task", `{"prompt":"spider"}`)), say("Delegated."),
+			callStep(tcall("s1", "send_message", `{"to":"worker-1","message":"continue A"}`), tcall("s2", "send_message", `{"to":"worker-1","message":"continue B"}`)),
+			say("Continued."),
+		},
+		[][]llm.Delta{say("first"), say("second"), say("third")})
+	runTurnWithin(t, f.parent, "Pająk.", 3*time.Second)
+	w := f.task.Workers.List()[0]
+	waitWorker(t, w, "first run", func(s Snapshot) bool { return s.Status == "done" })
+	if _, ok := waitWakeEvent(t, ext, 5*time.Second); !ok {
+		t.Fatal("no wake for the first report")
+	}
+	f.child.onCalled = func(int) { <-release }
+	f.writer.mu.Lock()
+	start := len(f.writer.messages)
+	f.writer.mu.Unlock()
+	runTurnWithin(t, f.parent, "kontynuuj worker-1 dwa razy", 3*time.Second)
+	results := 0
+	already := 0
+	f.writer.mu.Lock()
+	all := append([]llm.Message(nil), f.writer.messages...)
+	f.writer.mu.Unlock()
+	for _, m := range all {
+		if m.Role == llm.RoleTool && m.Name == "send_message" {
+			results++
+			if strings.Contains(m.Content, "already running") {
+				already++
+			}
+		}
+	}
+	if results != 2 || already != 1 {
+		t.Fatalf("send_message results=%d already-running=%d, want 2/1", results, already)
+	}
+	close(release)
+	waitWorker(t, w, "the continuation", func(s Snapshot) bool { return s.Status == "done" && s.Runs == 2 })
+	time.Sleep(150 * time.Millisecond) // a late, false report would land here
+	delivered, falseReports := 0, 0
+	// Read what was persisted (the writer is safe for concurrent use).
+	f.writer.mu.Lock()
+	persisted := append([]llm.Message(nil), f.writer.messages[start:]...)
+	f.writer.mu.Unlock()
+	for _, m := range persisted {
+		if m.Role == llm.RoleUser && m.Name == llm.WorkerNotificationName {
+			delivered++
+			if strings.Contains(m.Content, "already running") {
+				falseReports++
+			}
+		}
+	}
+	if delivered != 1 || falseReports != 0 {
+		t.Fatalf("reports delivered = %d (false 'already running' = %d), want exactly the continuation's report", delivered, falseReports)
+	}
 }
 
 // An automatic turn never resumes a failed or stopped worker (the session:
@@ -231,7 +343,7 @@ func TestContractUserTurnResumesOnlyWhenAsked(t *testing.T) {
 	if s := w.Snapshot(); s.Runs != 1 || s.Status != "stopped" {
 		t.Fatalf("an unrelated question resumed a stopped worker: runs=%d status=%s", s.Runs, s.Status)
 	}
-	runTurnText(t, f.parent, "wznów go")
+	runTurnText(t, f.parent, "wznów worker-1")
 	if s := w.Snapshot(); s.Runs != 2 {
 		t.Fatalf("an explicit resume did not run: runs=%d", s.Runs)
 	}
@@ -430,75 +542,29 @@ func TestContractEmptyReplyIsReported(t *testing.T) {
 	}
 }
 
-func TestDestructiveCommandGuard(t *testing.T) {
-	blocked := [][]string{
-		{"rm", "-rf", "/"},
-		{"rm", "-rf", "~"},
-		{"rm", "-rf", "*"},
-		{"rm", "-r", "-f", ".."},
-		{"cmd", "/c", "rd /s /q C:\\"},
-		{"cmd", "/c", "del /s /q C:\\*"},
-		{"powershell", "-NoProfile", "-Command", "Remove-Item -Recurse -Force C:\\"},
-		{"pwsh", "-c", "Get-ChildItem; Remove-Item -Recurse -Force $HOME"},
-		{"bash", "-c", "cd /tmp && rm -rf /"},
-		{"format", "D:"},
-		{"diskpart"},
-		{"shutdown", "/s", "/t", "0"},
-		{"git", "push", "--force", "origin", "main"},
-		{"git", "push", "origin", "+main"},
-		{"git", "reset", "--hard", "HEAD~3"},
-		{"git", "clean", "-fdx"},
-		{"dd", "if=/dev/zero", "of=/dev/sda"},
-	}
-	for _, argv := range blocked {
-		raw, _ := json.Marshal(map[string]any{"command": argv})
-		if destructiveCommandRefusal("ctx_execute", string(raw)) == "" {
-			t.Errorf("not blocked: %q", argv)
-		}
-	}
-	allowed := [][]string{
-		{"go", "test", "./..."},
-		{"zig", "build", "client"},
-		{"rm", "-rf", "build"},
-		{"rm", "-rf", "./zig-cache"},
-		{"cmd", "/c", "rd /s /q zig-out"},
-		{"git", "status"},
-		{"git", "commit", "-m", "format code and shutdown hook"},
-		{"git", "push", "origin", "main"},
-		{"git", "reset", "--soft", "HEAD~1"},
-		{"git", "clean", "-n"},
-		{"powershell", "-Command", "Remove-Item build\\out.txt"},
-		{"echo", "rm -rf / is dangerous"},
-	}
-	for _, argv := range allowed {
-		raw, _ := json.Marshal(map[string]any{"command": argv})
-		if r := destructiveCommandRefusal("ctx_execute", string(raw)); r != "" {
-			t.Errorf("blocked an ordinary command %q: %s", argv, r)
-		}
-	}
-}
-
-// The guard runs at dispatch: the tool itself is never called.
+// A destructive command is refused by the tool's own guard before it runs,
+// whatever host or loop calls it (sandbox.CheckCommand has the full matrix).
 func TestDestructiveCommandIsNeverExecuted(t *testing.T) {
+	home := t.TempDir()
 	reg := tools.NewRegistry()
-	var ran atomic.Int32
-	reg.MustRegister(tools.Tool{Name: "ctx_execute", Description: "run a command", Schema: `{"type":"object","properties":{"command":{"type":"array","items":{"type":"string"}}}}`,
-		Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
-			ran.Add(1)
-			return tools.Result{Text: "ran"}, nil
-		}})
+	reg.MustRegister(tools.NewCtxExecuteTool(ctxexec.New(home), home).Spec())
 	reg.MarkAlwaysOn("ctx_execute")
+	marker := filepath.Join(home, "keep.txt")
+	if err := os.WriteFile(marker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	args, _ := json.Marshal(map[string]any{"command": []string{"rm", "-rf", "."}})
 	prov := &stubProvider{name: "t", scripts: [][]llm.Delta{
-		callStep(tcall("c1", "ctx_execute", `{"command":["rm","-rf","/"]}`)),
+		callStep(tcall("c1", "ctx_execute", string(args))),
 		say("Nie uruchomię tego."),
 	}}
-	l, err := NewLoop(LoopConfig{Provider: prov, Registry: reg, MaxSteps: 4})
+	l, err := NewLoop(LoopConfig{Provider: prov, Registry: reg, MaxSteps: 4, BaseDir: home})
 	if err != nil {
 		t.Fatal(err)
 	}
-	runTurnText(t, l, "wyczyść dysk")
-	if ran.Load() != 0 {
-		t.Fatal("a destructive command was executed")
+	runTurnText(t, l, "wyczyść projekt")
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatal("the project was deleted")
 	}
 	if !requestContains(prov.reqs[1], "blocked: destructive command") {
 		t.Fatal("the model was not told why")

@@ -108,6 +108,30 @@ func (s *Store) ListWorkers(ctx context.Context, sessionID string) ([]WorkerRow,
 	return out, rows.Err()
 }
 
+// WorkerBrief is a saved worker without its transcript.
+type WorkerBrief struct {
+	ID, Agent, Description, Status string
+}
+
+// ListWorkerBriefs returns a session's saved workers without transcripts
+// (cheap: used to refuse repeating a worker's task in an automatic turn).
+func (s *Store) ListWorkerBriefs(ctx context.Context, sessionID string) ([]WorkerBrief, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT worker_id, agent, description, status FROM session_workers WHERE session_id=?`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []WorkerBrief
+	for rows.Next() {
+		var b WorkerBrief
+		if err := rows.Scan(&b.ID, &b.Agent, &b.Description, &b.Status); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
 // WorkerIDs lists every saved worker id (all sessions), so a new process never
 // reuses an id that a saved worker still answers to.
 func (s *Store) WorkerIDs(ctx context.Context) ([]string, error) {

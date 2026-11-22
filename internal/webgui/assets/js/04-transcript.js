@@ -1152,7 +1152,7 @@ var workerRows = {}; // worker task id -> latest delegated-task row
 var workerOverview = {};
 var workerOverviewAutoOpen = true, workerOverviewUserToggled = false, workerOverviewBound = null;
 var workerOverviewView = null;
-var workerOverviewRank = { running: 0, unknown: 1, failed: 1, stopped: 1, done: 2 };
+var workerOverviewRank = { running: 0, unknown: 1, failed: 1, review: 1, stopped: 1, done: 2 };
 // Conversation the overview belongs to, and how long a settled worker stays
 // listed (the panel must not vanish the moment the last worker finishes).
 var workerOverviewSession = "", WORKER_OVERVIEW_RECENT_MS = 10 * 60 * 1000;
@@ -1204,7 +1204,10 @@ function setTaskStatus(row, status) {
   row._taskStatus = status;
   if (row.dataset) row.dataset.taskStatus = status || "";
 }
-function workerStatusTerminal(status) { return status === "done" || status === "failed" || status === "stopped" || status === "interrupted"; }
+function workerStatusTerminal(status) { return status === "done" || status === "review" || status === "failed" || status === "stopped" || status === "interrupted"; }
+// "done" with a review note (no file changes, red verify command) is shown as
+// "needs review": the run ended, the result still needs a look.
+function workerShownStatus(status, review) { return (status === "done" || status === "completed") && review ? "review" : status; }
 function updateWorkerOverview(id, agentName, status, activity, row) {
   if (!id) return;
   var item = workerOverview[id];
@@ -1399,7 +1402,7 @@ function applyWorkerStatusSnapshot(workers, bindings, serverNow, livenessOnly) {
       return;
     }
     var queued = worker.status === "created";
-    var status = queued ? "running" : worker.status;
+    var status = queued ? "running" : workerShownStatus(worker.status, worker.review);
     if (status !== "running" && !workerStatusTerminal(status)) { markWorkerStatusUnconfirmed(binding, false); return; }
     if (workerStatusTerminal(row._taskStatus)) return;
     row._workerSnapshotMismatch = false;
@@ -1432,6 +1435,7 @@ function applyWorkerStatusSnapshot(workers, bindings, serverNow, livenessOnly) {
       if (row._stopButton) { row._stopButton.remove(); row._stopButton = null; }
       // A card rebuilt from history learns the error only from the snapshot.
       if (status === "failed" && worker.last_error) renderTaskOutcome(row, { status: "failed", result: worker.last_error }, true);
+      if (status === "review") renderTaskOutcome(row, { status: "review", review: worker.review }, false);
       // A failed (e.g. never started) or stopped worker can be retried.
       if ((status === "failed" || status === "stopped") && worker.resumable) addWorkerResumeAction(row, binding.id);
     }
@@ -1494,10 +1498,23 @@ function workerOverviewRunningCount() {
   return n;
 }
 function workerOverviewOrder(w) { var r = workerOverviewRank[w.status]; return r == null ? 2 : r; }
+// "n word" with the word's plural form for n: the catalog value lists the
+// forms "one|few|many|other" (CLDR order; fewer forms reuse the last one).
+function pluralCount(key, n) {
+  var forms = String(t(key)).split("|");
+  var idx = 0;
+  try {
+    var lang = (typeof ui === "object" && ui && ui.lang) || "en";
+    var cat = new Intl.PluralRules(lang).select(n);
+    idx = { one: 0, few: 1, many: 2, other: 3, two: 1, zero: 3 }[cat];
+    if (idx == null) idx = 3;
+  } catch (e) { idx = n === 1 ? 0 : 3; }
+  return String(n) + " " + forms[Math.min(idx, forms.length - 1)];
+}
 function workerOverviewSummary(counts) {
   var parts = [t("task.workers")];
-  [["running", "task.active"], ["failed", "task.failed"], ["interrupted", "task.interrupted"], ["stopped", "task.stopped"], ["done", "task.done"], ["unknown", "task.statusUnconfirmed"]].forEach(function (p) {
-    if (counts[p[0]]) parts.push(counts[p[0]] + " " + t(p[1]));
+  ["running", "failed", "review", "interrupted", "stopped", "done", "unknown"].forEach(function (status) {
+    if (counts[status]) parts.push(pluralCount("task.sum." + status, counts[status]));
   });
   return parts.join(" · ");
 }
@@ -2214,7 +2231,7 @@ function parseTaskNotification(text) {
   }
   var fields = {};
   while (header) {
-    var field = header.match(/^<(task-id|agent|worker-model|reasoning-effort|status|summary|tools|continuation)>([\s\S]*?)<\/\1>/);
+    var field = header.match(/^<(task-id|agent|worker-model|reasoning-effort|status|review|summary|tools|continuation)>([\s\S]*?)<\/\1>/);
     if (!field || fields[field[1]] != null) return null;
     fields[field[1]] = field[2].trim();
     header = header.slice(field[0].length).trim();
@@ -2228,6 +2245,7 @@ function parseTaskNotification(text) {
     status: fields.status, summary: fields.summary || "",
     tools: fields.tools || "", result: result,
     model: fields["worker-model"] || "", reasoning_effort: fields["reasoning-effort"] || "",
+    review: fields.review || "",
   };
 }
 
@@ -2464,6 +2482,7 @@ function taskStatusLabel(status) {
   if (status === "failed") return t("task.failed");
   if (status === "stopped") return t("task.stopped");
   if (status === "interrupted") return t("task.interrupted");
+  if (status === "review") return t("task.needsReview");
   if (status === "done" || status === "completed") return t("task.done");
   return t("task.statusUnconfirmed");
 }
@@ -2544,6 +2563,7 @@ function appendWorkerObservations(row) {
 
 function renderTaskResult(row, note, elapsed, prompt, err, history) {
   if (workerStatusTerminal(row._taskStatus) && note.status === "running") return;
+  if (!err && note.review) note = Object.assign({}, note, { status: workerShownStatus(note.status, note.review) });
   setTaskStatus(row, err ? "failed" : note.status);
   row._taskID = note.id || row._taskID;
   row._taskAgent = note.agent || row._taskAgent;
@@ -2629,7 +2649,9 @@ function renderTaskResult(row, note, elapsed, prompt, err, history) {
   }
   row._activity = activity;
   row._body.appendChild(activity);
-  if (note.result) {
+  // A failed card shows its error once, as the outcome on top.
+  var failedOutcome = !!err || note.status === "failed" || note.status === "interrupted";
+  if (note.result && !failedOutcome) {
     row._body.appendChild(i18nEl("div", "lbl", "task.report"));
     var report = el("div", "task-report msg-assistant");
     row._body.appendChild(report);
@@ -2645,24 +2667,52 @@ function renderTaskResult(row, note, elapsed, prompt, err, history) {
   appendWorkerObservations(row);
   // Stopped, failed or interrupted workers keep their saved conversation.
   row._resumeButton = null;
+  // The Stop button lives in the summary line: drop it before re-rendering.
+  if (row._stopButton && row._stopButton.parentNode) row._stopButton.remove();
   row._stopButton = null;
   renderTaskOutcome(row, note, err);
   if ((err || note.status === "failed" || note.status === "stopped" || note.status === "interrupted") && note.id) addWorkerResumeAction(row, note.id);
   if ((note.status === "running" || note.status === "created") && note.id) addWorkerStopAction(row, note.id);
 }
 
+// A delegation call the system declined (an automatic turn, a status
+// question, a repeated task, a resume without the user's word): shown as a
+// quiet note with what the user can do, the exact reason inside.
+function applyRefusedDelegation(row, toolName, reason) {
+  row.classList.remove("running", "failed", "done", "task-row");
+  row.classList.add("refused");
+  var key = toolName === "send_message" ? "task.blockedResume" : toolName === "task_stop" ? "task.blockedStop" : "task.blockedTask";
+  if (row._tname) {
+    row._tname.textContent = "";
+    row._tname.appendChild(i18nEl("span", "tname-text", key));
+  }
+  if (row._thint) { row._thint.textContent = ""; row._thint.title = reason; }
+  if (row._stat) {
+    row._stat.classList.remove("err");
+    row._stat.textContent = "";
+    row._stat.appendChild(i18nEl("span", "", "task.blocked"));
+  }
+  if (row._body) {
+    row._body.textContent = "";
+    row._body.appendChild(i18nEl("div", "lbl", "task.blockedDetails"));
+    row._body.appendChild(el("div", "task-brief", reason));
+  }
+}
+
 // The first thing an expanded card shows: why it failed, or what it produced.
 function renderTaskOutcome(row, note, err) {
   if (!row || !row._body) return;
   var failed = !!err || note.status === "failed" || note.status === "interrupted";
-  var text = failed ? String(note.result || note.summary || (row._stat && row._stat.title) || "") : String(note.result || "");
+  var review = !failed && note.review;
+  var text = failed ? String(note.result || note.summary || (row._stat && row._stat.title) || "") : String(review ? note.review : (note.result || ""));
+  if (review && typeof localizeSystemText === "function") text = localizeSystemText(text);
   text = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
   if (!text) return;
   var old = row._body.querySelector(".task-outcome");
   if (old) old.remove();
-  var box = el("div", "task-outcome" + (failed ? " failed" : ""));
-  box.appendChild(i18nEl("span", "task-outcome-label", failed ? "common.error" : "task.report"));
-  box.appendChild(el("span", "task-outcome-text", clip(text, 320)));
+  var box = el("div", "task-outcome" + (failed ? " failed" : review ? " review" : ""));
+  box.appendChild(i18nEl("span", "task-outcome-label", failed ? "common.error" : review ? "task.needsReview" : "task.report"));
+  box.appendChild(el("span", "task-outcome-text", failed ? clip(text, 4000) : clip(text, 320)));
   box.title = clip(text, 2000);
   row._body.insertBefore(box, row._body.firstChild);
 }
@@ -2682,7 +2732,16 @@ function addWorkerStopAction(row, id) {
     });
   });
   row._stopButton = button;
-  row._body.insertBefore(button, row._body.firstChild);
+  // In the summary line, so it is there on a folded card too; a click must
+  // not toggle the card.
+  var summary = row.querySelector && row.querySelector("summary");
+  if (summary && row._stat && row._stat.parentNode === summary) {
+    button.classList.add("in-summary");
+    button.addEventListener("click", function (event) { if (event && event.stopPropagation) event.stopPropagation(); });
+    summary.insertBefore(button, row._stat);
+  } else {
+    row._body.insertBefore(button, row._body.firstChild);
+  }
 }
 function stopWorkerFromCard(id) {
   if (typeof j !== "function") return Promise.reject(new Error("offline"));
@@ -2849,6 +2908,13 @@ function addToolResult(id, output, err, at) {
     // A background start is only an acknowledgement: keep timing the worker
     // until its finished event, report or terminal snapshot clears the clock.
     if (!err && task.status === "running" && row._taskStatus === "running") keepTaskClock(row);
+    smartScroll();
+    return;
+  }
+  if (err && (row._toolName === "task" || row._toolName === "send_message" || row._toolName === "task_stop") && /(^|\s|: )refused:/.test(String(err))) {
+    // The system declined the model's call (no user go-ahead). The worker is
+    // unchanged: no failed card, no overview change.
+    applyRefusedDelegation(row, row._toolName, String(err));
     smartScroll();
     return;
   }
@@ -3120,7 +3186,10 @@ function findTaskRow(taskID, agentName, parentCallID, run) {
 
 function workerModelInfo(model, effort) {
   if (!model) return "";
-  return t("task.modelThinking").replace("{model}", model).replace("{effort}", effort || "—");
+  // No reasoning ("none", unknown): the model alone, never a raw "none".
+  if (!effort || effort === "none" || effort === "—") return model;
+  var level = t("model.level." + effort);
+  return t("task.modelThinking").replace("{model}", model).replace("{effort}", level === "model.level." + effort ? effort : level);
 }
 function applyWorkerModelInfo(row, ev) {
   if (!ev.model) return;

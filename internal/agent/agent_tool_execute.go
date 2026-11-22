@@ -229,9 +229,9 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	// The duplicate check and the registration are one step: parallel
 	// identical calls in one response must not both start.
 	a.startMu.Lock()
-	if dup := a.runningDuplicate(ar.Agent, ar.Prompt); dup != "" {
+	if refusal := a.repeatedBrief(ctx, ar.Agent, ar.Prompt); refusal != "" {
 		a.startMu.Unlock()
-		return tools.Result{Err: fmt.Errorf("task: refused: %s is already working on this exact task in this conversation; wait for its report (it arrives automatically) or use send_message mode=steer to change it", dup)}, nil
+		return tools.Result{Err: fmt.Errorf("task: %s", refusal)}, nil
 	}
 	w, err := workers.TryAddFor(a.workerProviderName(ar), ar.Agent, ar.Prompt, loop)
 	a.startMu.Unlock()
@@ -246,6 +246,7 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	if a.ParentLoop != nil {
 		w.progress = func(ev WorkerProgressEvent) { a.ParentLoop.Emit(ev) }
 	}
+	a.installReview(w)
 	// A created worker makes continuation immediately usable, including through
 	// the stable dispatcher. Do not spend a discovery round to resume known work.
 	a.BaseRegistry.ActivateDiscovered("send_message")
@@ -272,11 +273,19 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	// whole run (minutes), the conversation looked busy, and the user's Stop or
 	// next message canceled the worker. Advisor calls (a short second opinion
 	// the coordinator needs inline) and the draft-verify ladder stay inline.
-	if !ar.Async && !ar.Advise && !a.draftVerifyEnabled() && a.backgroundDelegation() {
+	if !ar.Async && !ar.Advise && a.backgroundDelegation() {
 		ar.Async = true
 	}
 	if ar.Async {
-		if err := a.startBackgroundWorker(ctx, w, workerPrompt, maxSteps); err != nil {
+		// The draft-verify ladder runs in the background too, on the finished
+		// draft, before the report is delivered.
+		var after func(context.Context, workerHandoff) workerHandoff
+		if a.draftVerifyEnabled() && !ar.Advise {
+			after = func(runCtx context.Context, draft workerHandoff) workerHandoff {
+				return a.runDraftVerify(runCtx, w, ar, workerPrompt, draft, maxSteps)
+			}
+		}
+		if err := a.startBackgroundRun(ctx, w, workerPrompt, maxSteps, false, after); err != nil {
 			// Definite, saved state: the worker never started (never a
 			// permanent "created"). The tool error tells the coordinator.
 			workers.persist(w)

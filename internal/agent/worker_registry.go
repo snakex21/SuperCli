@@ -51,6 +51,12 @@ type Worker struct {
 	Runs         int
 	activity     WorkerActivity    // last observed tool event; guarded by stateMu
 	lastEvidence string            // bounded latest-run observations; guarded by stateMu
+	// review is set when a run ended "done" but its result needs a human
+	// look (no file changes, or the project's verify command failed).
+	// Guarded by stateMu; cleared when a run starts.
+	review string
+	// reviewHook computes review after a successful run (set by AgentTool).
+	reviewHook func(context.Context, *Worker) string
 	uiActivity   json.RawMessage   // immutable latest-run UI trail; guarded by stateMu
 	live         WorkerLiveness    // current run's liveness; guarded by stateMu
 	liveUI       *workerUIActivity // current run's UI journal; guarded by stateMu
@@ -144,6 +150,9 @@ type Snapshot struct {
 	// persisted). The registry is process-wide, so ids alone do not identify
 	// a conversation's worker.
 	SessionID string
+	// Review: the run ended "done" but needs checking (why, in English;
+	// "review: ..." lines). Empty when the result needs no extra look.
+	Review string
 }
 
 // Snapshot returns the current reportable state. It takes stateMu (not
@@ -171,6 +180,7 @@ func (w *Worker) Snapshot() Snapshot {
 		Activity:        w.activity,
 		Live:            w.live,
 		SessionID:       w.sessionID,
+		Review:          w.review,
 	}
 }
 

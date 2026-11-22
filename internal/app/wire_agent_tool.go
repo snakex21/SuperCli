@@ -99,6 +99,7 @@ func wireAgentTool(w agentToolWiring) (*agent.AgentTool, error) {
 	// byte-identical to before. The verdict runs on the coordinator's
 	// provider even when workers use task_model — that asymmetry (small
 	// drafts, big verdict) is the whole point.
+	at.VerifyCommands = w.tomlCfg.VerifyCommands
 	if resolveDraftVerify(w.tomlCfg.DraftVerify) {
 		at.DraftVerify = &agent.DraftVerifyConfig{
 			Enabled:        true,

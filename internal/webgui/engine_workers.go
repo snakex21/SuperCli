@@ -67,6 +67,7 @@ func (e *Engine) wireTaskTool(loop *agent.Loop, reg *tools.Registry, prov llm.Pr
 		at.AdvisorProvider = ap
 	}
 	at.AdvisorOff = config.AdvisorDisabled(tc)
+	at.VerifyCommands = tc.VerifyCommands
 	at.PrefillProfiles = e.prefillProfiles
 	if tc.PreflightRepo == nil || *tc.PreflightRepo {
 		at.PreflightContext = func(ctx context.Context) string {

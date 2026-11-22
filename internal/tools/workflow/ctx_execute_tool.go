@@ -9,9 +9,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	core "supercli/internal/tools/core"
 	"supercli/internal/tools/ctxexec"
+	"supercli/internal/tools/sandbox"
 )
 
 // CtxExecuteTool is the `ctx_execute` tool. It runs a
@@ -32,6 +34,10 @@ type CtxExecuteTool struct {
 	// NativeOfficeOnly is enabled by the NestCafe profile. It prevents a model
 	// from bypassing the native DOCX tools with ad-hoc interpreter scripts.
 	NativeOfficeOnly bool
+	// DefaultTimeoutMS applies when the model passes no timeout_ms (config
+	// command_timeout_ms). 0 = no default limit. A hung compiler or test
+	// run used to block its worker until someone pressed Stop.
+	DefaultTimeoutMS int
 }
 
 // NewCtxExecuteTool returns a CtxExecuteTool bound to a
@@ -55,15 +61,26 @@ func (c *CtxExecuteTool) Spec() Tool {
 			"properties": {
 				"command": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 32, "description": "argv, not shell text, e.g. [\"git\",\"status\"]; PATH binaries only (prefer search_code over rg). Windows built-ins: [\"cmd\",\"/c\",...]."},
 				"workdir": {"type": "string", "description": "Relative to home; default home root."},
-				"timeout_ms": {"type": "integer", "minimum": 0, "default": 0, "description": "0 = no limit."},
+				"timeout_ms": {"type": "integer", "minimum": 0, "default": 0, "description": "0 = the configured default limit (command_timeout_ms)."},
 				"max_stdout_kb": {"type": "integer", "minimum": 1, "default": 16, "description": "KB cap (max 64), keeps tail."},
 				"max_stderr_kb": {"type": "integer", "minimum": 1, "default": 4, "description": "KB cap (max 64), keeps tail."},
 				"env_extra": {"type": "array", "items": {"type": "string"}, "description": "KEY=VALUE, rarely needed."}
 			},
 			"required": ["command"]
 		}`,
-		Fn: c.Execute,
+		Fn:       c.Execute,
+		Approval: c.approval,
 	}
+}
+
+// approval runs the destructive command guard before anything starts: a
+// certain disaster is refused, an undecidable delete asks the user.
+func (c *CtxExecuteTool) approval(_ context.Context, raw json.RawMessage) (*core.ApprovalRequest, error) {
+	var p ctxExecParams
+	if json.Unmarshal(raw, &p) != nil || len(p.Command) == 0 {
+		return nil, nil
+	}
+	return core.CommandApproval("ctx_execute", p.Command, sandbox.CheckCommand(p.Command, c.Home, p.Workdir))
 }
 
 type ctxExecParams struct {
@@ -108,10 +125,14 @@ func (c *CtxExecuteTool) Execute(ctx context.Context, args json.RawMessage) (Res
 		err := errors.New("ctx_execute: DOCX scripting is disabled in NestCafe. Use read_docx once, then edit_docx action=batch with all Word changes; no command was run")
 		return Result{Err: err}, nil
 	}
+	timeoutMS, defaulted := p.TimeoutMS, false
+	if timeoutMS == 0 && c.DefaultTimeoutMS > 0 {
+		timeoutMS, defaulted = c.DefaultTimeoutMS, true
+	}
 	req := &ctxexec.Request{
 		Command:     p.Command,
 		Workdir:     p.Workdir,
-		TimeoutMS:   p.TimeoutMS,
+		TimeoutMS:   timeoutMS,
 		MaxStdoutKB: p.MaxStdoutKB,
 		MaxStderrKB: p.MaxStderrKB,
 		EnvExtra:    p.EnvExtra,
@@ -140,7 +161,25 @@ func (c *CtxExecuteTool) Execute(ctx context.Context, args json.RawMessage) (Res
 	// does not append the JSON (same streams) a second
 	// time for the model.
 	if res.ExitCode != 0 {
-		failure := errors.New(res.FailureSummary())
+		summary := res.FailureSummary()
+		if res.ExitCode == ctxexec.ExitTimeout && !strings.HasPrefix(res.Error, ctxexec.PromptStallPrefix) {
+			// Say plainly what happened and what to do; "exit=124" alone
+			// reads like a failing build.
+			limit := time.Duration(timeoutMS) * time.Millisecond
+			source := "its timeout_ms"
+			if defaulted {
+				source = "the default command time limit (command_timeout_ms)"
+			}
+			// The "command_failed timeout ..." line stays first (callers and
+			// the model key on it); the explanation follows it.
+			first, rest, _ := strings.Cut(summary, "\n")
+			summary = first + fmt.Sprintf("\ncommand killed: it did not finish within %s (%s). Output so far is below. "+
+				"Do not rerun it unchanged: narrow it, run long servers with process_session, or pass a larger timeout_ms if it really needs longer.", limit, source)
+			if rest != "" {
+				summary += "\n" + rest
+			}
+		}
+		failure := errors.New(summary)
 		// Preserve caller cancellation for the loop, which records an interrupted
 		// operation without teaching the repeated-failure gate a false error.
 		// A command reaching its own timeout remains an ordinary tool failure.

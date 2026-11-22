@@ -391,9 +391,15 @@ type Loop struct {
 	wakeTurnForRun bool
 	// userPromptForRun is this turn's raw user message ("" in a wake turn).
 	userPromptForRun string
+	// runMutations counts successful, non-inert file mutations of the
+	// current run (a worker's "done" with none of them needs review).
+	runMutations atomic.Int64
 	// workerStatusSource lists this conversation's workers for a status
 	// turn. Bound by NewAgentTool; nil without delegation.
 	workerStatusSource func() []Snapshot
+	// workerStatusLookup finds a worker the live registry does not hold
+	// (saved before a restart). Bound by NewAgentTool.
+	workerStatusLookup func(context.Context, string) string
 	// navAuto (only meaningful with navigate) makes routing keyword-first:
 	// a confident RouteMap hit skips the extra navigator model round-trip;
 	// only ambiguous prompts fall back to the model navigator.
@@ -1175,6 +1181,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	var repeatProg repeatProgress
 	l.identicalFails = identicalFailureGate{}
 	l.identicalWrites = identicalSuccessGate{}
+	l.runMutations.Store(0)
 	// F11: reset the policy's per-Run "drafted" set
 	// at the start of every Run so a ModeBalanced
 	// "draft once" rule applies to THIS Run, not to

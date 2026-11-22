@@ -1249,5 +1249,21 @@
   "task.stopWorker": "Apturēt",
   "task.stopWorkerHint": "Apturēt tikai šo palīgaģentu; saruna turpinās",
   "task.stopFailed": "Aģentu neizdevās apturēt. Mēģiniet vēlreiz.",
-  "notice.emptyReply": "Modelis neatgrieza atbildi. Jautājiet vēlreiz vai izvēlieties citu modeli."
+  "notice.emptyReply": "Modelis neatgrieza atbildi. Jautājiet vēlreiz vai izvēlieties citu modeli.",
+  "task.needsReview": "jāpārbauda",
+  "task.reviewNoChanges": "Aģents ziņoja par veiksmi, bet nemainīja nevienu failu.",
+  "task.reviewVerifyFailed": "Projekta pārbaude neizdevās pēc aģenta izmaiņām: {command} (kods {code}).",
+  "storage.recovered": "Datubāze {file} bija bojāta. Tās kopija ir {backup}; SuperCli sāka ar jaunu.",
+  "task.blocked": "bloķēts",
+  "task.blockedResume": "Automātiskā atsākšana bloķēta — noklikšķiniet uz Atsākt, ja vēlaties",
+  "task.blockedTask": "Bez jūsu pieprasījuma jauns aģents netika palaists",
+  "task.blockedStop": "Aģents netika apturēts bez jūsu pieprasījuma",
+  "task.blockedDetails": "Sīkāka informācija",
+  "task.sum.running": "strādā",
+  "task.sum.failed": "ar kļūdu",
+  "task.sum.review": "jāpārbauda",
+  "task.sum.interrupted": "pārtraukts|pārtraukti",
+  "task.sum.stopped": "apturēts|apturēti",
+  "task.sum.done": "gatavs|gatavi",
+  "task.sum.unknown": "neapstiprināts|neapstiprināti"
 }

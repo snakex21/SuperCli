@@ -550,10 +550,6 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) (r
 	refusal := ""
 	if l.statusOnlyForRun && statusTurnTools[tc.Name] {
 		refusal = statusTurnRefusal
-	} else if r := destructiveCommandRefusal(tc.Name, tc.Arguments); r != "" {
-		// Wiping a disk, the home folder or uncommitted work is never the
-		// model's call (destructive_guard.go).
-		refusal = r
 	} else {
 		// A worker that failed, lost its connection or was stopped resumes
 		// only on the user's word: never in an automatic turn, and in a user
@@ -766,6 +762,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) (r
 		l.identicalFails.recordSuccess(tc.Name, tc.Arguments, l.failedChecks.stateRevision())
 		l.identicalWrites.recordSuccess(tc.Name, tc.Arguments)
 		if toolCallKind(tc.Name, tc.Arguments) == "mutation" && !res.Inert {
+			l.runMutations.Add(1)
 			l.noteCompletionMutation(tc.Name, tc.Arguments, res)
 			l.identicalFails.workspaceChanged()
 			l.checkCycles.touch(l.baseDir, tc.Arguments)

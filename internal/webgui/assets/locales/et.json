@@ -1249,5 +1249,21 @@
   "task.stopWorker": "Peata",
   "task.stopWorkerHint": "Peata ainult see abiagent; vestlus jätkub",
   "task.stopFailed": "Agenti ei õnnestunud peatada. Proovi uuesti.",
-  "notice.emptyReply": "Mudel ei andnud vastust. Küsi uuesti või vali teine mudel."
+  "notice.emptyReply": "Mudel ei andnud vastust. Küsi uuesti või vali teine mudel.",
+  "task.needsReview": "vajab ülevaatust",
+  "task.reviewNoChanges": "Agent teatas edust, kuid ei muutnud ühtegi faili.",
+  "task.reviewVerifyFailed": "Projekti kontroll ebaõnnestus pärast agendi muudatusi: {command} (kood {code}).",
+  "storage.recovered": "Andmebaas {file} oli rikutud. Selle koopia on kohas {backup}; SuperCli alustas uuega.",
+  "task.blocked": "blokeeritud",
+  "task.blockedResume": "Automaatne jätkamine blokeeritud — klõpsa Jätka, kui soovid",
+  "task.blockedTask": "Ilma sinu soovita uut agenti ei käivitatud",
+  "task.blockedStop": "Agenti ei peatatud ilma sinu soovita",
+  "task.blockedDetails": "Üksikasjad",
+  "task.sum.running": "töötab",
+  "task.sum.failed": "veaga",
+  "task.sum.review": "kontrollida",
+  "task.sum.interrupted": "katkestatud",
+  "task.sum.stopped": "peatatud",
+  "task.sum.done": "valmis",
+  "task.sum.unknown": "kinnitamata"
 }

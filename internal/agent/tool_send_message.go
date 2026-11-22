@@ -17,9 +17,12 @@ type SendMessageTool struct {
 	Workers *WorkerRegistry
 	// Restore rebuilds a saved worker that is not in memory (optional).
 	Restore func(context.Context, string) (*Worker, error)
-	// Background, when set and it reports true, started the continuation
-	// detached from the coordinator's turn (see NewSendMessageToolFor).
-	Background func(context.Context, *Worker, string) (bool, error)
+	// CanBackground reports whether continuations run detached from the
+	// coordinator's turn (the host wakes the conversation for reports).
+	CanBackground func() bool
+	// StartBackground starts a continuation whose runMu the caller holds and
+	// whose run the registry has admitted; it owns both from then on.
+	StartBackground func(context.Context, *Worker, string) error
 }
 
 func NewSendMessageTool(workers *WorkerRegistry) *SendMessageTool {
@@ -34,15 +37,11 @@ func NewSendMessageTool(workers *WorkerRegistry) *SendMessageTool {
 func NewSendMessageToolFor(a *AgentTool) *SendMessageTool {
 	s := NewSendMessageTool(a.Workers)
 	s.Restore = a.restoreWorker
-	s.Background = func(ctx context.Context, w *Worker, message string) (bool, error) {
-		// Only where finished reports wake the conversation (GUI, TUI with
-		// background_wake on). Elsewhere the follow-up keeps blocking, so no
-		// report can be stranded.
-		if !a.backgroundDelegation() {
-			return false, nil
-		}
-		return true, a.startBackgroundContinuation(ctx, w, message, s.Workers)
-	}
+	// Only where finished reports wake the conversation (GUI, TUI with
+	// background_wake on). Elsewhere the follow-up keeps blocking, so no
+	// report can be stranded.
+	s.CanBackground = a.backgroundDelegation
+	s.StartBackground = a.startBackgroundContinuation
 	return s
 }
 
@@ -129,24 +128,30 @@ func (s *SendMessageTool) execute(ctx context.Context, raw json.RawMessage) (too
 		message = "Your original task (it never started: " + snap.LastError + "):\n" + w.Description +
 			"\n\nCoordinator follow-up:\n" + args.Message
 	}
-	if s.Background != nil {
+	if s.CanBackground != nil && s.StartBackground != nil && s.CanBackground() {
 		// A continuation can run for many minutes. Run synchronously, it held
 		// the coordinator's turn (an automatic wake-up turn too) the whole
 		// time: the conversation looked busy while the coordinator only
 		// waited, and the user's Stop or next message canceled the worker.
-		if st := w.status(); st == "created" || st == "running" {
+		//
+		// Taking runMu and admitting the run (status, worker limits) happen
+		// here, synchronously and atomically: of two parallel follow-ups one
+		// starts, the other gets "already running" as its tool result - never
+		// a late background report that would wake the conversation.
+		if !w.runMu.TryLock() {
 			return tools.Result{Err: fmt.Errorf("worker %s is already running; its current task must finish before a follow-up (use mode=steer to correct it)", w.ID)}, nil
 		}
-		if err := s.Workers.checkActiveLimit(w.provider); err != nil {
+		before := w.Snapshot()
+		if err := s.Workers.startContinuation(w); err != nil {
+			w.runMu.Unlock()
 			return tools.Result{Err: fmt.Errorf("send_message: %w", err)}, nil
 		}
-		started, err := s.Background(ctx, w, message)
-		if err != nil {
+		if err := s.StartBackground(ctx, w, message); err != nil {
+			w.setState(func(w *Worker) { w.Status, w.LastError = before.Status, before.LastError })
+			w.runMu.Unlock()
 			return tools.Result{Err: fmt.Errorf("send_message: %s did not start (background checkpoint binding): %w", w.ID, err)}, nil
 		}
-		if started {
-			return tools.Result{Text: backgroundRunningNotice(w, "continued in background")}, nil
-		}
+		return tools.Result{Text: backgroundRunningNotice(w, "continued in background")}, nil
 	}
 	handoff, err := runWorkerInvocation(llm.WithCallReason(ctx, llm.ReasonResume), w, message, s.Workers)
 	return handoff.result(w, err), nil
@@ -186,7 +191,22 @@ func runWorkerInvocation(ctx context.Context, w *Worker, prompt string, workers 
 		return prepareWorkerHandoff(w, ""), fmt.Errorf("worker %s is already running; its current task must finish before a follow-up", w.ID)
 	}
 	defer w.runMu.Unlock()
+	return runWorkerInvocationHeld(ctx, w, prompt, workers, firstRun)
+}
+
+// runWorkerInvocationHeld is runWorkerInvocation for a caller that already
+// holds w.runMu (and has admitted the run); it does not unlock.
+func runWorkerInvocationHeld(ctx context.Context, w *Worker, prompt string, workers *WorkerRegistry, firstRun bool) (workerHandoff, error) {
+	w.setState(func(w *Worker) { w.review = "" })
 	text, err := runWorkerLoopLocked(ctx, w, prompt, workers)
+	// A run that says "done" is checked against cheap facts (any file
+	// change? the project's verify command?) while runMu is still held, so
+	// the handoff below carries the verdict.
+	if err == nil && w.status() == "done" && w.reviewHook != nil {
+		if review := w.reviewHook(ctx, w); review != "" {
+			w.setState(func(w *Worker) { w.review = review })
+		}
+	}
 	if firstRun && w.status() == "created" {
 		// Never started (canceled, checkpoint binding refused, ...): a definite
 		// failed state with its reason, resumable, and reported to the
@@ -475,14 +495,20 @@ func renderWorkerNotificationFromSnapshot(s Snapshot, summary, result string) st
 	if s.WorkerModel != "" {
 		metadata = fmt.Sprintf("\n<worker-model>%s</worker-model>\n<reasoning-effort>%s</reasoning-effort>", s.WorkerModel, s.ReasoningEffort)
 	}
+	review := ""
+	if r := strings.TrimSpace(s.Review); r != "" {
+		// One line, no markup: hosts parse the envelope strictly.
+		r = strings.NewReplacer("<", "(", ">", ")", "\r", " ", "\n", " ").Replace(r)
+		review = "\n<review>" + r + "</review>"
+	}
 	return fmt.Sprintf(`<task-notification>
 <task-id>%s</task-id>
 <agent>%s</agent>%s
-<status>%s</status>
+<status>%s</status>%s
 <summary>%s</summary>
 <tools>%s</tools>
 <result>%s</result>
-</task-notification>`, s.ID, s.Agent, metadata, status, summary, toolsUsed, result)
+</task-notification>`, s.ID, s.Agent, metadata, status, review, summary, toolsUsed, result)
 }
 
 func workerToolSummary(names []string) string {

@@ -1249,5 +1249,21 @@
   "task.stopWorker": "Спри",
   "task.stopWorkerHint": "Спри само този помощен агент; разговорът продължава",
   "task.stopFailed": "Агентът не можа да бъде спрян. Опитайте отново.",
-  "notice.emptyReply": "Моделът не върна отговор. Попитайте отново или изберете друг модел."
+  "notice.emptyReply": "Моделът не върна отговор. Попитайте отново или изберете друг модел.",
+  "task.needsReview": "нужна проверка",
+  "task.reviewNoChanges": "Агентът отчете успех, но не промени нито един файл.",
+  "task.reviewVerifyFailed": "Проверката на проекта се провали след промените на агента: {command} (код {code}).",
+  "storage.recovered": "Базата данни {file} беше повредена. Копието ѝ е запазено в {backup}; SuperCli стартира с нова.",
+  "task.blocked": "блокирано",
+  "task.blockedResume": "Автоматичното възобновяване е блокирано — натиснете „Възобнови“, ако искате",
+  "task.blockedTask": "Не е стартиран нов агент без ваша заявка",
+  "task.blockedStop": "Агентът не е спрян без ваша заявка",
+  "task.blockedDetails": "Подробности",
+  "task.sum.running": "работи|работят",
+  "task.sum.failed": "с грешка",
+  "task.sum.review": "за проверка",
+  "task.sum.interrupted": "прекъснат|прекъснати",
+  "task.sum.stopped": "спрян|спрени",
+  "task.sum.done": "готов|готови",
+  "task.sum.unknown": "непотвърден|непотвърдени"
 }

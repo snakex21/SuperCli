@@ -165,6 +165,7 @@ var catalog = map[string]builder{
 	"ctx_execute": one(func(d *Deps) tools.Tool {
 		ctxTool := tools.NewCtxExecuteTool(ctxexec.New(d.Home), d.Home)
 		ctxTool.NativeOfficeOnly = d.OfficeOnly
+		ctxTool.DefaultTimeoutMS = d.Toml.CommandTimeout()
 		return ctxTool.Spec()
 	}),
 	"apply_skill": one(func(d *Deps) tools.Tool {

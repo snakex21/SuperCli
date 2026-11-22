@@ -1249,5 +1249,21 @@
   "task.stopWorker": "Pysäytä",
   "task.stopWorkerHint": "Pysäytä vain tämä apuagentti; keskustelu jatkuu",
   "task.stopFailed": "Agenttia ei voitu pysäyttää. Yritä uudelleen.",
-  "notice.emptyReply": "Malli ei palauttanut vastausta. Kysy uudelleen tai valitse toinen malli."
+  "notice.emptyReply": "Malli ei palauttanut vastausta. Kysy uudelleen tai valitse toinen malli.",
+  "task.needsReview": "vaatii tarkistuksen",
+  "task.reviewNoChanges": "Agentti ilmoitti onnistuneensa, mutta ei muuttanut yhtään tiedostoa.",
+  "task.reviewVerifyFailed": "Projektin tarkistus epäonnistui agentin muutosten jälkeen: {command} (koodi {code}).",
+  "storage.recovered": "Tietokanta {file} oli vioittunut. Sen kopio on kohteessa {backup}; SuperCli aloitti uudella.",
+  "task.blocked": "estetty",
+  "task.blockedResume": "Automaattinen jatkaminen estetty — napsauta Jatka, jos haluat",
+  "task.blockedTask": "Uutta agenttia ei käynnistetty ilman pyyntöäsi",
+  "task.blockedStop": "Agenttia ei pysäytetty ilman pyyntöäsi",
+  "task.blockedDetails": "Lisätiedot",
+  "task.sum.running": "työskentelee",
+  "task.sum.failed": "virheellinen|virheellistä",
+  "task.sum.review": "tarkistettava|tarkistettavaa",
+  "task.sum.interrupted": "keskeytetty|keskeytettyä",
+  "task.sum.stopped": "pysäytetty|pysäytettyä",
+  "task.sum.done": "valmis|valmista",
+  "task.sum.unknown": "vahvistamaton|vahvistamatonta"
 }

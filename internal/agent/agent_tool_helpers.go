@@ -234,15 +234,15 @@ func advisorSeed(msgs []llm.Message) []llm.Message {
 }
 
 func (a *AgentTool) startBackgroundWorker(parentCtx context.Context, w *Worker, prompt string, maxSteps int) error {
-	return a.startBackgroundRun(parentCtx, w, prompt, maxSteps, nil)
+	return a.startBackgroundRun(parentCtx, w, prompt, maxSteps, false, nil)
 }
 
 // startBackgroundContinuation runs a send_message follow-up detached from the
 // coordinator's turn, exactly like task{async:true}: the turn returns at once,
 // the report arrives as a worker notification and wakes the conversation, and
 // neither Stop of the turn nor the user's next message cancels the worker.
-// workers admits the continuation (already running, worker limits).
-func (a *AgentTool) startBackgroundContinuation(parentCtx context.Context, w *Worker, prompt string, workers *WorkerRegistry) error {
+// The caller holds w.runMu and has admitted the run (SendMessageTool).
+func (a *AgentTool) startBackgroundContinuation(parentCtx context.Context, w *Worker, prompt string) error {
 	maxSteps := a.MaxSteps
 	if maxSteps <= 0 {
 		maxSteps = DefaultMaxSteps
@@ -254,7 +254,7 @@ func (a *AgentTool) startBackgroundContinuation(parentCtx context.Context, w *Wo
 		parent := a.ParentLoop
 		w.setState(func(w *Worker) { w.progress = func(ev WorkerProgressEvent) { parent.Emit(ev) } })
 	}
-	return a.startBackgroundRun(parentCtx, w, prompt, maxSteps, workers)
+	return a.startBackgroundRun(parentCtx, w, prompt, maxSteps, true, nil)
 }
 
 // backgroundDelegation reports whether long worker runs must be detached from
@@ -263,10 +263,11 @@ func (a *AgentTool) backgroundDelegation() bool {
 	return a != nil && a.ParentLoop != nil && a.ParentLoop.backgroundHandoff()
 }
 
-// startBackgroundRun: workers == nil is a new worker's first run; non-nil is a
-// continuation of an existing worker, whose saved state a failed start must
-// not overwrite.
-func (a *AgentTool) startBackgroundRun(parentCtx context.Context, w *Worker, prompt string, maxSteps int, workers *WorkerRegistry) error {
+// startBackgroundRun: held=false is a new worker's first run; held=true is a
+// continuation whose runMu the caller holds (and whose saved state a failed
+// start must not overwrite: the caller restores it). after, when set, runs on
+// the finished handoff before delivery (the draft-verify ladder).
+func (a *AgentTool) startBackgroundRun(parentCtx context.Context, w *Worker, prompt string, maxSteps int, held bool, after func(context.Context, workerHandoff) workerHandoff) error {
 	if w == nil {
 		return fmt.Errorf("task: missing background worker")
 	}
@@ -276,7 +277,7 @@ func (a *AgentTool) startBackgroundRun(parentCtx context.Context, w *Worker, pro
 	}
 	borrow, err := checkpoint.BorrowInvocation(parentCtx, mutatingCapable)
 	if err != nil {
-		if workers == nil {
+		if !held {
 			w.setState(func(w *Worker) {
 				w.Status, w.LastError = "failed", workerNotStartedReason(err)
 				w.UpdatedAt = time.Now()
@@ -333,10 +334,20 @@ func (a *AgentTool) startBackgroundRun(parentCtx context.Context, w *Worker, pro
 		if ask != nil {
 			ctx = tools.WithAskChannel(ctx, ask)
 		}
-		if workers != nil {
+		var handoff workerHandoff
+		var err error
+		if held {
 			ctx = llm.WithCallReason(ctx, llm.ReasonResume)
+			func() {
+				defer w.runMu.Unlock()
+				handoff, err = runWorkerInvocationHeld(ctx, w, prompt, nil, false)
+			}()
+		} else {
+			handoff, err = runWorkerInvocation(ctx, w, prompt, nil)
 		}
-		handoff, err := runWorkerInvocation(ctx, w, prompt, workers)
+		if err == nil && after != nil {
+			handoff = after(ctx, handoff)
+		}
 		borrow.Close() // Fn/event drain ended; persistence is outside the turn.
 		if err != nil && handoff.report == "" {
 			handoff = handoff.withReport(err.Error())

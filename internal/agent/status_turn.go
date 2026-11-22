@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -49,28 +50,29 @@ var statusFillers = map[string]bool{
 	"well": true, "hi": true, "hey": true, "yo": true, "tak": true, "oraz": true,
 }
 
-// statusPhrases start a status question (after fillers are removed).
-var statusPhrases = []string{
-	"jak idzie", "jak to idzie", "jak tam idzie", "jak tam", "co tam", "jak leci", "co słychać", "co slychac",
-	"jak postępy", "jak postepy", "jakie postępy", "jakie postepy", "postęp", "postep", "postępy", "postepy",
-	"status", "jaki status", "jaki jest status", "jaki stan", "jaki jest stan", "na jakim etapie",
-	"gdzie jesteśmy", "gdzie jestesmy", "ile zostało", "ile zostalo", "co już zrobione", "co juz zrobione",
-	"how is it going", "hows it going", "how are things", "how is the work going", "how far along",
-	"whats the status", "what is the status", "any update", "any updates", "any progress", "progress", "update",
-	"where are we",
+// statusPhrases are whole status questions (after fillers and a few neutral
+// tail words are removed). The match is exact on purpose: a status phrase
+// followed by anything else ("co tam jest w pliku config.go?", "status:
+// przetestuj build", "jak idzie? i zbadaj błąd") is a normal message, and the
+// guard lets it through. When unsure, the user's message is never blocked.
+var statusPhrases = map[string]bool{
+	"jak idzie": true, "jak to idzie": true, "jak tam idzie": true, "jak tam": true, "co tam": true,
+	"jak leci": true, "co słychać": true, "co slychac": true, "jak postępy": true, "jak postepy": true,
+	"jakie postępy": true, "jakie postepy": true, "postęp": true, "postep": true, "postępy": true, "postepy": true,
+	"status": true, "jaki status": true, "jaki jest status": true, "jaki stan": true, "jaki jest stan": true,
+	"na jakim etapie": true, "na jakim etapie jesteśmy": true, "gdzie jesteśmy": true, "gdzie jestesmy": true,
+	"ile zostało": true, "ile zostalo": true, "co już zrobione": true, "co juz zrobione": true, "co już zrobiłeś": true,
+	"how is it going": true, "hows it going": true, "how are things": true, "how is the work going": true,
+	"how far along": true, "whats the status": true, "what is the status": true, "any update": true,
+	"any updates": true, "any progress": true, "progress": true, "where are we": true, "status update": true,
 }
 
-// statusActionStems mark a request for work, which is never a status-only turn
-// ("co tam, kontynuuj", "status and resume worker-3").
-var statusActionStems = []string{
-	"kontynu", "wznów", "wznow", "dalej", "odpal", "uruchom", "puść", "pusc", "zrób", "zrob", "napraw", "dodaj",
-	"zacznij", "rozpocznij", "dokończ", "dokoncz", "popraw", "zmień", "zmien", "usuń", "usun", "zatrzymaj", "stop",
-	"continue", "resume", "retry", "restart", "start", "run", "fix", "keep", "finish", "implement", "add",
+// statusTail words may close a status question without adding a request
+// ("jak idzie z tym?", "how is it going so far?").
+var statusTail = map[string]bool{
+	"z": true, "tym": true, "pracą": true, "praca": true, "agentami": true, "workerami": true, "teraz": true,
+	"u": true, "ciebie": true, "now": true, "so": true, "far": true, "with": true, "it": true, "this": true,
 }
-
-// statusMaxWords keeps the classifier to short questions; a longer message
-// carries more than a status request and takes the normal path.
-const statusMaxWords = 8
 
 // smallTalk is a greeting or thanks with nothing to do ("hej", "dzięki").
 // Like a status question it never starts or resumes workers. "ok" and "tak"
@@ -105,41 +107,21 @@ func isSmallTalk(prompt string) bool {
 	return smallTalk[strings.Join(rest, " ")]
 }
 
-// isStatusQuestion reports whether prompt only asks how the work is going.
+// isStatusQuestion reports whether the whole message only asks how the work
+// is going. Anything more (an instruction, a file, a second clause) and it is
+// a normal message.
 func isStatusQuestion(prompt string) bool {
 	words := statusWords(prompt)
 	for len(words) > 0 && statusFillers[words[0]] {
 		words = words[1:]
 	}
-	if len(words) == 0 || len(words) > statusMaxWords {
-		return false
+	for len(words) > 1 && statusTail[words[len(words)-1]] {
+		if statusPhrases[strings.Join(words, " ")] {
+			break
+		}
+		words = words[:len(words)-1]
 	}
-	for _, w := range words {
-		for _, stem := range statusActionStems {
-			if strings.HasPrefix(w, stem) {
-				return false
-			}
-		}
-	}
-	text := strings.Join(words, " ")
-	for _, phrase := range statusPhrases {
-		if text == phrase {
-			return true
-		}
-		// One-word nouns that double as verbs or objects ("update the
-		// readme", "postęp w testach") count only on their own.
-		if statusExactOnly[phrase] {
-			continue
-		}
-		if strings.HasPrefix(text, phrase+" ") {
-			return true
-		}
-	}
-	return false
-}
-
-var statusExactOnly = map[string]bool{
-	"update": true, "progress": true, "postęp": true, "postep": true, "postępy": true, "postepy": true,
+	return len(words) > 0 && statusPhrases[strings.Join(words, " ")]
 }
 
 // statusWords lowercases prompt, drops apostrophes ("how's" -> "hows") and
@@ -221,75 +203,141 @@ func statusClip(s string, max int) string {
 	return s
 }
 
-// wakeResumeRefusal: an automatic turn (no user message) must not continue a
-// worker whose last run failed, lost its connection, was interrupted or was
-// stopped. In the reported session the coordinator resumed such a worker on
-// its own and then waited on it. Steering a running worker and starting new
-// work for the user's standing goal stay allowed.
+// Worker continuation guard (1.0.39). Whether a worker that failed, lost its
+// connection, was interrupted or was stopped should run again is the user's
+// call, and so is stopping a running one:
+//
+//   - in an automatic turn (structural: no user message at all) it is always
+//     refused, and so is a new task that repeats a worker of this
+//     conversation (see AgentTool.repeatedBrief);
+//   - in a user turn it needs an unambiguous signal: the Resume/Stop button
+//     (whose message names the worker) or a message that names the worker
+//     ("worker-7", "worker 7") in a clause without a negation. No keyword
+//     guessing: "nie wznawiaj go", "tak, ale co to za plik?" or "ile to 7
+//     plików?" are not a go-ahead.
+//
+// Deliberate decision: SuperCli keeps no record of an approved plan (plan
+// mode is a prompt-only instruction; the goal tool tracks progress, not
+// approval), so no plan can authorize an automatic resume. Only the user can.
 func (l *Loop) wakeResumeRefusal(tc llm.ToolCall) string {
-	if tc.Name != "send_message" {
-		return ""
-	}
 	var args struct {
-		To   string `json:"to"`
-		Mode string `json:"mode"`
+		To     string `json:"to"`
+		Mode   string `json:"mode"`
+		ID     string `json:"id"`
+		TaskID string `json:"task_id"`
 	}
-	if json.Unmarshal([]byte(tc.Arguments), &args) != nil || strings.TrimSpace(args.Mode) == "steer" {
+	if json.Unmarshal([]byte(tc.Arguments), &args) != nil {
 		return ""
 	}
-	to := strings.TrimSpace(args.To)
-	status := ""
-	if l.workerStatusSource != nil {
-		for _, s := range l.workerStatusSource() {
-			if s.ID == to {
-				status = s.Status
-				break
-			}
+	var target, action string
+	switch tc.Name {
+	case "send_message":
+		if strings.TrimSpace(args.Mode) == "steer" {
+			return "" // a correction for a running worker, not a restart
 		}
-	}
-	switch status {
-	case "failed", "stopped", WorkerStatusInterrupted:
+		target, action = strings.TrimSpace(args.To), "resume"
+	case "task_stop":
+		target = strings.TrimSpace(args.ID)
+		if target == "" {
+			target = strings.TrimSpace(args.TaskID)
+		}
+		action = "stop"
 	default:
 		return ""
 	}
-	if l.wakeTurnForRun {
-		return fmt.Sprintf("refused: %s is %s, and this is an automatic turn without a user message. "+
-			"Do not resume it on your own: report what happened and offer to resume it; the user resumes it with the Resume button or a message.", to, status)
-	}
-	// No turn context (direct dispatch outside a run): nothing to judge by.
-	if strings.TrimSpace(l.userPromptForRun) == "" || hasResumeIntent(l.userPromptForRun, to) {
+	if target == "" {
 		return ""
 	}
-	return fmt.Sprintf("refused: %s is %s and the user's message does not ask to continue it. "+
-		"Answer the user; if it should continue, say so and wait for the user's go-ahead (or the Resume button).", to, status)
-}
-
-// resumeIntentStems: the user's message asks for work to go on (or approves
-// a proposal to resume). Deliberately broad; it only has to tell an unrelated
-// question ("co to za plik?") apart from an instruction.
-var resumeIntentStems = []string{
-	"wznów", "wznow", "kontynu", "dalej", "ponów", "ponow", "spróbuj", "sprobuj", "dokończ", "dokoncz",
-	"odpal", "uruchom", "napraw", "popraw", "zrób", "zrob", "rób", "rob", "jedź", "jedz", "działaj", "dzialaj",
-	"tak", "ok", "okej", "dobra", "jasne", "zgoda", "pewnie",
-	"resume", "continue", "retry", "restart", "again", "fix", "finish", "go", "yes", "sure", "proceed",
-}
-
-// hasResumeIntent reports whether prompt asks to continue work or names the
-// worker ("worker-7", "7").
-func hasResumeIntent(prompt, workerID string) bool {
-	words := statusWords(prompt)
-	num := strings.TrimPrefix(workerID, "worker-")
-	for _, w := range words {
-		if w == num || w == strings.ReplaceAll(workerID, "-", "") {
-			return true
+	if action == "resume" {
+		switch l.workerStatusOf(target) {
+		case "failed", "stopped", WorkerStatusInterrupted:
+		default:
+			return "" // continuing a finished worker is ordinary delegation
 		}
-		for _, stem := range resumeIntentStems {
-			if w == stem || len(stem) > 3 && strings.HasPrefix(w, stem) {
-				return true
+	}
+	if l.wakeTurnForRun {
+		return fmt.Sprintf("refused: this is an automatic turn without a user message, and %s %s is the user's decision. "+
+			"Report what happened and offer it; the user uses the %s button or names the worker in a message.", action, target, map[string]string{"resume": "Resume", "stop": "Stop"}[action])
+	}
+	// No turn context (direct dispatch outside a run): nothing to judge by.
+	if strings.TrimSpace(l.userPromptForRun) == "" || namesWorkerWithoutNegation(l.userPromptForRun, target, action) {
+		return ""
+	}
+	return fmt.Sprintf("refused: to %s %s the user must ask for it explicitly (name the worker, or use the %s button); "+
+		"the current message does not. Answer the user and offer it.", action, target, map[string]string{"resume": "Resume", "stop": "Stop"}[action])
+}
+
+// workerStatusOf finds a worker's state in the live registry, then in the
+// database (a worker saved before a restart is not in memory).
+func (l *Loop) workerStatusOf(id string) string {
+	if l.workerStatusSource != nil {
+		for _, s := range l.workerStatusSource() {
+			if s.ID == id {
+				return s.Status
 			}
 		}
 	}
-	return strings.Contains(strings.ToLower(prompt), strings.ToLower(workerID))
+	if l.workerStatusLookup != nil {
+		return l.workerStatusLookup(context.Background(), id)
+	}
+	return ""
+}
+
+var negationWords = map[string]bool{
+	"nie": true, "nigdy": true, "bez": true, "not": true, "dont": true, "never": true, "nor": true,
+	"cannot": true, "cant": true, "wont": true, "stop": true, "zatrzymaj": true, "przestań": true, "przestan": true,
+}
+
+// stopWords ask to stop; they negate a resume but are the request itself
+// for a stop.
+var stopWords = map[string]bool{"stop": true, "zatrzymaj": true, "przestań": true, "przestan": true}
+
+// namesWorkerWithoutNegation: some clause of prompt names the worker ("worker-7",
+// "worker 7", "workera 7", "agent 7") and has no negation word.
+func namesWorkerWithoutNegation(prompt, workerID, action string) bool {
+	num := strings.TrimPrefix(workerID, "worker-")
+	if num == workerID || num == "" {
+		return false
+	}
+	for _, clause := range splitClauses(prompt) {
+		words := statusWords(clause)
+		named := false
+		for i, w := range words {
+			if w == "worker"+num {
+				named = true
+			}
+			if (w == "worker" || w == "workera" || w == "workerowi" || w == "agent" || w == "agenta") && i+1 < len(words) && words[i+1] == num {
+				named = true
+			}
+		}
+		if !named {
+			continue
+		}
+		negated := false
+		for _, w := range words {
+			if negationWords[w] && !(action == "stop" && stopWords[w]) {
+				negated = true
+				break
+			}
+		}
+		if !negated {
+			return true
+		}
+	}
+	return false
+}
+
+// splitClauses splits at sentence punctuation and contrast words ("ale", "but").
+func splitClauses(text string) []string {
+	text = strings.NewReplacer("'", "", "’", "", "-", "").Replace(strings.ToLower(text))
+	parts := strings.FieldsFunc(text, func(r rune) bool { return strings.ContainsRune(".,;:!?\n", r) })
+	var out []string
+	for _, part := range parts {
+		for _, sub := range strings.Split(" "+part+" ", " ale ") {
+			out = append(out, strings.Split(sub, " but ")...)
+		}
+	}
+	return out
 }
 
 // EmptyReplyNotice is shown when the model ended a turn without any text for

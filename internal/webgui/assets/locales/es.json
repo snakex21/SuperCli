@@ -1249,5 +1249,21 @@
   "task.stopWorker": "Detener",
   "task.stopWorkerHint": "Detener solo este agente auxiliar; la conversación continúa",
   "task.stopFailed": "No se pudo detener el agente. Inténtalo de nuevo.",
-  "notice.emptyReply": "El modelo no devolvió ninguna respuesta. Pregunta de nuevo o elige otro modelo."
+  "notice.emptyReply": "El modelo no devolvió ninguna respuesta. Pregunta de nuevo o elige otro modelo.",
+  "task.needsReview": "requiere revisión",
+  "task.reviewNoChanges": "El agente informó éxito, pero no cambió ningún archivo.",
+  "task.reviewVerifyFailed": "La comprobación del proyecto falló tras los cambios del agente: {command} (código {code}).",
+  "storage.recovered": "La base de datos {file} estaba dañada. Su copia está en {backup}; SuperCli empezó con una nueva.",
+  "task.blocked": "bloqueado",
+  "task.blockedResume": "Reanudación automática bloqueada — pulsa Reanudar si quieres",
+  "task.blockedTask": "No se inició ningún agente nuevo sin tu petición",
+  "task.blockedStop": "No se detuvo el agente sin tu petición",
+  "task.blockedDetails": "Detalles",
+  "task.sum.running": "trabajando",
+  "task.sum.failed": "con error",
+  "task.sum.review": "por revisar",
+  "task.sum.interrupted": "interrumpido|interrumpidos",
+  "task.sum.stopped": "detenido|detenidos",
+  "task.sum.done": "listo|listos",
+  "task.sum.unknown": "sin confirmar"
 }

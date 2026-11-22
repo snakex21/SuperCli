@@ -39,6 +39,19 @@ func (s Store) ListWorkers(ctx context.Context, sessionID string) ([]agent.Worke
 	return out, err
 }
 
+// ListWorkerBriefs lists a session's saved workers without transcripts.
+func (s Store) ListWorkerBriefs(ctx context.Context, sessionID string) ([]agent.WorkerRecord, error) {
+	rows, err := s.S.ListWorkerBriefs(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]agent.WorkerRecord, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, agent.WorkerRecord{SessionID: sessionID, ID: r.ID, Agent: r.Agent, Description: r.Description, Status: r.Status})
+	}
+	return out, nil
+}
+
 func (s Store) SetWorkerStatus(ctx context.Context, sessionID, id, status, reason string) error {
 	return s.S.SetWorkerStatus(ctx, sessionID, id, status, reason)
 }

@@ -1249,5 +1249,21 @@
   "task.stopWorker": "Zaustavi",
   "task.stopWorkerHint": "Zaustavi samo ovog pomoćnog agenta; razgovor se nastavlja",
   "task.stopFailed": "Agent nije mogao da se zaustavi. Pokušajte ponovo.",
-  "notice.emptyReply": "Model nije vratio odgovor. Pitajte ponovo ili izaberite drugi model."
+  "notice.emptyReply": "Model nije vratio odgovor. Pitajte ponovo ili izaberite drugi model.",
+  "task.needsReview": "potrebna provera",
+  "task.reviewNoChanges": "Agent je prijavio uspeh, ali nije promenio nijednu datoteku.",
+  "task.reviewVerifyFailed": "Provera projekta nije uspela posle izmena agenta: {command} (kod {code}).",
+  "storage.recovered": "Baza podataka {file} bila je oštećena. Njena kopija je u {backup}; SuperCli je pokrenut sa novom.",
+  "task.blocked": "blokirano",
+  "task.blockedResume": "Automatski nastavak blokiran — kliknite Nastavi ako želite",
+  "task.blockedTask": "Bez vašeg zahteva nije pokrenut novi agent",
+  "task.blockedStop": "Agent nije zaustavljen bez vašeg zahteva",
+  "task.blockedDetails": "Detalji",
+  "task.sum.running": "radi|rade|radi",
+  "task.sum.failed": "sa greškom",
+  "task.sum.review": "za proveru",
+  "task.sum.interrupted": "prekinut|prekinuta|prekinutih",
+  "task.sum.stopped": "zaustavljen|zaustavljena|zaustavljenih",
+  "task.sum.done": "gotov|gotova|gotovih",
+  "task.sum.unknown": "nepotvrđen|nepotvrđena|nepotvrđenih"
 }

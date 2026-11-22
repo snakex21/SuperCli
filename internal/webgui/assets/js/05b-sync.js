@@ -75,10 +75,35 @@ function syncToggleClass(node, name, on) {
 // Session list: a conversation whose agents work in the background is marked
 // busy too (pulsing dot and "N in background"), not only while its own turn
 // runs. Updated in place; the list is not rebuilt.
+// Unanswered background-worker questions per conversation (badge "?").
+var syncQuestionCounts = Object.create(null);
+// A view that opens a conversation (or reloads) shows its pending questions
+// again: a worker's question never disappears with the view.
+var restoringQuestions = Object.create(null);
+function restorePendingQuestions(id) {
+  if (!id || restoringQuestions[id] || typeof j !== "function" || typeof showQuestion !== "function") return Promise.resolve();
+  restoringQuestions[id] = true;
+  return Promise.resolve(j("/api/questions?session=" + encodeURIComponent(id))).then(function (data) {
+    if (id !== activeSessionID || !data || !Array.isArray(data.questions)) return;
+    data.questions.forEach(function (q) {
+      if (q && q.id && !(typeof questionOverlays === "object" && questionOverlays[q.id])) showQuestion(q);
+    });
+  }).catch(function () {}).finally(function () { delete restoringQuestions[id]; });
+}
 function renderSessionBackground() {
   var list = $("#session-list");
   if (!list || typeof list.querySelectorAll !== "function") return;
   list.querySelectorAll(".side-item[data-session-id]").forEach(function (item) {
+    var q = syncQuestionCounts[item.dataset.sessionId] || 0;
+    var qchip = item.querySelector(".side-q");
+    if (q > 0) {
+      if (!qchip) {
+        qchip = el("span", "side-q", "?");
+        var qmeta = item.querySelector(".s");
+        if (qmeta) qmeta.appendChild(qchip); else item.appendChild(qchip);
+      }
+      qchip.title = t("question.waiting");
+    } else if (qchip) qchip.remove();
     var n = syncBackgroundCounts[item.dataset.sessionId] || 0;
     item.classList.toggle("background", n > 0);
     var chip = item.querySelector(".side-bg");
@@ -335,6 +360,12 @@ function syncHandleFrame(frame) {
     renderWakeHeld();
     return;
   }
+  if (frame.type === "background_questions") {
+    if (frame.count > 0) syncQuestionCounts[frame.session_id] = frame.count;
+    else delete syncQuestionCounts[frame.session_id];
+    renderSessionBackground();
+    return;
+  }
   if (frame.type === "background_agents") {
     if (frame.count > 0) syncBackgroundCounts[frame.session_id] = frame.count;
     else delete syncBackgroundCounts[frame.session_id];
@@ -357,6 +388,9 @@ function syncHandleFrame(frame) {
     Object.keys(frame.background || {}).forEach(function (id) { syncBackgroundCounts[id] = frame.background[id]; });
     syncWakeHeld = Object.create(null);
     Object.keys(frame.held || {}).forEach(function (id) { syncWakeHeld[id] = {n: frame.held[id], limit: frame.limit || 0}; });
+    syncQuestionCounts = Object.create(null);
+    Object.keys(frame.questions || {}).forEach(function (id) { syncQuestionCounts[id] = frame.questions[id]; });
+    if (activeSessionID && syncQuestionCounts[activeSessionID]) restorePendingQuestions(activeSessionID);
     renderBackgroundAgents();
     (frame.runs || []).forEach(function (info) {
       if (syncFollowingTurn && info.turn_id === syncFollowingTurn && !syncSession) {

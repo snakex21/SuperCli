@@ -136,10 +136,10 @@ function legacyRender() {
   });
   var counts = {};
   items.forEach(function (w) { counts[w.status] = (counts[w.status] || 0) + 1; });
-  // 1.0.39: "Helper agents · 3 working · 1 error".
+  // 1.0.39: "Helper agents · 3 working · 1 failed" with plural forms.
   var parts = [t("task.workers")];
-  [["running", "task.active"], ["failed", "task.failed"], ["interrupted", "task.interrupted"], ["stopped", "task.stopped"], ["done", "task.done"], ["unknown", "task.statusUnconfirmed"]].forEach(function (p) {
-    if (counts[p[0]]) parts.push(counts[p[0]] + " " + t(p[1]));
+  ["running", "failed", "review", "interrupted", "stopped", "done", "unknown"].forEach(function (status) {
+    if (counts[status]) parts.push(pluralCount("task.sum." + status, counts[status]));
   });
   $("#worker-overview-summary").textContent = parts.join(" · ");
   panel.hidden = !items.length;
@@ -266,7 +266,7 @@ const key='tool.running', previous=fixtureCatalog[key];fixtureCatalog[key]='LOCA
 updateWorkerOverview(item.id,'code','running',null,row);
 check(item.state.textContent===taskStatusLabel('running'),'localized status stale');
 fixtureCatalog[key]=previous;
-const summaryKey='task.active', previousSummary=fixtureCatalog[summaryKey];
+const summaryKey='task.sum.running', previousSummary=fixtureCatalog[summaryKey];
 fixtureCatalog[summaryKey]='LOCALIZED SUMMARY';refresh();
 check($('#worker-overview-summary').textContent.includes('LOCALIZED SUMMARY'),'summary-only localization stale');
 fixtureCatalog[summaryKey]=previousSummary;refresh();

@@ -2597,6 +2597,13 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
 .task-row[data-task-status="done"] .tstat .tstat-label::before, .task-row[data-task-status="done"] .tstat:not(:has(.tstat-clock))::before { content: "\2713"; color: var(--ok); }
 .task-row[data-task-status="failed"] .tstat .tstat-label::before, .task-row[data-task-status="failed"] .tstat:not(:has(.tstat-clock))::before { content: "\2715"; color: var(--danger); }
 .task-row[data-task-status="interrupted"] .tstat .tstat-label::before, .task-row[data-task-status="interrupted"] .tstat:not(:has(.tstat-clock))::before { content: "\23F8"; color: var(--danger); }
+.task-row[data-task-status="review"] .tstat .tstat-label::before, .task-row[data-task-status="review"] .tstat:not(:has(.tstat-clock))::before { content: "!"; font-weight: 700; color: var(--status-pending); }
+.task-row[data-task-status="review"] { border-left-color: var(--status-pending); }
+.task-row[data-task-status="review"] .tstat { color: var(--status-pending); }
+.task-row .task-outcome.review { border-left-color: var(--status-pending); }
+.task-row .task-outcome.review .task-outcome-label { color: var(--status-pending); }
+.worker-overview-item[data-state="review"] .worker-overview-dot { background: var(--status-pending); }
+.worker-overview-item[data-state="review"] .worker-overview-status { color: var(--status-pending); }
 .task-row[data-task-status="stopped"] .tstat .tstat-label::before, .task-row[data-task-status="stopped"] .tstat:not(:has(.tstat-clock))::before { content: "\25A0"; color: var(--muted); }
 @media (prefers-reduced-motion: no-preference) {
   .task-row[data-task-status="running"] .tstat .tstat-label::before { animation: bg-agents-pulse 1.6s ease-in-out infinite; }
@@ -2614,6 +2621,11 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
   color: var(--text); background: transparent; border: 1px solid var(--line); cursor: pointer;
 }
 .task-row .worker-stop:hover { border-color: var(--danger); color: var(--danger); }
+.task-row summary .worker-stop.in-summary { margin: 0 8px 0 0; padding: 1px 8px; line-height: 1.5; align-self: center; }
+.task-row > summary { grid-template-columns: 10px minmax(150px, 190px) 1fr auto auto; }
+.tool-row.refused { border-left: 2px solid var(--line-strong, var(--line)); }
+.tool-row.refused .tname, .tool-row.refused .tstat { color: var(--muted); font-weight: 500; }
+.tool-row.refused .tstat::before { content: "\2139  "; }
 .task-row .worker-stop:disabled, .task-row .worker-resume:disabled { opacity: .55; cursor: default; }
 
 /* Resume a stopped/failed/interrupted worker with its saved conversation. */
@@ -2630,6 +2642,10 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
   border-color: color-mix(in srgb, var(--status-running) 60%, transparent);
 }
 .composer.bg-working .box { border-color: color-mix(in srgb, var(--status-running) 45%, var(--line)); }
+.side-item .side-q {
+  display: inline-flex; align-items: center; justify-content: center; margin-left: 7px; width: 15px; height: 15px;
+  border-radius: 50%; font-size: 11px; font-weight: 700; color: var(--on-accent); background: var(--accent);
+}
 .side-item .side-bg {
   display: inline-flex; align-items: center; gap: 4px; margin-left: 7px;
   color: var(--status-running); font-variant-numeric: tabular-nums;

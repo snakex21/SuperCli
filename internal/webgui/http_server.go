@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"supercli/internal/checkpoint"
+	"supercli/internal/storage"
 )
 
 // Server is the web GUI HTTP server. It wraps an Engine (the agent
@@ -156,6 +157,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"provider_type": providerType,
 		"model":         s.eng.ModelName(),
 		"home":          s.eng.Home(),
+		// Damaged databases moved aside at startup (copy kept, fresh start).
+		"storage_recoveries": storage.Recoveries(),
 	})
 }
 

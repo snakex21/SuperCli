@@ -1249,5 +1249,21 @@
   "task.stopWorker": "Stoppen",
   "task.stopWorkerHint": "Alleen deze hulpagent stoppen; het gesprek gaat door",
   "task.stopFailed": "De agent kon niet worden gestopt. Probeer het opnieuw.",
-  "notice.emptyReply": "Het model gaf geen antwoord. Vraag het opnieuw of kies een ander model."
+  "notice.emptyReply": "Het model gaf geen antwoord. Vraag het opnieuw of kies een ander model.",
+  "task.needsReview": "moet worden nagekeken",
+  "task.reviewNoChanges": "De agent meldde succes, maar wijzigde geen enkel bestand.",
+  "task.reviewVerifyFailed": "De projectcontrole mislukte na de wijzigingen van de agent: {command} (code {code}).",
+  "storage.recovered": "De database {file} was beschadigd. Een kopie staat in {backup}; SuperCli is met een nieuwe gestart.",
+  "task.blocked": "geblokkeerd",
+  "task.blockedResume": "Automatisch hervatten geblokkeerd — klik op Hervatten als je dat wilt",
+  "task.blockedTask": "Zonder je verzoek is geen nieuwe agent gestart",
+  "task.blockedStop": "Agent niet gestopt zonder je verzoek",
+  "task.blockedDetails": "Details",
+  "task.sum.running": "bezig",
+  "task.sum.failed": "mislukt",
+  "task.sum.review": "na te kijken",
+  "task.sum.interrupted": "onderbroken",
+  "task.sum.stopped": "gestopt",
+  "task.sum.done": "klaar",
+  "task.sum.unknown": "onbevestigd"
 }

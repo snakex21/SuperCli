@@ -1249,5 +1249,21 @@
   "task.stopWorker": "Arrêter",
   "task.stopWorkerHint": "Arrêter uniquement cet agent auxiliaire ; la conversation continue",
   "task.stopFailed": "Impossible d’arrêter l’agent. Réessayez.",
-  "notice.emptyReply": "Le modèle n’a renvoyé aucune réponse. Reposez la question ou choisissez un autre modèle."
+  "notice.emptyReply": "Le modèle n’a renvoyé aucune réponse. Reposez la question ou choisissez un autre modèle.",
+  "task.needsReview": "à vérifier",
+  "task.reviewNoChanges": "L’agent a signalé un succès sans modifier aucun fichier.",
+  "task.reviewVerifyFailed": "La vérification du projet a échoué après les modifications de l’agent : {command} (code {code}).",
+  "storage.recovered": "La base de données {file} était endommagée. Sa copie est conservée dans {backup} ; SuperCli a démarré avec une nouvelle.",
+  "task.blocked": "bloqué",
+  "task.blockedResume": "Reprise automatique bloquée — cliquez sur Reprendre si vous le souhaitez",
+  "task.blockedTask": "Aucun nouvel agent lancé sans votre demande",
+  "task.blockedStop": "Agent non arrêté sans votre demande",
+  "task.blockedDetails": "Détails",
+  "task.sum.running": "en cours",
+  "task.sum.failed": "en échec",
+  "task.sum.review": "à vérifier",
+  "task.sum.interrupted": "interrompu|interrompus",
+  "task.sum.stopped": "arrêté|arrêtés",
+  "task.sum.done": "terminé|terminés",
+  "task.sum.unknown": "non confirmé|non confirmés"
 }

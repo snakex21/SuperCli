@@ -1249,5 +1249,21 @@
   "task.stopWorker": "Leállítás",
   "task.stopWorkerHint": "Csak ezt a segédügynököt állítja le; a beszélgetés folytatódik",
   "task.stopFailed": "Az ügynököt nem sikerült leállítani. Próbálja újra.",
-  "notice.emptyReply": "A modell nem adott választ. Kérdezzen újra, vagy válasszon másik modellt."
+  "notice.emptyReply": "A modell nem adott választ. Kérdezzen újra, vagy válasszon másik modellt.",
+  "task.needsReview": "ellenőrzést igényel",
+  "task.reviewNoChanges": "Az ügynök sikert jelentett, de egyetlen fájlt sem módosított.",
+  "task.reviewVerifyFailed": "A projekt ellenőrzése nem sikerült az ügynök módosításai után: {command} (kód {code}).",
+  "storage.recovered": "A(z) {file} adatbázis sérült volt. Másolata itt található: {backup}; a SuperCli újjal indult.",
+  "task.blocked": "blokkolva",
+  "task.blockedResume": "Az automatikus folytatás blokkolva — kattintson a Folytatásra, ha szeretné",
+  "task.blockedTask": "Kérése nélkül nem indult új ügynök",
+  "task.blockedStop": "Az ügynök nem állt le kérése nélkül",
+  "task.blockedDetails": "Részletek",
+  "task.sum.running": "dolgozik",
+  "task.sum.failed": "hibás",
+  "task.sum.review": "ellenőrizendő",
+  "task.sum.interrupted": "megszakítva",
+  "task.sum.stopped": "leállítva",
+  "task.sum.done": "kész",
+  "task.sum.unknown": "megerősítetlen"
 }

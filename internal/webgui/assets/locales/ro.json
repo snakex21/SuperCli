@@ -1249,5 +1249,21 @@
   "task.stopWorker": "Oprește",
   "task.stopWorkerHint": "Oprește doar acest agent ajutător; conversația continuă",
   "task.stopFailed": "Agentul nu a putut fi oprit. Încearcă din nou.",
-  "notice.emptyReply": "Modelul nu a returnat niciun răspuns. Întreabă din nou sau alege alt model."
+  "notice.emptyReply": "Modelul nu a returnat niciun răspuns. Întreabă din nou sau alege alt model.",
+  "task.needsReview": "necesită verificare",
+  "task.reviewNoChanges": "Agentul a raportat succes, dar nu a modificat niciun fișier.",
+  "task.reviewVerifyFailed": "Verificarea proiectului a eșuat după modificările agentului: {command} (cod {code}).",
+  "storage.recovered": "Baza de date {file} era deteriorată. Copia ei este în {backup}; SuperCli a pornit cu una nouă.",
+  "task.blocked": "blocat",
+  "task.blockedResume": "Reluarea automată a fost blocată — apasă Reia dacă vrei",
+  "task.blockedTask": "Niciun agent nou pornit fără cererea ta",
+  "task.blockedStop": "Agentul nu a fost oprit fără cererea ta",
+  "task.blockedDetails": "Detalii",
+  "task.sum.running": "lucrează",
+  "task.sum.failed": "cu eroare",
+  "task.sum.review": "de verificat",
+  "task.sum.interrupted": "întrerupt|întrerupte",
+  "task.sum.stopped": "oprit|oprite",
+  "task.sum.done": "gata",
+  "task.sum.unknown": "neconfirmat|neconfirmate"
 }

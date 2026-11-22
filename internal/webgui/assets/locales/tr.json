@@ -1249,5 +1249,21 @@
   "task.stopWorker": "Durdur",
   "task.stopWorkerHint": "Yalnızca bu yardımcı ajanı durdur; konuşma devam eder",
   "task.stopFailed": "Ajan durdurulamadı. Yeniden deneyin.",
-  "notice.emptyReply": "Model yanıt döndürmedi. Yeniden sorun veya başka bir model seçin."
+  "notice.emptyReply": "Model yanıt döndürmedi. Yeniden sorun veya başka bir model seçin.",
+  "task.needsReview": "kontrol gerekli",
+  "task.reviewNoChanges": "Ajan başarı bildirdi ama hiçbir dosyayı değiştirmedi.",
+  "task.reviewVerifyFailed": "Ajanın değişikliklerinden sonra proje kontrolü başarısız oldu: {command} (kod {code}).",
+  "storage.recovered": "{file} veritabanı bozuktu. Kopyası {backup} konumunda; SuperCli yenisiyle başladı.",
+  "task.blocked": "engellendi",
+  "task.blockedResume": "Otomatik devam engellendi — isterseniz Devam Et'e tıklayın",
+  "task.blockedTask": "İsteğiniz olmadan yeni ajan başlatılmadı",
+  "task.blockedStop": "Ajan isteğiniz olmadan durdurulmadı",
+  "task.blockedDetails": "Ayrıntılar",
+  "task.sum.running": "çalışıyor",
+  "task.sum.failed": "hatalı",
+  "task.sum.review": "kontrol bekliyor",
+  "task.sum.interrupted": "kesildi",
+  "task.sum.stopped": "durduruldu",
+  "task.sum.done": "hazır",
+  "task.sum.unknown": "onaylanmadı"
 }
