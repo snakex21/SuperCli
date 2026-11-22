@@ -17,6 +17,12 @@ type SendMessageTool struct {
 	Workers *WorkerRegistry
 	// Restore rebuilds a saved worker that is not in memory (optional).
 	Restore func(context.Context, string) (*Worker, error)
+	// CanBackground reports whether continuations run detached from the
+	// coordinator's turn (the host wakes the conversation for reports).
+	CanBackground func() bool
+	// StartBackground starts a continuation whose runMu the caller holds and
+	// whose run the registry has admitted; it owns both from then on.
+	StartBackground func(context.Context, *Worker, string) error
 }
 
 func NewSendMessageTool(workers *WorkerRegistry) *SendMessageTool {
@@ -31,6 +37,11 @@ func NewSendMessageTool(workers *WorkerRegistry) *SendMessageTool {
 func NewSendMessageToolFor(a *AgentTool) *SendMessageTool {
 	s := NewSendMessageTool(a.Workers)
 	s.Restore = a.restoreWorker
+	// Only where finished reports wake the conversation (GUI, TUI with
+	// background_wake on). Elsewhere the follow-up keeps blocking, so no
+	// report can be stranded.
+	s.CanBackground = a.backgroundDelegation
+	s.StartBackground = a.startBackgroundContinuation
 	return s
 }
 
@@ -117,8 +128,44 @@ func (s *SendMessageTool) execute(ctx context.Context, raw json.RawMessage) (too
 		message = "Your original task (it never started: " + snap.LastError + "):\n" + w.Description +
 			"\n\nCoordinator follow-up:\n" + args.Message
 	}
+	if s.CanBackground != nil && s.StartBackground != nil && s.CanBackground() {
+		// A continuation can run for many minutes. Run synchronously, it held
+		// the coordinator's turn (an automatic wake-up turn too) the whole
+		// time: the conversation looked busy while the coordinator only
+		// waited, and the user's Stop or next message canceled the worker.
+		//
+		// Taking runMu and admitting the run (status, worker limits) happen
+		// here, synchronously and atomically: of two parallel follow-ups one
+		// starts, the other gets "already running" as its tool result - never
+		// a late background report that would wake the conversation.
+		if !w.runMu.TryLock() {
+			return tools.Result{Err: fmt.Errorf("worker %s is already running; its current task must finish before a follow-up (use mode=steer to correct it)", w.ID)}, nil
+		}
+		before := w.Snapshot()
+		if err := s.Workers.startContinuation(w); err != nil {
+			w.runMu.Unlock()
+			return tools.Result{Err: fmt.Errorf("send_message: %w", err)}, nil
+		}
+		if err := s.StartBackground(ctx, w, message); err != nil {
+			w.setState(func(w *Worker) { w.Status, w.LastError = before.Status, before.LastError })
+			w.runMu.Unlock()
+			return tools.Result{Err: fmt.Errorf("send_message: %s did not start (background checkpoint binding): %w", w.ID, err)}, nil
+		}
+		return tools.Result{Text: backgroundRunningNotice(w, "continued in background")}, nil
+	}
 	handoff, err := runWorkerInvocation(llm.WithCallReason(ctx, llm.ReasonResume), w, message, s.Workers)
 	return handoff.result(w, err), nil
+}
+
+// backgroundRunningNotice is the immediate result of a detached worker run.
+func backgroundRunningNotice(w *Worker, what string) string {
+	return fmt.Sprintf(`<task-notification>
+<task-id>%s</task-id>
+<agent>%s</agent>
+<status>running</status>
+<summary>%s %s</summary>
+<continuation>Results arrive automatically. Continue independent work, or end this response to wait. Do not restart this task or use its worker ID with read_output; use send_message only for new instructions.</continuation>
+</task-notification>`, w.ID, w.Agent, w.Agent, what)
 }
 
 func runWorkerLoop(ctx context.Context, w *Worker, prompt string) (string, error) {
@@ -144,7 +191,26 @@ func runWorkerInvocation(ctx context.Context, w *Worker, prompt string, workers 
 		return prepareWorkerHandoff(w, ""), fmt.Errorf("worker %s is already running; its current task must finish before a follow-up", w.ID)
 	}
 	defer w.runMu.Unlock()
+	return runWorkerInvocationHeld(ctx, w, prompt, workers, firstRun)
+}
+
+// runWorkerInvocationHeld is runWorkerInvocation for a caller that already
+// holds w.runMu (and has admitted the run); it does not unlock.
+func runWorkerInvocationHeld(ctx context.Context, w *Worker, prompt string, workers *WorkerRegistry, firstRun bool) (workerHandoff, error) {
+	w.setState(func(w *Worker) { w.review = "" })
+	before := ""
+	if w.reviewSnapshot != nil {
+		before = w.reviewSnapshot(ctx, w)
+	}
 	text, err := runWorkerLoopLocked(ctx, w, prompt, workers)
+	// A run that says "done" is checked against cheap facts (any file
+	// change? the project's verify command?) while runMu is still held, so
+	// the handoff below carries the verdict.
+	if err == nil && w.status() == "done" && w.reviewHook != nil {
+		if review := w.reviewHook(ctx, w, before); review != "" {
+			w.setState(func(w *Worker) { w.review = review })
+		}
+	}
 	if firstRun && w.status() == "created" {
 		// Never started (canceled, checkpoint binding refused, ...): a definite
 		// failed state with its reason, resumable, and reported to the
@@ -315,6 +381,12 @@ func runWorkerLoopLocked(ctx context.Context, w *Worker, prompt string, workers 
 				if len(w.ToolNames) < 32 {
 					w.ToolNames = append(w.ToolNames, e.Name)
 				}
+				if commandTools[e.Name] {
+					w.CommandsRun++
+					if isCheckCall(e.Args) {
+						w.ChecksRun++
+					}
+				}
 			})
 			emit(WorkerProgressEvent{
 				Kind: "tool_call", CallID: e.ID, Tool: e.Name,
@@ -433,14 +505,20 @@ func renderWorkerNotificationFromSnapshot(s Snapshot, summary, result string) st
 	if s.WorkerModel != "" {
 		metadata = fmt.Sprintf("\n<worker-model>%s</worker-model>\n<reasoning-effort>%s</reasoning-effort>", s.WorkerModel, s.ReasoningEffort)
 	}
+	review := ""
+	if r := strings.TrimSpace(s.Review); r != "" {
+		// One line, no markup: hosts parse the envelope strictly.
+		r = strings.NewReplacer("<", "(", ">", ")", "\r", " ", "\n", " ").Replace(r)
+		review = "\n<review>" + r + "</review>"
+	}
 	return fmt.Sprintf(`<task-notification>
 <task-id>%s</task-id>
 <agent>%s</agent>%s
-<status>%s</status>
+<status>%s</status>%s
 <summary>%s</summary>
 <tools>%s</tools>
 <result>%s</result>
-</task-notification>`, s.ID, s.Agent, metadata, status, summary, toolsUsed, result)
+</task-notification>`, s.ID, s.Agent, metadata, status, review, summary, toolsUsed, result)
 }
 
 func workerToolSummary(names []string) string {

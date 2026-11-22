@@ -1240,6 +1240,8 @@ function interruptAndSend(text, item, attachments, draft) {
 // Release presentation now; keep the serialization fence until HTTP EOF/receipt.
 function finishRunPresentation() {
   runFinishing = true;
+  // The activity line ends with the turn: nothing "working" stays behind.
+  if (typeof runActivityStop === "function") runActivityStop();
   clearInterval(runTimer);
   runTimer = null;
   if (!pendingImmediate) {
@@ -1510,6 +1512,7 @@ async function sendPrompt(text, attachments, draft, queuedItem, dispatchScope) {
   runStart = Date.now();
   run.start = runStart;
   setRunState("running", t("composer.working"));
+  if (typeof runActivityStart === "function") runActivityStart(runStart);
   function startRunTimer() {
     clearInterval(runTimer);
     runTimer = setInterval(function () {
@@ -1554,6 +1557,7 @@ async function sendPrompt(text, attachments, draft, queuedItem, dispatchScope) {
     $("#interrupt-btn").hidden = false;
     $("#interrupt-btn").disabled = false;
     setRunState("running", t("composer.working"));
+    if (typeof runActivityStart === "function") runActivityStart(run.start);
     liveUserNode = addUserMsg(text, 0, attachments);
     if (run.activity) bindLiveMessageReceipt(liveUserNode, run.activity);
     current = null;
@@ -1650,8 +1654,14 @@ async function sendPrompt(text, attachments, draft, queuedItem, dispatchScope) {
           }
         } catch (recoverErr) {}
       }
-      addEventLine(t("chat.streamEnded"), "error", "error");
-      setRunState("idle", t("common.error"));
+      if (run.stopRequested || (run.abortCtl && run.abortCtl.signal && run.abortCtl.signal.aborted)) {
+        // The user's Stop: a normal end, not "the stream ended unexpectedly".
+        addEventLine(t("chat.stopped"), "", "stop");
+        setRunState("idle", t("composer.stopped"));
+      } else {
+        addEventLine(t("chat.streamEnded"), "error", "error");
+        setRunState("idle", t("common.error"));
+      }
     }
   } catch (e) {
     acceptanceUncertain = true;
@@ -1800,6 +1810,7 @@ function handleEvent(ev, current) {
   if (typeof refreshHostPower === "function" && /^(tool_result|done|error)$/.test(ev.type)) refreshHostPower();
   var remoteRun = typeof activeRun !== "undefined" && activeRun && activeRun.remote ? activeRun : null;
   var eventAt = remoteRun ? ev.at : 0;
+  if (typeof runActivityEvent === "function") runActivityEvent(ev);
   switch (ev.type) {
     case "session":
       if (ev.session_id) {
@@ -1816,6 +1827,10 @@ function handleEvent(ev, current) {
       closeAssistantReasoning(current);
       appendAssistantSource(current, ev.text);
       scheduleAssistantRender(current);
+      return current;
+    case "answer_note":
+      // SuperCli's remark about the answer: a translated badge under it.
+      if (current && typeof addAnswerNote === "function") addAnswerNote(current, ev.kind, ev.text || "");
       return current;
     case "reasoning":
       var reasoningText = ev.text || reasoningFallbackText(ev.reasoning_tok);
@@ -1911,7 +1926,10 @@ function handleEvent(ev, current) {
       flushAssistantRender(current);
       releaseAssistantParagraphCaches(current);
       addFileChanges(ev.file_changes);
-      addEventLine(chatErrorText(ev), "error", "error");
+      var errorLine = addEventLine(chatErrorText(ev), "error", "error");
+      // A cancelled run was the user's choice; any other error ended the turn
+      // without an answer, so offer to continue it.
+      if (!/cancel/i.test(String(ev.err || "")) && typeof addContinueButton === "function") addContinueButton(errorLine);
       setRunState("idle", t("common.error"));
       return null;
     default:

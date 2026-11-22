@@ -5,7 +5,7 @@ visible: apply_skill,remember,recall,read_lines,read_context,read_many,read_imag
 host_power [approval] desc=cb2f4b0eb93d schema=5a1e3574332b fn=supercli/internal/tools/hostpower.Execute
 search_history [ro] desc=429792732cd2 schema=14198f25a40a fn=supercli/internal/tools/search.(*SearchHistory).run-fm
 code_intel [] desc=67ef1241e6bd schema=e2c1a9873c3c fn=supercli/internal/tools/codeintel.(*Tool).Execute-fm
-process_session [] desc=ffde6bd7cf9b schema=8e446bef10e3 fn=supercli/internal/tools/processsession.(*Tool).Execute-fm
+process_session [approval] desc=ffde6bd7cf9b schema=8e446bef10e3 fn=supercli/internal/tools/processsession.(*Tool).Execute-fm
 headless_control [approval] desc=6ec03ee68991 schema=67269f3aac73 fn=supercli/internal/tools/headless.(*Tool).Execute-fm
 apply_skill [on ro] desc=a091b205f439 schema=870c4eb3f23a fn=supercli/internal/tools/skills.(*SkillApplier).execute-fm
 remember [on] desc=7bc440d6700c schema=8d4d23ebf405 fn=supercli/internal/tools/memorytools.(*Remember).run-fm
@@ -23,7 +23,7 @@ move [on] desc=658efd3bf187 schema=6170c6a15ed2 fn=supercli/internal/tools/codei
 copy [on] desc=53ee38a718d3 schema=119af3dec318 fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
 trash [on approval] desc=4e4f53808106 schema=e8dd5819a9d0 fn=supercli/internal/checkpoint.(*Turn).Wrap.func2
 search_code [on ro] desc=37742248d322 schema=4fe96f18a70b fn=supercli/internal/tools/search.(*SearchCode).run-fm
-ctx_execute [on] desc=4869fde65fe0 schema=efabb829d749 fn=supercli/internal/checkpoint.(*Turn).Wrap.func2
+ctx_execute [on approval] desc=4869fde65fe0 schema=1ce3bd481600 fn=supercli/internal/checkpoint.(*Turn).Wrap.func2
 scratchpad [on] desc=2c791388f9fd schema=8d24949d1787 fn=supercli/internal/tools/scratchpad.(*Scratchpad).run-fm
 write_file [] desc=4b2e40110fd4 schema=b8dab809301a fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
 read_pdf [] desc=ec05225a6bdd schema=7acc663b8a6c fn=supercli/internal/tools/office.(*ReadPdfTool).Execute-fm
@@ -102,6 +102,13 @@ After starting background workers (async), end your turn with a short status;
 never poll or wait: each report starts an automatic turn. Resume a stopped,
 failed or interrupted worker with send_message (its saved context is restored)
 instead of starting a new task.
+Start or resume workers only for the user's request or a plan they approved.
+A status question ("how is it going?", "i jak idzie?") is answered from the
+workers' states and reports in 2-4 short lines (done, in progress, blocked;
+no option lists unless the user must decide): never start, resume or steer
+workers for it.
+A worker canceled by the user's Stop or new message stays stopped until the
+user asks to continue it.
 Use scratchpad for detailed evidence that should survive outside the chat.
 
 Web GUI: use task with async=true for long or parallel work, then end your turn; reports start an automatic turn.
@@ -128,7 +135,7 @@ Golden user preset: reply in English.
 Provider: set
 Registry: set
 Caps: set
-System: len=10364 sha=1d79958b6469
+System: len=10786 sha=c4ecb576e8a1
 ProjectInstructions: ""
 UserInstructions: len=213 sha=c8493814683a
 UserInstructionsForRun: set
@@ -239,6 +246,13 @@ After starting background workers (async), end your turn with a short status;
 never poll or wait: each report starts an automatic turn. Resume a stopped,
 failed or interrupted worker with send_message (its saved context is restored)
 instead of starting a new task.
+Start or resume workers only for the user's request or a plan they approved.
+A status question ("how is it going?", "i jak idzie?") is answered from the
+workers' states and reports in 2-4 short lines (done, in progress, blocked;
+no option lists unless the user must decide): never start, resume or steer
+workers for it.
+A worker canceled by the user's Stop or new message stays stopped until the
+user asks to continue it.
 Use scratchpad for detailed evidence that should survive outside the chat.
 
 Web GUI: use task with async=true for long or parallel work, then end your turn; reports start an automatic turn.
@@ -324,6 +338,13 @@ After starting background workers (async), end your turn with a short status;
 never poll or wait: each report starts an automatic turn. Resume a stopped,
 failed or interrupted worker with send_message (its saved context is restored)
 instead of starting a new task.
+Start or resume workers only for the user's request or a plan they approved.
+A status question ("how is it going?", "i jak idzie?") is answered from the
+workers' states and reports in 2-4 short lines (done, in progress, blocked;
+no option lists unless the user must decide): never start, resume or steer
+workers for it.
+A worker canceled by the user's Stop or new message stays stopped until the
+user asks to continue it.
 Use scratchpad for detailed evidence that should survive outside the chat.
 
 Web GUI: use task with async=true for long or parallel work, then end your turn; reports start an automatic turn.

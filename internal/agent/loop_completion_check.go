@@ -108,7 +108,13 @@ var missingTargetReply = regexp.MustCompile(`(?i)\b(?:does not exist|doesn't exi
 // runCompletionCheck appends the check instruction and returns true when the
 // Run must continue; false lets it finish as usual.
 func (l *Loop) runCompletionCheck(ctx context.Context, out chan<- Event, text string, canContinue bool) bool {
-	if !canContinue || ctx.Err() != nil {
+	// A status answer reports unfinished work by design ("worker-3 failed,
+	// nie dokończył ..."); asking to finish it would start work the user did
+	// not request.
+	// An automatic turn summarizes worker reports, which name what a worker
+	// left undone; that is not the coordinator admitting its own unfinished
+	// edits, and re-asking it would start work no one requested.
+	if !canContinue || ctx.Err() != nil || l.statusOnlyForRun || l.wakeTurnForRun {
 		return false
 	}
 	l.completion.mu.Lock()

@@ -383,6 +383,23 @@ type Loop struct {
 	// Role policy: analysis workers must not be instructed to implement edits.
 	skipImplementationHint   bool
 	implementationHintForRun string
+	// statusOnlyForRun marks a user turn that only asks how the work is
+	// going: delegation calls are refused (see status_turn.go).
+	statusOnlyForRun bool
+	// wakeTurnForRun marks an automatic wake-up turn (no user message): it
+	// reports worker results but never resumes a failed or stopped worker.
+	wakeTurnForRun bool
+	// userPromptForRun is this turn's raw user message ("" in a wake turn).
+	userPromptForRun string
+	// runMutations counts successful, non-inert file mutations of the
+	// current run (a worker's "done" with none of them needs review).
+	runMutations atomic.Int64
+	// workerStatusSource lists this conversation's workers for a status
+	// turn. Bound by NewAgentTool; nil without delegation.
+	workerStatusSource func() []Snapshot
+	// workerStatusLookup finds a worker the live registry does not hold
+	// (saved before a restart). Bound by NewAgentTool.
+	workerStatusLookup func(context.Context, string) string
 	// navAuto (only meaningful with navigate) makes routing keyword-first:
 	// a confident RouteMap hit skips the extra navigator model round-trip;
 	// only ambiguous prompts fall back to the model navigator.
@@ -458,6 +475,11 @@ type Loop struct {
 	// A small bounded retry handles providers that need one extra turn without
 	// ever allowing an empty post-tool response to masquerade as Done.
 	emptyReplyNudges int
+	// lastReplyCutOff: the latest reply ended at the output limit without
+	// tool calls; cutOffContinues counts the automatic "continue" requests
+	// that followed (per Run).
+	lastReplyCutOff bool
+	cutOffContinues int
 	// runawayRetries counts per-Run re-requests after a tool call whose
 	// arguments degenerated (whitespace, repeating block, size or time cap;
 	// loop_runaway_retry.go).
@@ -1119,6 +1141,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	l.verifyTrail.reset()
 	l.checkCycles.reset()
 	l.emptyReplyNudges = 0
+	l.lastReplyCutOff, l.cutOffContinues = false, 0
 	l.runawayRetries = 0
 	if wake {
 		l.resetPostReview("")
@@ -1164,6 +1187,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	var repeatProg repeatProgress
 	l.identicalFails = identicalFailureGate{}
 	l.identicalWrites = identicalSuccessGate{}
+	l.runMutations.Store(0)
 	// F11: reset the policy's per-Run "drafted" set
 	// at the start of every Run so a ModeBalanced
 	// "draft once" rule applies to THIS Run, not to

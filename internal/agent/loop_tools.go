@@ -545,6 +545,30 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) (r
 		}
 	}
 
+	// A status question never starts, resumes, steers or stops workers: the
+	// user asked what is happening, not for more work (status_turn.go).
+	refusal := ""
+	if l.statusOnlyForRun && statusTurnTools[tc.Name] {
+		refusal = statusTurnRefusal
+	} else {
+		// A worker that failed, lost its connection or was stopped resumes
+		// only on the user's word: never in an automatic turn, and in a user
+		// turn only when the message asks for it.
+		refusal = l.wakeResumeRefusal(tc)
+	}
+	if refusal != "" {
+		out <- ToolResultEvent{ID: tc.ID, Err: fmt.Errorf("%s", refusal)}
+		return toolResult{
+			failed: true,
+			followUps: []llm.Message{{
+				Role:       llm.RoleTool,
+				ToolCallID: tc.ID,
+				Name:       tc.Name,
+				Content:    refusal,
+			}},
+		}
+	}
+
 	// Check at the dispatch boundary. Tools (including extensions) may ignore
 	// context cancellation, so an ended turn must never start the next call.
 	// Still close its protocol/UI pair; later calls in the batch do the same.
@@ -738,6 +762,7 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) (r
 		l.identicalFails.recordSuccess(tc.Name, tc.Arguments, l.failedChecks.stateRevision())
 		l.identicalWrites.recordSuccess(tc.Name, tc.Arguments)
 		if toolCallKind(tc.Name, tc.Arguments) == "mutation" && !res.Inert {
+			l.runMutations.Add(1)
 			l.noteCompletionMutation(tc.Name, tc.Arguments, res)
 			l.identicalFails.workspaceChanged()
 			l.checkCycles.touch(l.baseDir, tc.Arguments)

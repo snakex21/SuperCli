@@ -3,11 +3,11 @@ package agent
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"regexp"
 	"strings"
 	"sync"
 
+	"supercli/internal/llm"
 	"supercli/internal/tools"
 )
 
@@ -112,24 +112,73 @@ var (
 
 var verificationFindingRE = regexp.MustCompile(`(?i)^\s+(?:that|whether|if|the\s+(?:file|path|folder|directory)|it\b|there\b|że|czy)`)
 
-// verificationClaimWarning returns a note to append to a final answer, or "".
-// It never blocks the answer and never changes what the model said.
-func (l *Loop) verificationClaimWarning(text string) string {
+// verificationClaimNote returns a UI-only note about a final answer that
+// claims passing checks, or nil. It never blocks the answer, never changes
+// what the model said and never enters the model's history (1.0.39: it was
+// appended to the text as a raw English "[SuperCli note: ...]", the model then
+// apologized for it in its next answer).
+//
+// A coordinator mostly relays its workers' results: checks a worker of this
+// conversation ran count as evidence too. Only an answer with no command run
+// by anyone (coordinator in this turn, or any of its workers) is flagged.
+func (l *Loop) verificationClaimNote(text string) *llm.AnswerNote {
 	if !claimsVerification(text) {
-		return ""
+		return nil
 	}
 	l.verifyTrail.mu.Lock()
 	commands, ran, failed, command := l.verifyTrail.commands, l.verifyTrail.ran, l.verifyTrail.lastFailed, l.verifyTrail.command
 	l.verifyTrail.mu.Unlock()
 	switch {
-	case !commands:
+	case !commands && !l.workersRanCommands():
 		// Commands that are not recognisable checks (a CLI run, a script)
 		// may well be the verification; only no command at all is flagged.
-		return "\n\n[SuperCli note: this answer reports passing checks, but no command ran in this turn.]"
+		return &llm.AnswerNote{Kind: llm.NoteUnverifiedClaim}
 	case ran && failed:
-		return fmt.Sprintf("\n\n[SuperCli note: this answer reports passing checks, but the last check in this turn failed: %s]", command)
+		return &llm.AnswerNote{Kind: llm.NoteFailedCheck, Detail: command}
 	}
-	return ""
+	return nil
+}
+
+// commandTools run commands; a worker that used one has run checks of its own.
+var commandTools = map[string]bool{"ctx_execute": true, "process_session": true}
+
+// isCheckCall reports whether a command tool call's arguments run a
+// recognisable check (tests, build, lint), command given as a list or a line.
+func isCheckCall(args string) bool {
+	var call struct {
+		Command json.RawMessage `json:"command"`
+	}
+	if json.Unmarshal([]byte(args), &call) == nil && len(call.Command) > 0 {
+		var list []string
+		if json.Unmarshal(call.Command, &list) == nil {
+			return isVerificationCommand(list) || looseCheckRE.MatchString(strings.Join(list, " "))
+		}
+		var line string
+		if json.Unmarshal(call.Command, &line) == nil {
+			return looseCheckRE.MatchString(line)
+		}
+	}
+	return looseCheckRE.MatchString(args)
+}
+
+// workersRanCommands reports whether any worker of this conversation ran a
+// command: its saved lifetime counter (survives restarts and resumes), or its
+// latest run's tool list.
+func (l *Loop) workersRanCommands() bool {
+	if l.workerStatusSource == nil {
+		return false
+	}
+	for _, s := range l.workerStatusSource() {
+		if s.CommandsRun > 0 {
+			return true
+		}
+		for _, name := range s.ToolNames {
+			if commandTools[strings.TrimSpace(strings.SplitN(name, "×", 2)[0])] {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // workerRunKey marks the context of a worker's own Run. Worker reports are

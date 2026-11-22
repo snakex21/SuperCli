@@ -1125,13 +1125,30 @@ button[data-sec="about"].has-update::after {
   .task-activity-item .activity-status { min-width: 0; white-space: normal; text-align: right; }
 }
 
-/* Event lines — [compact], [prune], preflight, workers, errors */
+/* Event lines — compact, prune, preflight, workers, errors. The tag is a
+   translated chip (icon + word), never a raw [tag] marker. */
 .event-line {
   font: var(--fs-xs) var(--mono); color: var(--faint);
   padding-left: 2px; word-break: break-word;
 }
-.event-line .tag { color: var(--muted); }
+.event-line .tag {
+  display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; padding: 0 7px;
+  border: 1px solid var(--line); border-radius: 999px; color: var(--muted);
+  font: var(--fs-xs) var(--sans); line-height: 1.6; vertical-align: 1px;
+}
+.event-line .tag::before { content: "i"; font-weight: 700; font-size: 10px; }
+.event-line .tag-stop::before { content: "\25A0"; font-size: 9px; }
+.event-line .tag-error { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.event-line .tag-error::before { content: "!"; }
+.event-line .tag-auto { color: var(--status-running); border-color: color-mix(in srgb, var(--status-running) 45%, transparent); }
+.event-line .tag-auto::before { content: "\21BB"; }
 .event-line.error { color: var(--danger); }
+.event-line .event-detail { display: inline-block; margin-left: 8px; color: var(--muted); }
+.event-line .event-detail summary { cursor: pointer; }
+.event-line .event-detail code { display: block; margin-top: 4px; white-space: pre-wrap; word-break: break-all; }
+.event-line .event-continue { margin-left: 8px; padding: 1px 10px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--text); font: inherit; cursor: pointer; }
+.event-line .event-continue:hover { border-color: var(--accent); }
+.event-line .event-continue:disabled { opacity: .5; cursor: default; }
 
 /* Telemetry — the quiet line under a finished answer */
 .turn-meta {
@@ -2575,6 +2592,48 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
 @keyframes bg-agents-pulse { 50% { opacity: .35; } }
 .event-line.auto-wake { color: var(--status-running); }
 
+/* Delegation cards: status as icon + word, outcome first, actions per worker. */
+/* data-task-status is set from the worker's real state (events, snapshots),
+   never from model text; a refused or plain tool error keeps its own mark. */
+.task-row[data-task-status] .tstat .tstat-label::before, .task-row[data-task-status] .tstat:not(:has(.tstat-clock))::before {
+  display: inline-block; width: 1.1em; text-align: center; margin-right: 3px; content: "\2022"; color: var(--faint);
+}
+.task-row[data-task-status="running"] .tstat .tstat-label::before, .task-row[data-task-status="running"] .tstat:not(:has(.tstat-clock))::before { content: "\25CF"; color: var(--accent); }
+.task-row[data-task-status="created"] .tstat .tstat-label::before, .task-row[data-task-status="created"] .tstat:not(:has(.tstat-clock))::before { content: "\25F7"; color: var(--muted); }
+.task-row[data-task-status="done"] .tstat .tstat-label::before, .task-row[data-task-status="done"] .tstat:not(:has(.tstat-clock))::before { content: "\2713"; color: var(--ok); }
+.task-row[data-task-status="failed"] .tstat .tstat-label::before, .task-row[data-task-status="failed"] .tstat:not(:has(.tstat-clock))::before { content: "\2715"; color: var(--danger); }
+.task-row[data-task-status="interrupted"] .tstat .tstat-label::before, .task-row[data-task-status="interrupted"] .tstat:not(:has(.tstat-clock))::before { content: "\23F8"; color: var(--danger); }
+.task-row[data-task-status="review"] .tstat .tstat-label::before, .task-row[data-task-status="review"] .tstat:not(:has(.tstat-clock))::before { content: "!"; font-weight: 700; color: var(--status-pending); }
+.task-row[data-task-status="review"] { border-left-color: var(--status-pending); }
+.task-row[data-task-status="review"] .tstat { color: var(--status-pending); }
+.task-row .task-outcome.review { border-left-color: var(--status-pending); }
+.task-row .task-outcome.review .task-outcome-label { color: var(--status-pending); }
+.worker-overview-item[data-state="review"] .worker-overview-dot { background: var(--status-pending); }
+.worker-overview-item[data-state="review"] .worker-overview-status { color: var(--status-pending); }
+.task-row[data-task-status="stopped"] .tstat .tstat-label::before, .task-row[data-task-status="stopped"] .tstat:not(:has(.tstat-clock))::before { content: "\25A0"; color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) {
+  .task-row[data-task-status="running"] .tstat .tstat-label::before { animation: bg-agents-pulse 1.6s ease-in-out infinite; }
+}
+.task-row .task-outcome {
+  display: flex; gap: 8px; align-items: baseline; margin: 2px 0 8px; padding: 6px 9px;
+  border-radius: 6px; background: var(--raise); border-left: 2px solid var(--ok); font-size: var(--fs-sm);
+}
+.task-row .task-outcome.failed { border-left-color: var(--danger); }
+.task-row .task-outcome-label { flex: none; color: var(--muted); font: var(--fs-xs) var(--mono); text-transform: uppercase; }
+.task-row .task-outcome.failed .task-outcome-label { color: var(--danger); }
+.task-row .task-outcome-text { min-width: 0; color: var(--text); overflow-wrap: anywhere; }
+.task-row .worker-stop {
+  margin: 0 0 8px; padding: 3px 10px; border-radius: 6px; font: inherit; font-size: var(--fs-xs);
+  color: var(--text); background: transparent; border: 1px solid var(--line); cursor: pointer;
+}
+.task-row .worker-stop:hover { border-color: var(--danger); color: var(--danger); }
+.task-row summary .worker-stop.in-summary { margin: 0 8px 0 0; padding: 1px 8px; line-height: 1.5; align-self: center; }
+.task-row > summary { grid-template-columns: 10px minmax(150px, 190px) 1fr auto auto; }
+.tool-row.refused { border-left: 2px solid var(--line-strong, var(--line)); }
+.tool-row.refused .tname, .tool-row.refused .tstat { color: var(--muted); font-weight: 500; }
+.tool-row.refused .tstat::before { content: "\2139  "; }
+.task-row .worker-stop:disabled, .task-row .worker-resume:disabled { opacity: .55; cursor: default; }
+
 /* Resume a stopped/failed/interrupted worker with its saved conversation. */
 .task-row .worker-resume {
   margin-top: 8px; padding: 3px 10px; border-radius: 6px; font: inherit; font-size: var(--fs-xs);
@@ -2589,6 +2648,22 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
   border-color: color-mix(in srgb, var(--status-running) 60%, transparent);
 }
 .composer.bg-working .box { border-color: color-mix(in srgb, var(--status-running) 45%, var(--line)); }
+.task-row .thint > .marquee-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-row.refused .thint { color: var(--muted); white-space: normal; overflow: visible; }
+.event-line.info-note { color: var(--status-running); }
+.task-row .task-outcome-raw { margin-top: 6px; }
+.task-row .task-outcome-raw > summary { cursor: pointer; color: var(--muted); font-size: var(--fs-xs); }
+.task-row .task-outcome-raw > pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-xs); color: var(--muted); margin: 4px 0 0; }
+.answer-notes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.answer-note {
+  display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-size: var(--fs-xs);
+  color: var(--status-pending); border: 1px solid color-mix(in srgb, var(--status-pending) 40%, transparent);
+  background: color-mix(in srgb, var(--status-pending) 8%, transparent);
+}
+.side-item .side-q {
+  display: inline-flex; align-items: center; justify-content: center; margin-left: 7px; width: 15px; height: 15px;
+  border-radius: 50%; font-size: 11px; font-weight: 700; color: var(--on-accent); background: var(--accent);
+}
 .side-item .side-bg {
   display: inline-flex; align-items: center; gap: 4px; margin-left: 7px;
   color: var(--status-running); font-variant-numeric: tabular-nums;
@@ -2609,7 +2684,8 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
   overflow-wrap: anywhere;
 }
 .task-liveness[hidden], .worker-stall-actions[hidden], .worker-overview-live[hidden] { display: none; }
-.task-liveness.stalled { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+/* Silence is not an error: calm amber, never red. */
+.task-liveness.stalled { color: var(--status-pending); background: color-mix(in srgb, var(--status-pending) 10%, transparent); }
 .worker-stall-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 10px; }
 .worker-stall-hint { flex: 1 1 100%; color: var(--muted); font-size: var(--fs-xs); line-height: 1.45; }
 .worker-stall-actions button {
@@ -2618,7 +2694,7 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
 }
 .worker-stall-actions .worker-stop:hover { border-color: var(--danger); color: var(--danger); }
 .worker-stall-actions .worker-restart:hover { border-color: var(--status-running); color: var(--status-running); }
-.task-row.stalled > summary .tstat { color: var(--danger); }
+.task-row.stalled > summary .tstat { color: var(--status-pending); }
 .task-activity-item .activity-progress {
   grid-column: 2 / -1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
   color: var(--faint); font: var(--fs-xs) var(--mono);
@@ -2627,7 +2703,7 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
   grid-column: 2 / -1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
   color: var(--muted); font: var(--fs-xs) var(--mono); margin-top: -4px;
 }
-.worker-overview-item.stalled .worker-overview-live, .worker-overview-item.stalled .worker-overview-status { color: var(--danger); }
+.worker-overview-item.stalled .worker-overview-live, .worker-overview-item.stalled .worker-overview-status { color: var(--status-pending); }
 /* State changes animate in place; rows are never removed and re-added. */
 .worker-overview-dot, .worker-overview-status { transition: background-color 240ms ease, color 240ms ease, box-shadow 240ms ease; }
 .worker-overview-item { transition: opacity 240ms ease; }
@@ -2659,3 +2735,105 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
 }
 .wake-held .wake-held-resume:hover { background: color-mix(in srgb, var(--status-running) 14%, transparent); }
 .wake-held .wake-held-resume:disabled { opacity: .6; cursor: default; }
+
+/* Live activity: one line per active agent ("Running tests · 0:12"). The
+   running worker's step takes the task-text cell; the task stays in the
+   tooltip and on the expanded card. */
+.worker-overview-item.live .worker-overview-activity,
+.worker-overview-item.live .worker-overview-status { display: none; }
+.worker-overview-item.live .worker-overview-live {
+  grid-column: 3 / -1; margin-top: 0; color: var(--muted); font: var(--fs-xs) var(--sans);
+  font-variant-numeric: tabular-nums;
+}
+.composer.activity-live #run-status { display: none; }
+.run-activity { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.run-activity[hidden], .run-activity-continue[hidden], .run-activity-steps[hidden] { display: none; }
+.run-activity-line {
+  min-width: 0; display: inline-flex; align-items: center; gap: 7px; max-width: 100%;
+  padding: 2px 6px; margin-left: -6px; border: 0; border-radius: 6px; background: transparent;
+  color: var(--muted); font: var(--fs-xs) var(--sans); cursor: pointer; text-align: left;
+}
+.run-activity-line:hover, .run-activity-line[aria-expanded="true"] { background: var(--line-soft); color: var(--text); }
+.run-activity-label { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.run-activity-time { flex: none; color: var(--faint); font-variant-numeric: tabular-nums; }
+.run-activity-time:not(:empty)::before { content: "· "; }
+.run-activity-icon {
+  flex: none; width: 9px; height: 9px; border-radius: 50%; box-sizing: border-box;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 35%, transparent); border-top-color: var(--accent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .run-activity-icon { animation: run-activity-spin 1.1s linear infinite; }
+}
+@keyframes run-activity-spin { to { transform: rotate(360deg); } }
+.run-activity[data-kind="user"] .run-activity-icon,
+.run-activity.silent .run-activity-icon { animation: none; border: 0; background: var(--status-pending); width: 7px; height: 7px; }
+.run-activity[data-kind="user"] .run-activity-label { color: var(--status-pending); }
+.run-activity.silent .run-activity-label { color: var(--muted); }
+.run-activity-continue {
+  flex: none; padding: 2px 10px; border-radius: 6px; font: inherit; font-size: var(--fs-xs); cursor: pointer;
+  color: var(--accent); background: transparent; border: 1px solid color-mix(in srgb, var(--accent) 60%, var(--line));
+}
+.run-activity-continue:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.run-activity-continue:disabled { opacity: .6; cursor: default; }
+.run-activity-steps {
+  box-sizing: border-box; max-width: calc(46rem - 40px); width: calc(100% - 40px); margin: 0 auto 6px;
+  padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel, var(--bg));
+  font: var(--fs-xs) var(--sans); color: var(--muted); max-height: min(220px, 30vh); overflow-y: auto;
+}
+.run-activity-steps-head { margin-bottom: 4px; color: var(--faint); }
+.run-activity-steps-list { list-style: none; margin: 0; padding: 0; }
+.run-activity-step { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; padding: 3px 0; }
+.run-activity-step.current { color: var(--text); }
+.run-activity-step-detail { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--faint); font-family: var(--mono); }
+.run-activity-step-time { font-variant-numeric: tabular-nums; color: var(--faint); }
+
+/* Reasoning: one small folded chip per turn instead of a bar per segment.
+   Later segments of the same turn show theirs only once it is opened. */
+.think-block:not([open]) { margin-bottom: 6px; }
+.think-block:not([open]) summary {
+  display: inline-flex; letter-spacing: 0; text-transform: none;
+  padding: 1px 8px 1px 6px; border-radius: 999px; background: var(--line-soft);
+}
+.think-block:not([open]) .think-line { display: none; }
+.msg-assistant.turn-cont > .think-block:not([open]) { display: none; }
+
+/* This message's own numbers: one compact grey line. */
+.turn-meta { font-family: var(--sans); font-variant-numeric: tabular-nums; }
+
+/* A folded worker in the chat is one short link line:
+   "→ Worker 3: <task> · interrupted". Expanded, it is the full card. */
+.task-row:not([open]) { border: 0; border-left: 0; background: transparent; }
+.task-row:not([open]):hover { background: transparent; }
+.task-row:not([open]) > summary {
+  display: flex; align-items: baseline; gap: 6px; padding: 2px 0;
+  font: var(--fs-sm) var(--sans); color: var(--muted);
+}
+.task-row:not([open]) > summary::before { content: "\2192"; color: var(--faint); }
+.task-row:not([open]) .tname { flex: none; font-weight: 500; color: var(--text); }
+.task-row:not([open]) .tname::after { content: ":"; }
+.task-row:not([open]) > summary:hover .tname { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.task-row:not([open]) .worker-model-info { display: none; }
+.task-row:not([open]) .thint { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.task-row:not([open]) .tstat { flex: none; font: var(--fs-xs) var(--sans); }
+.worker-overview-item.highlight { background: color-mix(in srgb, var(--accent) 16%, transparent); transition: background-color 300ms ease; }
+
+/* Delegation panel header: one calm clickable summary line. */
+.worker-overview > summary {
+  list-style: none; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font: var(--fs-xs) var(--sans); color: var(--muted);
+}
+.worker-overview > summary::-webkit-details-marker { display: none; }
+.worker-overview > summary::before { content: "\203A"; display: inline-block; width: 12px; color: var(--faint); transition: transform 160ms ease; }
+.worker-overview[open] > summary::before { transform: rotate(90deg); }
+.worker-overview > summary:hover { color: var(--text); }
+.worker-overview .wo-sum-title { font-weight: 600; color: var(--text); }
+.worker-overview .wo-sum-count::before {
+  content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 5px 1px 0; border-radius: 50%;
+  background: var(--faint); vertical-align: middle;
+}
+.worker-overview .wo-sum-count[data-state="running"]::before { background: var(--accent); }
+.worker-overview .wo-sum-count[data-state="failed"]::before { background: var(--danger); }
+.worker-overview .wo-sum-count[data-state="review"]::before { background: var(--status-pending); }
+.worker-overview .wo-sum-count[data-state="done"]::before { background: var(--ok); }
+@media (prefers-reduced-motion: reduce) { .worker-overview > summary::before { transition: none; } }
+.task-row:not([open]) > summary > button { flex: none; white-space: nowrap; align-self: center; }

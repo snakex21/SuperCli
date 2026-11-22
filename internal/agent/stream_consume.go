@@ -222,6 +222,9 @@ streamLoop:
 	}
 	closeReasoning()
 	calls := l.coalesceMirroredReads(toolCalls, textCallIndexes)
+	// A reply cut by the output limit (finish_reason length/max_tokens, a
+	// Responses "incomplete") is not a finished answer; the step decides.
+	l.lastReplyCutOff = truncated && len(calls) == 0
 	if truncated && len(calls) > 0 {
 		return transcript.String(), calls, usage, &truncatedToolResponseError{}
 	}

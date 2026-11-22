@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -105,6 +106,16 @@ type AgentTool struct {
 
 	// A completed probe is cached; caller cancellation leaves it untested.
 	// Concurrent delegations share one probe and can cancel their own wait.
+	// VerifyCommands (config verify_commands) run after a file-changing
+	// worker says done; a red one marks the worker "needs review".
+	VerifyCommands []string
+	// verifyRunner replaces the command runner in tests.
+	verifyRunner func(ctx context.Context, dir, command string, timeout time.Duration) (int, string)
+
+	// startMu makes the duplicate-task check and the worker registration
+	// one step (parallel identical task calls in one response).
+	startMu sync.Mutex
+
 	workerProbeMu   sync.Mutex
 	workerProbeDone chan struct{}
 	workerProbed    bool
@@ -126,7 +137,7 @@ func NewAgentTool(reg *SubAgentRegistry, parent *Loop, base *tools.Registry, pro
 	if factory == nil {
 		return nil, fmt.Errorf("agent.NewAgentTool: NewLoop factory is nil")
 	}
-	return &AgentTool{
+	a := &AgentTool{
 		Registry:              reg,
 		ParentLoop:            parent,
 		BaseRegistry:          base,
@@ -136,7 +147,165 @@ func NewAgentTool(reg *SubAgentRegistry, parent *Loop, base *tools.Registry, pro
 		Workers:               NewWorkerRegistry(),
 		TimeoutPerStep:        30 * time.Second,
 		inheritParentProvider: parent != nil && sameProviderInstance(provider, parent.provider),
-	}, nil
+	}
+	if parent != nil {
+		// Status turns list this conversation's workers. Read a.Workers at
+		// call time: hosts replace it with their shared registry after this.
+		parent.workerStatusSource = a.conversationWorkersWithSaved
+		parent.workerStatusLookup = a.savedWorkerStatus
+	}
+	return a, nil
+}
+
+// workerBriefLister is an optional WorkerStore extension that lists saved
+// workers without loading their transcripts.
+type workerBriefLister interface {
+	ListWorkerBriefs(ctx context.Context, sessionID string) ([]WorkerRecord, error)
+}
+
+// repeatedBrief refuses a task that repeats a worker of this conversation:
+// always when that worker is still running or queued, and in an automatic
+// turn (no user message) whatever its state - a failed, stopped, interrupted
+// or finished worker's task is not started again without the user. Saved
+// workers of an earlier process count too.
+func (a *AgentTool) repeatedBrief(ctx context.Context, agentName, prompt string) string {
+	if id := a.runningDuplicate(agentName, prompt); id != "" {
+		return fmt.Sprintf("refused: %s is already working on this exact task in this conversation; wait for its report (it arrives automatically) or use send_message mode=steer to change it", id)
+	}
+	if a.ParentLoop == nil || !a.ParentLoop.wakeTurnForRun {
+		return ""
+	}
+	// An automatic turn starts new workers only when the user allows it
+	// (background_wake_delegate, on by default: the next planned task goes to
+	// a freed slot).
+	if s := a.ParentLoop.WakeScheduler(); s == nil || !s.Config().Delegate {
+		return "refused: this is an automatic turn without a user message; it does not start new workers. " +
+			"Report the outcome and propose the next step; the user decides (or enables background_wake_delegate for unattended refills)."
+	}
+	// Even then it never repeats a worker of this conversation that failed,
+	// was interrupted or stopped - matched by goal and task, not wording (a
+	// rephrased retry is still a retry) - nor starts a worker's exact task
+	// again while it runs or after it finished.
+	check := func(id, agent, desc, status string) string {
+		if agent != agentName {
+			return ""
+		}
+		exact := strings.Join(strings.Fields(desc), " ") == strings.Join(strings.Fields(prompt), " ")
+		switch status {
+		case "failed", "stopped", WorkerStatusInterrupted:
+			if sameTask(desc, prompt) {
+				return fmt.Sprintf("refused: this automatic turn (no user message) would repeat %s's task (%s). Failed or stopped tasks are not delegated again automatically: report its outcome and let the user decide; the user resumes it with the Resume button or a message naming it.", id, status)
+			}
+		case "running", "created":
+			if exact {
+				return fmt.Sprintf("refused: %s is already working on this task. Do not start it twice; its report will start an automatic turn.", id)
+			}
+		default:
+			if exact {
+				return fmt.Sprintf("refused: this automatic turn (no user message) would redo %s's finished task (%s). Use its report instead of starting it again.", id, status)
+			}
+		}
+		return ""
+	}
+	for _, s := range a.conversationWorkers() {
+		if r := check(s.ID, s.Agent, s.Description, s.Status); r != "" {
+			return r
+		}
+	}
+	sid := sessionIDOf(a.ParentLoop)
+	if lister, ok := a.Workers.Store().(workerBriefLister); ok && sid != "" {
+		if recs, err := lister.ListWorkerBriefs(ctx, sid); err == nil {
+			for _, rec := range recs {
+				if r := check(rec.ID, rec.Agent, rec.Description, rec.Status); r != "" {
+					return r
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// runningDuplicate returns the id of this conversation's worker that is
+// already running (or queued) the same agent with the same brief, or "".
+// A model that sends one task twice (in one response or across turns) would
+// otherwise run the same work twice, in parallel, on the same files.
+func (a *AgentTool) runningDuplicate(agentName, prompt string) string {
+	want := strings.Join(strings.Fields(prompt), " ")
+	if want == "" || a.ParentLoop == nil {
+		return ""
+	}
+	for _, s := range a.conversationWorkers() {
+		if (s.Status == "running" || s.Status == "created") && s.Agent == agentName && strings.Join(strings.Fields(s.Description), " ") == want {
+			return s.ID
+		}
+	}
+	return ""
+}
+
+// savedWorkerStatus returns the status of a worker of this conversation that
+// is not in the live registry: one saved by an earlier process (restored from
+// the database after a restart). "" when unknown.
+func (a *AgentTool) savedWorkerStatus(ctx context.Context, id string) string {
+	if a == nil || a.Workers == nil {
+		return ""
+	}
+	if w, ok := a.Workers.Get(id); ok {
+		return w.status()
+	}
+	store := a.Workers.Store()
+	sid := sessionIDOf(a.ParentLoop)
+	if store == nil || sid == "" {
+		return ""
+	}
+	rec, ok, err := store.LoadWorker(ctx, sid, id)
+	if err != nil || !ok {
+		return ""
+	}
+	return rec.Status
+}
+
+// conversationWorkersWithSaved adds this conversation's workers that exist
+// only in the database (saved by an earlier process) to the live ones, so a
+// status answer and the continuation guard see them after a restart.
+func (a *AgentTool) conversationWorkersWithSaved() []Snapshot {
+	live := a.conversationWorkers()
+	sid := sessionIDOf(a.ParentLoop)
+	lister, ok := a.Workers.Store().(workerBriefLister)
+	if !ok || sid == "" {
+		return live
+	}
+	recs, err := lister.ListWorkerBriefs(context.Background(), sid)
+	if err != nil {
+		return live
+	}
+	seen := make(map[string]bool, len(live))
+	for _, s := range live {
+		seen[s.ID] = true
+	}
+	for _, rec := range recs {
+		if !seen[rec.ID] {
+			live = append(live, Snapshot{ID: rec.ID, Agent: rec.Agent, Description: rec.Description, Status: rec.Status, SessionID: sid,
+				CommandsRun: rec.CommandsRun, ChecksRun: rec.ChecksRun})
+		}
+	}
+	return live
+}
+
+// conversationWorkers returns snapshots of the parent conversation's workers
+// in the live registry (the registry is process-wide in the GUI).
+func (a *AgentTool) conversationWorkers() []Snapshot {
+	if a == nil || a.Workers == nil {
+		return nil
+	}
+	sid := sessionIDOf(a.ParentLoop)
+	var out []Snapshot
+	for _, w := range a.Workers.List() {
+		s := w.Snapshot()
+		if s.SessionID == sid {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // Spec returns the tools.Tool description. The schema lists

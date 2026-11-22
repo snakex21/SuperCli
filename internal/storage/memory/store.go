@@ -1,6 +1,8 @@
 package memory
 
 import (
+	"supercli/internal/storage"
+
 	"database/sql"
 	"errors"
 	"fmt"
@@ -70,6 +72,15 @@ type Store struct {
 // Pass an empty home to use a temporary directory (handy in
 // tests). The caller is responsible for Close.
 func OpenStore(home string) (*Store, error) {
+	if home == "" {
+		return openStore(home)
+	}
+	// A damaged memory.db is moved aside (never deleted); the Markdown
+	// mirror reconciles what it can into the fresh database.
+	return storage.OpenRecovering(filepath.Join(home, "memory.db"), func() (*Store, error) { return openStore(home) })
+}
+
+func openStore(home string) (*Store, error) {
 	if home == "" {
 		var err error
 		home, err = tempHome()

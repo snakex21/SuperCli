@@ -270,7 +270,7 @@ func TestWorkerSpawnedDuringWakeTurnCompletes(t *testing.T) {
 	reg.MarkAlwaysOn("task")
 	ext := make(chan Event, 128)
 	parent.SetExternalSink(ext)
-	parent.SetBackgroundWake(WakeConfig{Debounce: testWakeDebounce})
+	parent.SetBackgroundWake(WakeConfig{Debounce: testWakeDebounce, Delegate: true}) // unattended delegation opted in
 	events, err := parent.Run(context.Background(), "Delegate.")
 	if err != nil {
 		t.Fatal(err)

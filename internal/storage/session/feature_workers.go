@@ -24,6 +24,10 @@ type WorkerRow struct {
 	Status      string
 	LastError   string
 	Runs        int
+	// CommandsRun / ChecksRun: lifetime counts of commands and checks the
+	// worker ran (kept across resumes and restarts).
+	CommandsRun int
+	ChecksRun   int
 	Messages    []llm.Message
 	UpdatedAt   time.Time
 }
@@ -44,12 +48,14 @@ func (s *Store) SaveWorker(ctx context.Context, row WorkerRow) error {
 		row.UpdatedAt = time.Now()
 	}
 	_, err = s.db.ExecContext(ctx, `
-  INSERT INTO session_workers(session_id,worker_id,agent,description,model,base_dir,status,last_error,runs,messages_json,updated_at)
-  VALUES(?,?,?,?,?,?,?,?,?,?,?)
+  INSERT INTO session_workers(session_id,worker_id,agent,description,model,base_dir,status,last_error,runs,messages_json,updated_at,commands_run,checks_run)
+  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
   ON CONFLICT(session_id,worker_id) DO UPDATE SET agent=excluded.agent, description=excluded.description,
     model=excluded.model, base_dir=excluded.base_dir, status=excluded.status, last_error=excluded.last_error,
-    runs=excluded.runs, messages_json=excluded.messages_json, updated_at=excluded.updated_at`,
-		row.SessionID, row.ID, row.Agent, row.Description, row.Model, row.BaseDir, row.Status, row.LastError, row.Runs, raw, row.UpdatedAt.UnixMilli())
+    runs=excluded.runs, messages_json=excluded.messages_json, updated_at=excluded.updated_at,
+    commands_run=MAX(session_workers.commands_run, excluded.commands_run), checks_run=MAX(session_workers.checks_run, excluded.checks_run)`,
+		row.SessionID, row.ID, row.Agent, row.Description, row.Model, row.BaseDir, row.Status, row.LastError, row.Runs, raw, row.UpdatedAt.UnixMilli(),
+		row.CommandsRun, row.ChecksRun)
 	return err
 }
 
@@ -64,7 +70,7 @@ func scanWorkerRow(scan func(...any) error) (WorkerRow, error) {
 	var row WorkerRow
 	var raw []byte
 	var updated int64
-	if err := scan(&row.SessionID, &row.ID, &row.Agent, &row.Description, &row.Model, &row.BaseDir, &row.Status, &row.LastError, &row.Runs, &raw, &updated); err != nil {
+	if err := scan(&row.SessionID, &row.ID, &row.Agent, &row.Description, &row.Model, &row.BaseDir, &row.Status, &row.LastError, &row.Runs, &raw, &updated, &row.CommandsRun, &row.ChecksRun); err != nil {
 		return row, err
 	}
 	if len(raw) > 0 {
@@ -76,7 +82,7 @@ func scanWorkerRow(scan func(...any) error) (WorkerRow, error) {
 	return row, nil
 }
 
-const workerColumns = `session_id,worker_id,agent,description,model,base_dir,status,last_error,runs,messages_json,updated_at`
+const workerColumns = `session_id,worker_id,agent,description,model,base_dir,status,last_error,runs,messages_json,updated_at,commands_run,checks_run`
 
 // LoadWorker reads one saved worker; ok=false when none exists.
 func (s *Store) LoadWorker(ctx context.Context, sessionID, id string) (WorkerRow, bool, error) {
@@ -104,6 +110,31 @@ func (s *Store) ListWorkers(ctx context.Context, sessionID string) ([]WorkerRow,
 			return nil, err
 		}
 		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+// WorkerBrief is a saved worker without its transcript.
+type WorkerBrief struct {
+	ID, Agent, Description, Status string
+	CommandsRun, ChecksRun         int
+}
+
+// ListWorkerBriefs returns a session's saved workers without transcripts
+// (cheap: used to refuse repeating a worker's task in an automatic turn).
+func (s *Store) ListWorkerBriefs(ctx context.Context, sessionID string) ([]WorkerBrief, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT worker_id, agent, description, status, commands_run, checks_run FROM session_workers WHERE session_id=?`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []WorkerBrief
+	for rows.Next() {
+		var b WorkerBrief
+		if err := rows.Scan(&b.ID, &b.Agent, &b.Description, &b.Status, &b.CommandsRun, &b.ChecksRun); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
 	}
 	return out, rows.Err()
 }

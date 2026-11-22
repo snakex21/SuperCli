@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
-	"strings"
+	"strconv"
 	"time"
 
 	"supercli/internal/llm"
@@ -88,7 +88,7 @@ func (l *Loop) runStep(
 		// summarized). When nothing older exists the window guard in
 		// completeOnce stops the run instead of sending prompts the server
 		// will keep cutting.
-		compactReason = "context-limit"
+		compactReason = serverTruncatedReason
 	}
 	if !l.maybeModelHandoff(ctx, out) {
 		if err := l.maybeAutoCompact(ctx, out, compactReason); err != nil {
@@ -229,21 +229,29 @@ func (l *Loop) runStep(
 		l.recordDraftOutcome(step, text, verifyTokens, out)
 	}
 	// A final answer that reports passing checks against the evidence of
-	// this Run gets a visible note. It is appended, never blocking, and it
-	// enters history so the next turn sees it too.
+	// this Run (or after a stopped edit loop) gets a note. The note is a
+	// translated badge under the answer (AnswerNoteEvent, and the message's
+	// Origin for the saved transcript); it is never part of the answer text
+	// and never model input.
+	var answerNotes []llm.AnswerNote
 	if len(toolCalls) == 0 && !truncatedToolCalls && hasVisibleUserReply(text) {
-		warning := ""
+		// An answer cut by the output limit after the automatic continuations
+		// is shown as possibly incomplete.
+		if l.lastReplyCutOff && l.cutOffContinues >= maxCutOffContinues && !inWorkerRun(ctx) {
+			answerNotes = append(answerNotes, llm.AnswerNote{Kind: llm.NoteCutOff})
+		}
 		// Worker reports are evidence for the coordinator, which runs its own
 		// checks; the note is for the answer a person reads.
 		if !inWorkerRun(ctx) {
-			warning = l.verificationClaimWarning(text)
+			if note := l.verificationClaimNote(text); note != nil {
+				answerNotes = append(answerNotes, *note)
+			}
 		}
-		if stop := l.checkCycles.takeStopNote(); stop != "" && !strings.Contains(text, stop) {
-			warning += "\n\n[" + stop + "]"
+		if repeats := l.checkCycles.takeStopRepeats(); repeats > 0 {
+			answerNotes = append(answerNotes, llm.AnswerNote{Kind: llm.NoteCheckCycleStop, Detail: strconv.Itoa(repeats)})
 		}
-		if warning != "" {
-			text += warning
-			out <- MessageEvent{Text: warning}
+		for _, note := range answerNotes {
+			out <- AnswerNoteEvent{Kind: note.Kind, Detail: note.Detail}
 		}
 	}
 
@@ -256,7 +264,7 @@ func (l *Loop) runStep(
 	// text with <thinking> so the UI can replay it. Stripping here
 	// (at append time), not in-flight, keeps the cacheable prefix
 	// deterministic: the history bytes never change afterwards.
-	assistant := llm.Message{Role: llm.RoleAssistant, Origin: &llm.ContextOrigin{Source: llm.SourceModel}}
+	assistant := llm.Message{Role: llm.RoleAssistant, Origin: &llm.ContextOrigin{Source: llm.SourceModel, Notes: answerNotes}}
 	for i, block := range l.nativeReasoning {
 		copy := *block
 		if usage != nil && usage.Reasoning > 0 {
@@ -369,6 +377,37 @@ func (l *Loop) runStep(
 			l.statsEndStep(stepStart)
 			return stepContinue
 		}
+		// A reply cut by the output limit is not an answer: ask the model to
+		// continue where it stopped (bounded per Run), never end the turn on it.
+		if l.lastReplyCutOff && l.cutOffContinues < maxCutOffContinues && step+1 < stepLimit {
+			l.cutOffContinues++
+			sys := llm.Message{
+				Role: llm.RoleSystem,
+				Content: "[continue] Your previous reply was cut off by the output limit. Continue exactly where it stopped, " +
+					"without repeating what you already wrote. If work remains, keep working with tools.",
+			}
+			l.Messages = append(l.Messages, sys)
+			l.persist(ctx, sys)
+			out <- NoticeEvent{Text: fmt.Sprintf("reply cut off by the output limit: continuing automatically (%d/%d)", l.cutOffContinues, maxCutOffContinues)}
+			l.statsEndStep(stepStart)
+			return stepContinue
+		}
+		// A reply with nothing for the user (no text: only reasoning, or
+		// nothing at all) and no tool results to summarize gets one more
+		// request before the turn may end with a notice.
+		if !hasVisibleUserReply(text) && !messagesHaveRecentToolResult(l.Messages) && l.emptyReplyNudges == 0 && step+1 < stepLimit {
+			l.emptyReplyNudges++
+			sys := llm.Message{
+				Role: llm.RoleSystem,
+				Content: "[reply required] Your last reply contained no answer (only reasoning or nothing). " +
+					"Continue the task: call the tools you need, or answer the user now in their language. Never end with an empty reply.",
+			}
+			l.Messages = append(l.Messages, sys)
+			l.persist(ctx, sys)
+			out <- NoticeEvent{Text: "empty reply: asking the model to continue (1/1)"}
+			l.statsEndStep(stepStart)
+			return stepContinue
+		}
 		// Empty final reply after tools is a product failure: the user asked
 		// a question, tools ran, and nothing was said. Force one more turn
 		// with a system instruction (no tool_search required). Once per Run.
@@ -394,6 +433,11 @@ func (l *Loop) runStep(
 			out <- NoticeEvent{Text: fmt.Sprintf("empty reply after tools: forcing a user-facing answer (%d/%d)", l.emptyReplyNudges, maxEmptyReplyNudges)}
 			l.statsEndStep(stepStart)
 			return stepContinue
+		}
+		// A coordinator that answers nothing at all (no text, only reasoning,
+		// no tools) must not leave the user staring at an empty turn: say so.
+		if !hasVisibleUserReply(text) && !messagesHaveRecentToolResult(l.Messages) && !inWorkerRun(ctx) && l.hasDelegationTools() {
+			out <- NoticeEvent{Text: EmptyReplyNotice}
 		}
 		// F9 Sisyphus: when ultrawork is on AND
 		// the active /goal still has unfinished

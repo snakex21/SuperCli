@@ -40,20 +40,33 @@ type Worker struct {
 	// these mid-run while the TUI status bar and "/workers" read them via
 	// Snapshot/Counts, so every access outside single-threaded setup code
 	// must hold stateMu.
-	UpdatedAt    time.Time
-	Status       string
-	LastResult   string
-	LastError    string
-	TokensIn     int
-	TokensOut    int
-	Steps        int // model turns consumed across all runs
-	ToolNames    []string
-	Runs         int
-	activity     WorkerActivity    // last observed tool event; guarded by stateMu
-	lastEvidence string            // bounded latest-run observations; guarded by stateMu
-	uiActivity   json.RawMessage   // immutable latest-run UI trail; guarded by stateMu
-	live         WorkerLiveness    // current run's liveness; guarded by stateMu
-	liveUI       *workerUIActivity // current run's UI journal; guarded by stateMu
+	UpdatedAt  time.Time
+	Status     string
+	LastResult string
+	LastError  string
+	TokensIn   int
+	TokensOut  int
+	Steps      int // model turns consumed across all runs
+	ToolNames  []string
+	Runs       int
+	// CommandsRun / ChecksRun count the commands (and recognisable checks:
+	// tests, builds, linters) the worker ran over its whole life. Saved with
+	// the worker and never cleared by a resume, unlike ToolNames.
+	CommandsRun  int
+	ChecksRun    int
+	activity     WorkerActivity // last observed tool event; guarded by stateMu
+	lastEvidence string         // bounded latest-run observations; guarded by stateMu
+	// review is set when a run ended "done" but its result needs a human
+	// look (no file changes, or the project's verify command failed).
+	// Guarded by stateMu; cleared when a run starts.
+	review string
+	// reviewHook computes review after a successful run from the workspace
+	// fingerprint reviewSnapshot took when it started (set by AgentTool).
+	reviewHook     func(context.Context, *Worker, string) string
+	reviewSnapshot func(context.Context, *Worker) string
+	uiActivity     json.RawMessage   // immutable latest-run UI trail; guarded by stateMu
+	live           WorkerLiveness    // current run's liveness; guarded by stateMu
+	liveUI         *workerUIActivity // current run's UI journal; guarded by stateMu
 	// reasoningEffort follows this worker across background runs and continuations.
 	// It is applied only inside the worker loop, never to coordinator verdicts.
 	reasoningEffort   string
@@ -137,6 +150,8 @@ type Snapshot struct {
 	Steps           int
 	ToolNames       []string
 	Runs            int
+	CommandsRun     int
+	ChecksRun       int
 	Activity        WorkerActivity
 	// Live is the running worker's current phase and last progress time.
 	Live WorkerLiveness
@@ -144,6 +159,9 @@ type Snapshot struct {
 	// persisted). The registry is process-wide, so ids alone do not identify
 	// a conversation's worker.
 	SessionID string
+	// Review: the run ended "done" but needs checking (why, in English;
+	// "review: ..." lines). Empty when the result needs no extra look.
+	Review string
 }
 
 // Snapshot returns the current reportable state. It takes stateMu (not
@@ -168,9 +186,12 @@ func (w *Worker) Snapshot() Snapshot {
 		Steps:           w.Steps,
 		ToolNames:       append([]string(nil), w.ToolNames...),
 		Runs:            w.Runs,
+		CommandsRun:     w.CommandsRun,
+		ChecksRun:       w.ChecksRun,
 		Activity:        w.activity,
 		Live:            w.live,
 		SessionID:       w.sessionID,
+		Review:          w.review,
 	}
 }
 

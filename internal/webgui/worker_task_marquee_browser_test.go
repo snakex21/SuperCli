@@ -124,8 +124,10 @@ async function checkWorkerTaskSummaryStable(){try{
   check(label&&label.parentNode===name&&label.textContent.indexOf('xhigh')>=0,'model label missing');
   check(time&&ELAPSED.test(time.textContent),'elapsed span missing: '+row._stat.textContent);
   check(getComputedStyle(time).fontVariantNumeric.indexOf('tabular-nums')>=0,'elapsed digits are proportional');
-  check(hint.classList.contains('marquee-overflow'),'overflowing task text does not scroll');
-  check(getComputedStyle(inner).animationName==='marquee-scroll','overflowing task text has no marquee animation');
+  // 1.0.39: a delegation card cuts its goal on the right with an ellipsis
+  // (a scrolling marquee showed it cut on the left in a still view).
+  check(!hint.classList.contains('marquee-overflow')&&getComputedStyle(inner).animationName==='none','task text must not scroll');
+  check(getComputedStyle(inner).textOverflow==='ellipsis'&&inner.scrollWidth>inner.clientWidth,'overflowing task text is not cut with an ellipsis on the right');
   check(!short._thint.classList.contains('marquee-overflow')&&getComputedStyle(short._thint.firstChild).animationName==='none','short task text must not scroll');
   var stat0=row._stat.textContent.replace(ELAPSED,'');
   var seen=[],mo=new MutationObserver(function(list){seen.push.apply(seen,list);});
@@ -150,14 +152,14 @@ async function checkWorkerTaskSummaryStable(){try{
   var stray=seen.filter(function(m){return m.target!==time&&m.target.parentNode!==time;});
   check(!stray.length,'summary rewritten outside the elapsed span: '+stray.map(function(m){return m.type+' '+(m.target.className||m.target.nodeName)+' '+(m.attributeName||'');}).join(', '));
   check(hint.firstChild===inner&&inner.textContent===LONG&&name.firstChild===title&&row._modelLabel===label&&label.parentNode===name&&row.querySelector('.tstat-time')===time,'summary nodes were replaced');
-  // Narrowing the card starts the marquee; widening it again stops it.
+  // Narrowing the card cuts the text with an ellipsis; it never scrolls.
   var medium=startWorker('medium','worker-10','Sprawdź testy pakietu webgui.',1000);
   await wait(60);await frame();
   check(!medium._thint.classList.contains('marquee-overflow'),'fitting task text scrolls');
   medium.style.width='420px';await wait(60);await frame();
-  check(medium._thint.classList.contains('marquee-overflow'),'narrowed card does not start the marquee');
+  check(!medium._thint.classList.contains('marquee-overflow')&&getComputedStyle(medium._thint.firstChild).textOverflow==='ellipsis','narrowed card scrolls instead of an ellipsis');
   medium.style.width='';await wait(60);await frame();
-  check(!medium._thint.classList.contains('marquee-overflow'),'widened card keeps scrolling');
+  check(!medium._thint.classList.contains('marquee-overflow'),'widened card scrolls');
   addWorkerProgress({id:'worker-7',name:'code',kind:'finished',parent_call_id:'long',run:1,status:'done'});
   check(!row._clock&&ELAPSED.test(row._stat.textContent),'finished status lost its elapsed time: '+row._stat.textContent);
   check(!fixtureErrors.length,'errors: '+fixtureErrors.join('; '));
@@ -168,8 +170,8 @@ async function checkWorkerTaskReducedMotion(){try{
   var row=startWorker('calm','worker-9',LONG,1000);
   await frame();await frame();
   var hint=row._thint,inner=hint.firstChild,s=getComputedStyle(inner);
-  check(s.animationName==='none'&&s.display==='inline','reduced motion still scrolls: '+s.animationName+' '+s.display);
-  check(getComputedStyle(hint).textOverflow==='ellipsis','reduced motion lost the static ellipsis');
+  check(s.animationName==='none','reduced motion still scrolls: '+s.animationName);
+  check(s.textOverflow==='ellipsis','reduced motion lost the static ellipsis');
   check(hint.title===LONG&&inner.textContent===LONG,'full task text not kept');
   check(!fixtureErrors.length,'errors: '+fixtureErrors.join('; '));
   Object.values(toolRows).forEach(function(r){clearInterval(r._clock);});

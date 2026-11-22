@@ -115,6 +115,8 @@ func toWireEvent(ev agent.Event) (wireEvent, bool) {
 		return wireEvent{Type: "notice", Text: fmt.Sprintf("pruned %d old tool result(s), reclaimed ~%d tokens (trigger=%d/%s)", e.Pruned, e.Reclaimed, e.Threshold, e.ThresholdSource)}, true
 	case agent.NoticeEvent:
 		return wireEvent{Type: "notice", Text: e.Text}, true
+	case agent.AnswerNoteEvent:
+		return wireEvent{Type: "answer_note", Kind: e.Kind, Text: e.Detail}, true
 	case agent.WorkerNotificationEvent:
 		// Background worker lifecycle (task delegation). Name carries
 		// the agent kind, Status the outcome, Output the short summary.

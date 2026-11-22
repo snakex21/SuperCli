@@ -80,7 +80,7 @@ func (p *fix1038Provider) Complete(ctx context.Context, msgs []llm.Message, defs
 	}
 	if strings.HasPrefix(user, "SPAWN") {
 		return workerSteeringWireCall(fmt.Sprintf("spawn-%d", p.parentCalls.Load()), "task",
-			map[string]any{"agent": "explore", "prompt": "WORKER-1038 write the file", "async": true})
+			map[string]any{"agent": "explore", "prompt": "WORKER-1038 write the file (" + clipFix1037(user) + ")", "async": true})
 	}
 	return workerSteeringWireDeltas(llm.Delta{Content: "REPLY to " + clipFix1037(user), FinishReason: "stop"}), nil
 }
@@ -131,7 +131,7 @@ func TestFix1038WorkerPhaseBadgeHeldBannerAndResume(t *testing.T) {
 	app.waitJS("second spawn done", `!streaming&&document.querySelector('#stream').textContent.includes('Spawned SPAWN second')`, 15*time.Second)
 
 	// (a) The phase says the model is still writing the call, with its size.
-	app.waitJS("args phase", `[...document.querySelectorAll('#worker-overview .worker-overview-live:not([hidden])')].some(n=>n.textContent.includes('model pisze: Tworzenie pliku (7.2 KB)'))`, 15*time.Second)
+	app.waitJS("args phase", `[...document.querySelectorAll('#worker-overview .worker-overview-live:not([hidden])')].some(n=>n.textContent.startsWith('Tworzy plik… · ')&&n.title.includes('7.2 KB'))`, 15*time.Second)
 	// (c) Coordinator idle, two workers running: the badge says so.
 	app.waitJS("badge", `document.querySelector('#background-agents').textContent.includes('Pracuje w tle (2)')`, 10*time.Second)
 	var v fix1038View

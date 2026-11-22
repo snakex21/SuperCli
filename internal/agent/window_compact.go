@@ -12,6 +12,12 @@ import (
 	"supercli/internal/llm"
 )
 
+// serverTruncatedReason compacts after the server silently cut a prompt (as
+// context-limit), but a summary that cannot shrink the history while the
+// request still fits the hard window keeps the history instead of failing
+// the turn: the only evidence was a reported input count.
+const serverTruncatedReason = "server-truncated"
+
 func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -106,7 +112,7 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 		}
 		requestPrefix := history.requestPrefix(split)
 		if !compactionReduces(requestPrefix, summary) {
-			if reason == "" && est <= hardThreshold {
+			if (reason == "" || reason == serverTruncatedReason) && est <= hardThreshold {
 				// Only the learned performance budget triggered this, so the
 				// request still fits the hard window: a summary as large as a
 				// short older prefix (observed 717 -> 730 tokens) keeps the exact
@@ -135,8 +141,11 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 	if removed == 0 {
 		return nil
 	}
-	if reason == "" {
+	switch reason {
+	case "":
 		reason = "auto"
+	case serverTruncatedReason:
+		reason = "context-limit"
 	}
 	ev := AutoCompactEvent{
 		Removed: removed, Window: w, Estimated: est, RawEstimated: estimate.Raw,

@@ -33,6 +33,10 @@ func OpenAt(dir string) (*sql.DB, error) {
 		return nil, err
 	}
 	path := filepath.Join(dir, DBFileName)
+	return OpenRecovering(path, func() (*sql.DB, error) { return openDBAt(path) })
+}
+
+func openDBAt(path string) (*sql.DB, error) {
 	// busy_timeout(5000) makes concurrent writers wait up to 5s
 	// for a write lock instead of failing with SQLITE_BUSY. WAL
 	// mode (next pragma) means readers do not block writers, so

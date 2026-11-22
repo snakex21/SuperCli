@@ -270,6 +270,9 @@ var (
 	NewShowMedia        = media.NewShowMedia
 	NewAskUser          = interactive.NewAskUser
 	WithAskChannel      = interactive.WithAskChannel
+	// Conversation-level question route for detached workers.
+	WithDurableAskChannel = interactive.WithDurableAskChannel
+	DurableAskChannel     = interactive.DurableAskChannel
 )
 
 // Host approval gate for risky tool operations (see core/approval.go).

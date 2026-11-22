@@ -16,9 +16,9 @@ move [on] desc=658efd3bf187 schema=6170c6a15ed2 fn=supercli/internal/tools/codei
 copy [on] desc=53ee38a718d3 schema=119af3dec318 fn=supercli/internal/tools/codeintel.(*Tool).WrapMutation.func1
 trash [on approval] desc=4e4f53808106 schema=e8dd5819a9d0 fn=supercli/internal/tools/files.(*Trash).execute-fm
 search_code [on ro] desc=37742248d322 schema=4fe96f18a70b fn=supercli/internal/tools/search.(*SearchCode).run-fm
-ctx_execute [on] desc=4869fde65fe0 schema=efabb829d749 fn=supercli/internal/tools/workflow.(*CtxExecuteTool).Execute-fm
+ctx_execute [on approval] desc=4869fde65fe0 schema=1ce3bd481600 fn=supercli/internal/tools/workflow.(*CtxExecuteTool).Execute-fm
 code_intel [] desc=67ef1241e6bd schema=e2c1a9873c3c fn=supercli/internal/tools/codeintel.(*Tool).Execute-fm
-process_session [] desc=ffde6bd7cf9b schema=8e446bef10e3 fn=supercli/internal/tools/processsession.(*Tool).Execute-fm
+process_session [approval] desc=ffde6bd7cf9b schema=8e446bef10e3 fn=supercli/internal/tools/processsession.(*Tool).Execute-fm
 headless_control [approval] desc=6ec03ee68991 schema=67269f3aac73 fn=supercli/internal/tools/headless.(*Tool).Execute-fm
 invoke_tool [on] desc=06d24b024d2e schema=0dc93db84c43 fn=supercli/internal/agent.(*InvokeTool).Spec.func1
 web_fetch [ro] desc=074e797be2aa schema=dae3f262f5e0 fn=supercli/internal/tools/web.(*WebFetch).execute-fm
@@ -83,6 +83,13 @@ After starting background workers (async), end your turn with a short status;
 never poll or wait: each report starts an automatic turn. Resume a stopped,
 failed or interrupted worker with send_message (its saved context is restored)
 instead of starting a new task.
+Start or resume workers only for the user's request or a plan they approved.
+A status question ("how is it going?", "i jak idzie?") is answered from the
+workers' states and reports in 2-4 short lines (done, in progress, blocked;
+no option lists unless the user must decide): never start, resume or steer
+workers for it.
+A worker canceled by the user's Stop or new message stays stopped until the
+user asks to continue it.
 Use scratchpad for detailed evidence that should survive outside the chat.
 ##### project instructions
 Project instructions (AGENTS.md). Follow them for work in this repository; the current user request, safety rules, and tool rules take priority:
@@ -95,7 +102,7 @@ Golden user preset: reply in English.
 Provider: set
 Registry: set
 Caps: set
-System: len=2853 sha=3175d96934b6
+System: len=3275 sha=248b66c9af98
 ProjectInstructions: len=184 sha=5fcf086fd695
 UserInstructions: len=213 sha=c8493814683a
 UserInstructionsForRun: set
@@ -209,6 +216,13 @@ After starting background workers (async), end your turn with a short status;
 never poll or wait: each report starts an automatic turn. Resume a stopped,
 failed or interrupted worker with send_message (its saved context is restored)
 instead of starting a new task.
+Start or resume workers only for the user's request or a plan they approved.
+A status question ("how is it going?", "i jak idzie?") is answered from the
+workers' states and reports in 2-4 short lines (done, in progress, blocked;
+no option lists unless the user must decide): never start, resume or steer
+workers for it.
+A worker canceled by the user's Stop or new message stays stopped until the
+user asks to continue it.
 Use scratchpad for detailed evidence that should survive outside the chat.
 
 User instructions (enabled preset: Golden). Apply these preferences unless the current user request conflicts; the current request, safety rules, and tool rules take priority:
@@ -282,6 +296,13 @@ After starting background workers (async), end your turn with a short status;
 never poll or wait: each report starts an automatic turn. Resume a stopped,
 failed or interrupted worker with send_message (its saved context is restored)
 instead of starting a new task.
+Start or resume workers only for the user's request or a plan they approved.
+A status question ("how is it going?", "i jak idzie?") is answered from the
+workers' states and reports in 2-4 short lines (done, in progress, blocked;
+no option lists unless the user must decide): never start, resume or steer
+workers for it.
+A worker canceled by the user's Stop or new message stays stopped until the
+user asks to continue it.
 Use scratchpad for detailed evidence that should survive outside the chat.
 
 User instructions (enabled preset: Golden). Apply these preferences unless the current user request conflicts; the current request, safety rules, and tool rules take priority:

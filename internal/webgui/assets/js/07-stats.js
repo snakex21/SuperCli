@@ -381,7 +381,7 @@ function appendUsageTiming(parent, row, compact) {
     legend.appendChild(el("span", compact ? "" : "usage-chart-remaining-label", streamText));
     timing.appendChild(legend);
     if (stream >= 1) timing.appendChild(el("div", "cost-details-caption usage-stream-speed", t("usage.streamSpeed") + ": " +
-      (Math.max(0, statNumber(row.stream_output_tokens)) * 1000 / stream).toFixed(1) + " tok/s"));
+      fmtDecimal1(Math.max(0, statNumber(row.stream_output_tokens)) * 1000 / stream) + " tok/s"));
     if (statNumber(row.stream_reported_calls) < statNumber(row.calls) &&
         statNumber(row.stream_reported_calls) !== statNumber(row.timing_reported_calls))
       timing.appendChild(el("p", "cost-details-caption", coverage));
@@ -830,7 +830,7 @@ function statsLiveTurnForSession(session) {
 }
 function appendSessionGenerationSpeed(parent, speed, live, turn) {
   var known = speed && typeof speed.rate === "number" && Number.isFinite(speed.rate) && speed.rate > 0;
-  var row = statRow(t("generation.session_speed"), known ? speed.rate.toFixed(1) + " tok/s" : "—");
+  var row = statRow(t("generation.session_speed"), known ? fmtDecimal1(speed.rate) + " tok/s" : "—");
   row.classList.add("generation-speed", "stats-session-generation-speed");
   row.title = t("generation.session_speed_hint");
   row.dataset.i18nTitle = "generation.session_speed_hint";
@@ -838,7 +838,7 @@ function appendSessionGenerationSpeed(parent, speed, live, turn) {
   // This is a last measured response, not a reconstructed session average.
   // Keep it separate from the persisted turn's model and token counts.
   if (!known && live && !generationSpeedText(turn && turn.ev)) {
-    var fallback = statRow(t("generation.last_measured_speed"), live.rate.toFixed(1) + " tok/s");
+    var fallback = statRow(t("generation.last_measured_speed"), fmtDecimal1(live.rate) + " tok/s");
     fallback.classList.add("generation-speed", "stats-live-generation-speed");
     fallback.title = t("generation.speed_hint") + " · " + live.model;
     parent.appendChild(fallback);

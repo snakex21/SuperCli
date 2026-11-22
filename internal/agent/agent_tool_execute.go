@@ -226,7 +226,15 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	// TryAdd enforces the global active-worker cap (see
 	// DefaultMaxActiveWorkers): failing fast here keeps the coordinator's
 	// turn moving instead of silently queueing behind a full pool.
+	// The duplicate check and the registration are one step: parallel
+	// identical calls in one response must not both start.
+	a.startMu.Lock()
+	if refusal := a.repeatedBrief(ctx, ar.Agent, ar.Prompt); refusal != "" {
+		a.startMu.Unlock()
+		return tools.Result{Err: fmt.Errorf("task: %s", refusal)}, nil
+	}
 	w, err := workers.TryAddFor(a.workerProviderName(ar), ar.Agent, ar.Prompt, loop)
+	a.startMu.Unlock()
 	if err != nil {
 		return tools.Result{Err: fmt.Errorf("task: %w", err)}, nil
 	}
@@ -238,6 +246,7 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	if a.ParentLoop != nil {
 		w.progress = func(ev WorkerProgressEvent) { a.ParentLoop.Emit(ev) }
 	}
+	a.installReview(w)
 	// A created worker makes continuation immediately usable, including through
 	// the stable dispatcher. Do not spend a discovery round to resume known work.
 	a.BaseRegistry.ActivateDiscovered("send_message")
@@ -259,8 +268,24 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	sid := sessionIDOf(a.ParentLoop)
 	w.setState(func(w *Worker) { w.sessionID, w.baseDir = sid, baseDir })
 	workers.persist(w)
+	// Where reports wake the conversation, every delegated run goes to the
+	// background: a synchronous worker held the coordinator's turn for its
+	// whole run (minutes), the conversation looked busy, and the user's Stop or
+	// next message canceled the worker. Advisor calls (a short second opinion
+	// the coordinator needs inline) and the draft-verify ladder stay inline.
+	if !ar.Async && !ar.Advise && a.backgroundDelegation() {
+		ar.Async = true
+	}
 	if ar.Async {
-		if err := a.startBackgroundWorker(ctx, w, workerPrompt, maxSteps); err != nil {
+		// The draft-verify ladder runs in the background too, on the finished
+		// draft, before the report is delivered.
+		var after func(context.Context, workerHandoff) workerHandoff
+		if a.draftVerifyEnabled() && !ar.Advise {
+			after = func(runCtx context.Context, draft workerHandoff) workerHandoff {
+				return a.runDraftVerify(runCtx, w, ar, workerPrompt, draft, maxSteps)
+			}
+		}
+		if err := a.startBackgroundRun(ctx, w, workerPrompt, maxSteps, false, after); err != nil {
 			// Definite, saved state: the worker never started (never a
 			// permanent "created"). The tool error tells the coordinator.
 			workers.persist(w)

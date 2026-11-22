@@ -135,8 +135,15 @@ stream.addEventListener("click", function (event) {
   var summary = target.closest("summary"), row = summary && summary.parentNode;
   if (!row || !stream.contains(row) || !row.classList ||
       target.closest("a,button,input,select,textarea,label")) return;
+  // A folded worker line in the chat is a link to its card in the
+  // delegation panel; the panel entry opens the full card here.
+  if (row.classList.contains("task-row") && !row.open && focusWorkerInOverview(row)) { event.preventDefault(); return; }
   if (row.classList.contains("tool-row")) saveDisclosurePreference("tools", !row.open);
-  else if (row.classList.contains("think-block")) saveDisclosurePreference("thinking", !row.open);
+  else if (row.classList.contains("think-block")) {
+    saveDisclosurePreference("thinking", !row.open);
+    var owner = row.parentNode;
+    if (owner && owner.classList && owner.classList.contains("msg-assistant") && !owner.classList.contains("turn-cont")) setTurnReasoningOpen(owner, !row.open);
+  }
 });
 
 function appendStream(node) {
@@ -376,7 +383,22 @@ function addAssistantMsg() {
   m._renderTimer = null;
   m._reasoningOpen = false;
   appendStream(m);
+  markReasoningTurn(m);
   return m;
+}
+// One small reasoning element per turn: a later answer segment of the same
+// turn shows its folded reasoning only when the turn's first one is opened.
+function markReasoningTurn(m) {
+  for (var prev = m.previousElementSibling, n = 0; prev && n < 400; prev = prev.previousElementSibling, n++) {
+    if (prev.classList.contains("msg-user")) return;
+    if (prev.classList.contains("msg-assistant")) { m.classList.add("turn-cont"); return; }
+  }
+}
+function setTurnReasoningOpen(first, open) {
+  for (var next = first.nextElementSibling, n = 0; next && n < 400; next = next.nextElementSibling, n++) {
+    if (next.classList.contains("msg-user")) return;
+    if (next.classList.contains("msg-assistant")) next.querySelectorAll(":scope > .think-block").forEach(function (d) { d.open = open; });
+  }
 }
 
 // Copy/edit act on the visible answer; a leading reasoning block is kept as
@@ -1082,10 +1104,7 @@ function sealAssistantSegment(node) {
 }
 function addEventLine(text, cls, tag) {
   var line = el("div", "event-line" + (cls ? " " + cls : ""));
-  if (tag) {
-    var tg = el("span", "tag", "[" + tag + "] ");
-    line.appendChild(tg);
-  }
+  if (tag) line.appendChild(eventTagChip(tag));
   var localize = typeof localizeSystemText === "function" ? localizeSystemText : String;
   var body = document.createTextNode(localize(text));
   line.appendChild(body);
@@ -1094,13 +1113,78 @@ function addEventLine(text, cls, tag) {
     // available as a tooltip for bug reports.
     line.title = text;
     registerLanguageRefresh(line, function () { body.nodeValue = localize(text); });
+    var detail = typeof systemTextDetail === "function" ? systemTextDetail(text) : "";
+    if (detail) {
+      // A raw transport error stays out of the line; it is one click away.
+      line.removeAttribute("title");
+      var more = el("details", "event-detail");
+      more.appendChild(i18nEl("summary", "", "task.blockedDetails"));
+      more.appendChild(el("code", "", detail));
+      line.appendChild(more);
+    }
   }
   appendStream(line);
   smartScroll();
   return line;
 }
 
-// noticeTag classifies backend notice text into a quiet [tag].
+// SuperCli's remarks about an answer (llm.AnswerNote): a quiet, translated
+// badge under the message, never text inside it.
+var ANSWER_NOTE_KINDS = { unverified_claim: "note.unverifiedClaim", failed_check: "note.failedCheck", check_cycle_stop: "note.checkCycleStop", cut_off: "note.cutOff" };
+function addAnswerNote(node, kind, detail) {
+  var key = ANSWER_NOTE_KINDS[kind];
+  if (!node || !key) return;
+  var box = node._answerNotes;
+  if (!box || !box.isConnected) {
+    box = node._answerNotes = el("div", "answer-notes");
+    node.appendChild(box);
+  }
+  if (box.querySelector('[data-kind="' + kind + '"]')) return;
+  var chip = el("span", "answer-note");
+  chip.dataset.kind = kind;
+  var refresh = function () { chip.textContent = "\u2139 " + t(key).replace("{detail}", String(detail || "")); };
+  refresh();
+  if (typeof registerLanguageRefresh === "function") registerLanguageRefresh(chip, refresh);
+  box.appendChild(chip);
+}
+
+// Event tags render as a small translated chip (icon + word), never as a raw
+// "[tag]" marker. Internal tag names stay on data-tag for styling and tests.
+var EVENT_TAG_KIND = { stop: "stop", error: "error", auto: "auto" };
+function eventTagChip(tag) {
+  var kind = EVENT_TAG_KIND[tag] || "info";
+  var chip = el("span", "tag tag-" + kind);
+  chip.dataset.tag = tag;
+  var refresh = function () { chip.textContent = t("eventTag." + kind); };
+  refresh();
+  if (typeof registerLanguageRefresh === "function") registerLanguageRefresh(chip, refresh);
+  return chip;
+}
+
+// Delegated task text in human words: the first line of the brief with long
+// paths shortened to their file name (the full text stays in the tooltip).
+// One separator per repetition: no nested quantifier, so no catastrophic
+// backtracking on long words.
+var TASK_PATH_RE = /(?:[A-Za-z]:)?[\\/]?[\w.@~+-]+(?:[\\/][\w.@~+-]+)+/g;
+function shortenTaskPaths(text) {
+  return String(text || "").replace(TASK_PATH_RE, function (path) {
+    var parts = path.split(/[\\/]+/).filter(Boolean);
+    // "and/or", "A/B": keep short pairs; shorten real paths (3+ parts or a file).
+    if (parts.length < 3 && !/\.[A-Za-z0-9]{1,8}$/.test(parts[parts.length - 1] || "")) return path;
+    return "…/" + parts[parts.length - 1];
+  });
+}
+function humanTaskText(text) {
+  var full = String(text || "").replace(/\r/g, "");
+  var lines = full.split("\n").map(function (line) { return line.trim(); }).filter(Boolean);
+  // Briefs often open with shared boilerplate ("Projekt: ... (przeczytaj
+  // AGENTS.md)"); a ROLE/CEL/GOAL line says what this worker does.
+  var goal = lines.find(function (line) { return /^(cel|goal|rola|role|zadanie|task)\s*:/i.test(line); });
+  var first = (goal || lines[0] || "").replace(/^(cel|goal|zadanie|task)\s*:\s*/i, "");
+  return shortenTaskPaths(first.replace(/\s+/g, " "));
+}
+
+// noticeTag classifies backend notice text into a quiet tag chip.
 function noticeTag(text) {
   if (/^pruned /.test(text)) return "prune";
   if (/^preflight:/.test(text)) return "preflight";
@@ -1119,7 +1203,7 @@ var workerRows = {}; // worker task id -> latest delegated-task row
 var workerOverview = {};
 var workerOverviewAutoOpen = true, workerOverviewUserToggled = false, workerOverviewBound = null;
 var workerOverviewView = null;
-var workerOverviewRank = { running: 0, unknown: 1, failed: 1, stopped: 1, done: 2 };
+var workerOverviewRank = { running: 0, unknown: 1, failed: 1, review: 1, stopped: 1, done: 2 };
 // Conversation the overview belongs to, and how long a settled worker stays
 // listed (the panel must not vanish the moment the last worker finishes).
 var workerOverviewSession = "", WORKER_OVERVIEW_RECENT_MS = 10 * 60 * 1000;
@@ -1166,7 +1250,16 @@ function rebindWorkerOverview() {
   });
   renderWorkerOverview();
 }
-function workerStatusTerminal(status) { return status === "done" || status === "failed" || status === "stopped" || status === "interrupted"; }
+// The card state for styling (icon) follows the worker's real state only.
+function setTaskStatus(row, status) {
+  row._taskStatus = status;
+  if (row.dataset) row.dataset.taskStatus = status || "";
+}
+function workerStatusTerminal(status) { return status === "done" || status === "review" || status === "failed" || status === "stopped" || status === "interrupted"; }
+// "done" with a review note (no file changes, red verify command) is shown as
+// "needs review": the run ended, the result still needs a look.
+// "unchecked: ..." is neutral (changes could not be checked): it stays "done".
+function workerShownStatus(status, review) { return (status === "done" || status === "completed") && review && !/^unchecked:/.test(review) ? "review" : status; }
 function updateWorkerOverview(id, agentName, status, activity, row) {
   if (!id) return;
   var item = workerOverview[id];
@@ -1182,7 +1275,7 @@ function updateWorkerOverview(id, agentName, status, activity, row) {
   // A delayed start/tool callback cannot resurrect the same finished invocation.
   if (item && item.row === nextRow && item.run === nextRun && workerStatusTerminal(item.status) && nextStatus === "running") return;
   var label = workerLabel(id) + (nextAgent ? " · " + nextAgent : "");
-  var detail = clip(String(nextActivity || "").split("\n")[0], 140);
+  var detail = clip(humanTaskText(nextActivity), 140);
   var state = taskStatusLabel(nextStatus);
   var title = clip([id, nextRow && nextRow._workerModelInfo, nextActivity].filter(Boolean).join(" · "), 400);
   // Keep raw activity/row ownership exact, even when clipped text looks equal.
@@ -1284,13 +1377,15 @@ function markWorkerInterrupted(binding, reason, resumable) {
   row._clock = null;
   row._workerStatusUnconfirmed = false;
   row._workerSnapshotMismatch = false;
-  row._taskStatus = "interrupted";
+  setTaskStatus(row, "interrupted");
   row._liveness = null;
   renderWorkerLiveness(row);
   row.classList.remove("running");
   row.classList.add("failed", "done");
   row._stat.textContent = taskStatusLabel("interrupted");
   row._stat.title = reason || "";
+  if (reason) renderTaskOutcome(row, { status: "interrupted", result: reason }, true);
+  if (row._stopButton) { row._stopButton.remove(); row._stopButton = null; }
   if (resumable) addWorkerResumeAction(row, binding.id);
   updateWorkerOverview(binding.id, row._taskAgent, "interrupted", row._taskActivity || row._taskPrompt, row);
 }
@@ -1301,10 +1396,32 @@ function addWorkerResumeAction(row, id) {
   button.title = t("task.resumeHint");
   button.addEventListener("click", function (event) {
     if (event && event.preventDefault) event.preventDefault();
+    if (button.disabled) return; // a double click resumes once
+    button.disabled = true;
     resumeWorkerFromCard(id);
   });
   row._resumeButton = button;
   row._body.appendChild(button);
+}
+// A turn that stopped on an error has no answer: the error line offers one
+// "Continue" that sends a short continue message through the normal chat path.
+function addContinueButton(line) {
+  if (!line || line._continueButton) return;
+  var button = el("button", "event-continue");
+  button.type = "button";
+  var refresh = function () { button.textContent = t("chat.continue"); };
+  refresh();
+  if (typeof registerLanguageRefresh === "function") registerLanguageRefresh(button, refresh);
+  button.addEventListener("click", function (event) {
+    if (event && event.preventDefault) event.preventDefault();
+    if (button.disabled) return;
+    button.disabled = true;
+    var text = t("chat.continue");
+    if (typeof streaming === "boolean" && streaming && typeof enqueuePrompt === "function") return enqueuePrompt(text, []);
+    if (typeof sendPrompt === "function") return sendPrompt(text, []);
+  });
+  line._continueButton = button;
+  line.appendChild(button);
 }
 // The coordinator resumes the worker with send_message; its saved
 // transcript is restored, so no context is lost.
@@ -1357,12 +1474,12 @@ function applyWorkerStatusSnapshot(workers, bindings, serverNow, livenessOnly) {
       return;
     }
     var queued = worker.status === "created";
-    var status = queued ? "running" : worker.status;
+    var status = queued ? "running" : workerShownStatus(worker.status, worker.review);
     if (status !== "running" && !workerStatusTerminal(status)) { markWorkerStatusUnconfirmed(binding, false); return; }
     if (workerStatusTerminal(row._taskStatus)) return;
     row._workerSnapshotMismatch = false;
     row._workerStatusUnconfirmed = false;
-    row._taskStatus = status;
+    setTaskStatus(row, status);
     if (worker.activity && (row._taskActivitySerial || 0) === binding.activity) {
       var activity = workerActivityText(worker.activity);
       if (activity) row._taskActivity = activity;
@@ -1387,6 +1504,11 @@ function applyWorkerStatusSnapshot(workers, bindings, serverNow, livenessOnly) {
       row.classList.add("done");
       row._stat.textContent = taskStatusLabel(status);
       row._stat.title = status === "failed" ? (worker.last_error || "") : "";
+      if (status === "done" && /^unchecked:/.test(worker.review || "")) row._stat.textContent = t("task.doneNotChecked");
+      if (row._stopButton) { row._stopButton.remove(); row._stopButton = null; }
+      // A card rebuilt from history learns the error only from the snapshot.
+      if (status === "failed" && worker.last_error) renderTaskOutcome(row, { status: "failed", result: worker.last_error }, true);
+      if (status === "review") renderTaskOutcome(row, { status: "review", review: worker.review }, false);
       // A failed (e.g. never started) or stopped worker can be retried.
       if ((status === "failed" || status === "stopped") && worker.resumable) addWorkerResumeAction(row, binding.id);
     }
@@ -1449,13 +1571,40 @@ function workerOverviewRunningCount() {
   return n;
 }
 function workerOverviewOrder(w) { var r = workerOverviewRank[w.status]; return r == null ? 2 : r; }
+// "n word" with the word's plural form for n: the catalog value lists the
+// forms "one|few|many|other" (CLDR order; fewer forms reuse the last one).
+function pluralCount(key, n) {
+  var forms = String(t(key)).split("|");
+  var idx = 0;
+  try {
+    var lang = (typeof ui === "object" && ui && ui.lang) || "en";
+    var cat = new Intl.PluralRules(lang).select(n);
+    idx = { one: 0, few: 1, many: 2, other: 3, two: 1, zero: 3 }[cat];
+    if (idx == null) idx = 3;
+  } catch (e) { idx = n === 1 ? 0 : 3; }
+  return String(n) + " " + forms[Math.min(idx, forms.length - 1)];
+}
 function workerOverviewSummary(counts) {
   var parts = [t("task.workers")];
-  [["running", "task.active"], ["done", "task.done"], ["failed", "task.failed"], ["stopped", "task.stopped"]].forEach(function (p) {
-    if (counts[p[0]]) parts.push(t(p[1]) + ": " + counts[p[0]]);
+  ["running", "failed", "review", "interrupted", "stopped", "done", "unknown"].forEach(function (status) {
+    if (counts[status]) parts.push(pluralCount("task.sum." + status, counts[status]));
   });
-  if (counts.unknown) parts.push(t("task.statusUnconfirmed") + ": " + counts.unknown);
   return parts.join(" · ");
+}
+// One calm, clickable line: the same text, each count with its state dot.
+function renderWorkerOverviewSummary(node, counts) {
+  if (!node) return;
+  var text = workerOverviewSummary(counts);
+  if (node.textContent === text && node.querySelector(".wo-sum-title")) return;
+  node.textContent = "";
+  node.appendChild(el("span", "wo-sum-title", t("task.workers")));
+  ["running", "failed", "review", "interrupted", "stopped", "done", "unknown"].forEach(function (status) {
+    if (!counts[status]) return;
+    node.appendChild(document.createTextNode(" · "));
+    var part = el("span", "wo-sum-count", pluralCount("task.sum." + status, counts[status]));
+    part.dataset.state = status;
+    node.appendChild(part);
+  });
 }
 function workerOverviewViewMatches() {
   var view = workerOverviewView, panel = $("#worker-overview"), list = $("#worker-overview-list");
@@ -1487,7 +1636,7 @@ function renderWorkerOverview() {
   while (list.children.length > items.length) list.lastElementChild.remove();
   var counts = {};
   items.forEach(function (w) { counts[w.status] = (counts[w.status] || 0) + 1; });
-  $("#worker-overview-summary").textContent = workerOverviewSummary(counts);
+  renderWorkerOverviewSummary($("#worker-overview-summary"), counts);
   workerOverviewView = { panel: panel, list: list, items: items, counts: counts };
   if (typeof renderBackgroundAgents === "function") renderBackgroundAgents();
   panel.hidden = !items.length;
@@ -1498,10 +1647,25 @@ function renderWorkerOverview() {
     panel.open = workerOverviewAutoOpen;
   }
 }
+// The chat line names the worker only; its kind and model stay in the
+// tooltip and the expanded card.
 function taskRowTitle(row, agentName, id) {
   return (id ? workerLabel(id) : t("task.delegation")) +
-    (agentName ? " · " + agentName : "") +
     (row._toolName === "send_message" ? " · " + t("task.continue") : "");
+}
+function focusWorkerInOverview(row) {
+  var item = row && row._taskID && workerOverview[row._taskID], panel = $("#worker-overview");
+  if (!item || item.row !== row || !panel || panel.hidden || !item.button.isConnected) return false;
+  panel.open = true;
+  workerOverviewUserToggled = true;
+  item.button.classList.remove("highlight");
+  void item.button.offsetWidth; // restart the highlight animation
+  item.button.classList.add("highlight");
+  clearTimeout(item.highlightTimer);
+  item.highlightTimer = setTimeout(function () { item.button.classList.remove("highlight"); }, 2200);
+  item.button.scrollIntoView({ block: "nearest" });
+  if (typeof item.button.focus === "function") item.button.focus({ preventScroll: true });
+  return true;
 }
 
 /* Stable tool/task summaries. Clock ticks, status polls and replayed worker
@@ -1551,9 +1715,14 @@ function setTaskHint(row, text) {
     inner = row._thintText = el("span", "marquee-text");
     hint.appendChild(inner);
   }
-  var shown = clip(full, 240), changed = inner.textContent !== shown;
+  // Delegation cards show the goal in human words (from the raw brief, whose
+  // line structure marks the goal); the whole brief stays in the tooltip.
+  var shown = clip(row && row.classList && row.classList.contains("task-row") ? humanTaskText(text) : full, 240), changed = inner.textContent !== shown;
   setNodeText(inner, shown);
   if (hint.title !== full) hint.title = full;
+  // Delegation cards cut their goal on the right ("…"); a scrolling marquee
+  // showed the text cut on the left in a still view.
+  if (row && row.classList && row.classList.contains("task-row")) return;
   if (changed || hint._marqueeText !== inner) watchMarquee(hint, inner);
 }
 
@@ -1814,6 +1983,11 @@ function toolHint(name, args) {
         name: t("task.delegation") + " · " + kind + (a.advise ? " (" + t("task.advice") + ")" : ""),
         hint: clip(a.prompt || "", 90), agent: kind, prompt: a.prompt || "",
       };
+    }
+    if (name === "ask_user") {
+      // The question card shows the question; the row names it, never the JSON.
+      var q = a.question || a.header || (Array.isArray(a.questions) && a.questions[0] && (a.questions[0].question || a.questions[0].header)) || "";
+      return { name: toolDisplayName(name), hint: clip(String(q), 90) };
     }
     if (name === "send_message") {
       return { name: t("task.continue") + " · " + (a.to || "worker"),
@@ -2120,7 +2294,7 @@ function setToolResultStatus(row, elapsed, err, changes) {
   if (changes && changes.added) row._stat.appendChild(el("span", "change-add", "+" + changes.added));
   if (changes && changes.removed) row._stat.appendChild(el("span", "change-remove", "−" + changes.removed));
   // A timing that would print as "0.0s" is noise; show it as "<0.1s".
-  var took = elapsed < 50 ? "<0.1s" : fmtDuration(elapsed);
+  var took = elapsed < 50 ? "<" + fmtDuration(100) : fmtDuration(elapsed);
   if (err && row._denied) {
     row._stat.appendChild(el("span", "status-denied", "⊘ " + t("tool.denied")));
     return;
@@ -2130,6 +2304,26 @@ function setToolResultStatus(row, elapsed, err, changes) {
 
 // task results use a compact XML envelope for the model. Keep that protocol
 // out of the UI: extract its stable fields and render the report as content.
+// A worker that failed is reported as a tool error, not as a notification:
+// "error: worker worker-2 (code), status=failed; call failed: <reason>..."
+// (or an error wrapping the notification after "tool output:"). Both still
+// belong on the worker's card, with the reason as its outcome.
+function parseTaskFailure(text) {
+  var src = String(text || "");
+  var marker = "\ntool output:\n", wrapped = src.indexOf(marker);
+  if (wrapped >= 0) {
+    var inner = parseTaskNotification(src.slice(wrapped + marker.length).replace(/\n\[stored tool output:[\s\S]*$/, ""));
+    if (inner) {
+      if (inner.status === "running") inner.status = "failed";
+      if (!inner.result) inner.result = src.slice(0, wrapped).replace(/^error:\s*/, "");
+      return inner;
+    }
+  }
+  var m = src.match(/^error: worker (worker-\d+) \(([^)<>\r\n]+)\), status=(failed|stopped|interrupted|done); call failed: ([^\r\n]*)/);
+  if (!m) return null;
+  return { id: m[1], agent: m[2], status: m[3] === "done" ? "failed" : m[3], summary: "", tools: "", result: m[4], model: "", reasoning_effort: "" };
+}
+
 function parseTaskNotification(text) {
   var src = String(text || "").trim();
   var open = "<task-notification>", close = "</task-notification>";
@@ -2148,7 +2342,7 @@ function parseTaskNotification(text) {
   }
   var fields = {};
   while (header) {
-    var field = header.match(/^<(task-id|agent|worker-model|reasoning-effort|status|summary|tools|continuation)>([\s\S]*?)<\/\1>/);
+    var field = header.match(/^<(task-id|agent|worker-model|reasoning-effort|status|review|summary|tools|continuation)>([\s\S]*?)<\/\1>/);
     if (!field || fields[field[1]] != null) return null;
     fields[field[1]] = field[2].trim();
     header = header.slice(field[0].length).trim();
@@ -2162,6 +2356,7 @@ function parseTaskNotification(text) {
     status: fields.status, summary: fields.summary || "",
     tools: fields.tools || "", result: result,
     model: fields["worker-model"] || "", reasoning_effort: fields["reasoning-effort"] || "",
+    review: fields.review || "",
   };
 }
 
@@ -2248,10 +2443,127 @@ function applyLiveWorkerJournal(row, log) {
   row._activity = activity;
 }
 
+/* Live activity, shared by the coordinator's status line and worker cards:
+   a step is a short translated label ("Running tests", "Editing main.go")
+   plus details (full command, path) that only hover/expand views show.
+   Pure functions: no DOM, no clock of their own (callers pass `now`). */
+var ACTIVITY_QUIET_MS = 60 * 1000;
+// The server's command_timeout_ms (/api/runtime); 0 = commands have no limit.
+var activityCommandTimeoutMS = 30 * 60 * 1000;
+var ACTIVITY_COMMAND_TOOLS = { ctx_execute: true, process_session: true };
+function activityClock(ms) {
+  var total = Math.max(0, Math.floor((ms || 0) / 1000)), h = Math.floor(total / 3600), m = Math.floor(total % 3600 / 60), s = total % 60;
+  var pad = function (n) { return (n < 10 ? "0" : "") + n; };
+  return (h ? h + ":" + pad(m) : String(m)) + ":" + pad(s);
+}
+// "45 s" below a minute, then whole minutes ("2 min"): a calm, coarse figure.
+function activityQuietText(ms) {
+  var s = Math.max(0, Math.floor((ms || 0) / 1000));
+  return s < 60 ? t("activity.seconds").replace("{n}", String(s)) : t("activity.minutes").replace("{n}", String(Math.floor(s / 60)));
+}
+function activityArgs(args) {
+  if (args && typeof args === "object") return args;
+  try { var parsed = JSON.parse(args || "{}"); return parsed && typeof parsed === "object" ? parsed : {}; } catch (e) { return {}; }
+}
+function activityCommandText(a) {
+  var command = a.command != null ? a.command : a.cmd;
+  if (command == null) return "";
+  if (!Array.isArray(command)) command = [command];
+  return command.filter(function (p) { return p != null && String(p) !== ""; }).map(String).join(" ").replace(/\s+/g, " ").trim();
+}
+function activityBaseName(path) {
+  var parts = String(path || "").replace(/[\\/]+$/, "").split(/[\\/]/);
+  return parts[parts.length - 1] || "";
+}
+// What one tool call means to a person; kind picks the label and the
+// silence limit (a command may legitimately stay quiet until its timeout).
+function activityStep(tool, args) {
+  tool = String(tool || "");
+  var a = activityArgs(args), step = { kind: "tool", tool: tool, detail: "" };
+  if (tool === "task" || tool === "send_message") {
+    step.kind = "worker";
+    step.worker = tool === "send_message" && a.to ? String(a.to) : "";
+    step.async = !!a.async;
+    step.detail = clip(String(a.prompt || a.message || "").replace(/\s+/g, " ").trim(), 160);
+    return step;
+  }
+  if (ACTIVITY_COMMAND_TOOLS[tool]) {
+    var cmd = activityCommandText(a);
+    step.detail = cmd;
+    step.command = true;
+    step.timeoutMs = Number(a.timeout_ms) > 0 ? Number(a.timeout_ms) : activityCommandTimeoutMS;
+    if (/(^|[\s/\\])(go|cargo|zig|npm|pnpm|yarn|dotnet|mvn|gradle|make)\s+(\S+\s+)?test\b|\b(pytest|jest|vitest|ctest|phpunit|rspec)\b/i.test(cmd)) step.kind = "test";
+    else if (/\b(build|compile|tsc|webpack|vite\s+build|msbuild)\b/i.test(cmd)) step.kind = "build";
+    else step.kind = "run";
+    return step;
+  }
+  var kind = typeof toolKind === "function" ? toolKind(tool) : "";
+  var file = typeof a.path === "string" ? a.path : typeof a.file === "string" ? a.file : "";
+  if (kind === "write") { step.kind = file ? "edit" : "tool"; step.file = activityBaseName(file); step.detail = file; return step; }
+  if (kind === "read") { step.kind = "read"; step.detail = file || String(a.query || a.pattern || ""); return step; }
+  if (kind === "web") { step.kind = "web"; step.detail = String(a.query || a.url || ""); return step; }
+  return step;
+}
+function activityLabel(step) {
+  if (!step) return t("activity.thinking");
+  switch (step.kind) {
+    case "thinking": return t("activity.thinking");
+    case "writing": return t("activity.writing");
+    case "test": return t("activity.test");
+    case "build": return t("activity.build");
+    case "run": return t("activity.run");
+    case "edit": return t("activity.edit").replace("{file}", step.file || "");
+    case "read": return t("activity.read");
+    case "web": return t("activity.web");
+    case "prepare": {
+      // The model is still writing the call: say what it is about to do.
+      var kind = typeof toolKind === "function" ? toolKind(step.tool || "") : "";
+      return t(kind === "write" ? "activity.prepareWrite" : kind === "run" ? "activity.prepareRun" : "activity.prepare");
+    }
+    case "worker": return t("activity.waitWorker").replace("{worker}", workerLabel(step.worker || "worker"));
+    case "user": return t("activity.waitUser");
+    case "retry": return t(step.reason === "rate" ? "activity.retryRateLimit" : step.reason === "provider" ? "activity.retryProvider" : "activity.retryConnection")
+      .replace("{attempt}", String(step.attempt || "?")).replace("{max}", String(step.max || "?"));
+    default: return t("activity.tool").replace("{tool}", toolDisplayName(step.tool || "tool"));
+  }
+}
+// How long silence is normal for this step; 0 = never warn (the user holds
+// the turn, or commands run without a limit).
+function activitySilenceMS(step) {
+  if (!step) return ACTIVITY_QUIET_MS;
+  if (step.kind === "user") return 0;
+  if (step.command || step.workerCommandMs != null) {
+    var limit = step.command ? step.timeoutMs : step.workerCommandMs;
+    return limit > 0 ? Math.max(limit, ACTIVITY_QUIET_MS) : 0;
+  }
+  if (step.kind === "retry") return ACTIVITY_QUIET_MS + (step.waitMs || 0);
+  return ACTIVITY_QUIET_MS;
+}
+// Go duration text from retry notices ("1.5s", "2m0s", "500ms") in ms.
+function activityGoDuration(text) {
+  var re = /(\d+(?:\.\d+)?)(h|ms|m|s)/g, m, ms = 0, any = false;
+  while ((m = re.exec(String(text || "")))) {
+    any = true;
+    ms += Number(m[1]) * { h: 3600000, m: 60000, s: 1000, ms: 1 }[m[2]];
+  }
+  return any ? ms : 0;
+}
+// A retry notice (English wire text) as a step, or null.
+function activityRetryStep(text) {
+  text = String(text || "");
+  var m = /^connection to the model dropped \([\s\S]*\) — retrying in (\S+) \(retry (\d+)\/(\d+|∞)\)$/.exec(text);
+  if (m) return { kind: "retry", reason: "connection", waitMs: activityGoDuration(m[1]), attempt: m[2], max: m[3], detail: text };
+  m = /^.+: rate limited \(HTTP 429\) — retrying in (\S+) \(retry (\d+)\/(\d+|∞)\)$/.exec(text);
+  if (m) return { kind: "retry", reason: "rate", waitMs: activityGoDuration(m[1]), attempt: m[2], max: m[3], detail: text };
+  m = /^.+: (?:temporary )?provider error \(HTTP \d+\) — retrying in (\S+) \(retry (\d+)\/(\d+|∞)\)$/.exec(text);
+  if (m) return { kind: "retry", reason: "provider", waitMs: activityGoDuration(m[1]), attempt: m[2], max: m[3], detail: text };
+  return null;
+}
+
 /* Worker liveness: what a running worker does now and when it last made
    progress. Fed by live events and the status snapshot; one shared 1 s tick
-   repaints the visible lines. After WORKER_STALL_MS without any progress the
-   card says so and offers Stop / Restart. */
+   repaints the visible lines. After WORKER_STALL_MS without any progress (a
+   command: its timeout) the card says so calmly and offers Stop / Restart. */
 var WORKER_STALL_MS = 5 * 60 * 1000;
 var workerLiveTimer = null;
 function workerNow() { return typeof syncServerNow === "function" ? syncServerNow() : Date.now(); }
@@ -2270,7 +2582,7 @@ function workerLiveToggle(node, name, on) {
 }
 function noteWorkerLiveEvent(row, ev) {
   var now = ev.at > 0 ? ev.at : workerNow();
-  if (ev.kind === "started") row._liveness = {phase: "model", since: now, last: now, open: 0};
+  if (ev.kind === "started") { row._liveness = {phase: "model", since: now, last: now, open: 0}; row._liveShown = null; }
   else if (ev.kind === "finished") row._liveness = null;
   else {
     var live = row._liveness || (row._liveness = {phase: "model", since: now, last: now, open: 0});
@@ -2287,10 +2599,10 @@ function noteWorkerLiveEvent(row, ev) {
       live.open = (live.open || 0) + 1;
       live.progress = "";
       live.bytes = 0;
-      if (live.phase !== "tool") { live.phase = "tool"; live.tool = ev.tool || ""; live.since = now; }
+      if (live.phase !== "tool") { live.phase = "tool"; live.tool = ev.tool || ""; live.args = ev.args || ""; live.since = now; }
     } else if (ev.kind === "tool_result") {
       live.open = Math.max(0, (live.open || 0) - 1);
-      if (!live.open) { live.phase = "model"; live.tool = ""; live.since = now; live.progress = ""; }
+      if (!live.open) { live.phase = "model"; live.tool = ""; live.args = ""; live.since = now; live.progress = ""; }
     } else if (ev.kind === "tool_progress") live.progress = ev.output || "";
   }
   renderWorkerLiveness(row);
@@ -2305,23 +2617,56 @@ function applyWorkerLivenessSnapshot(row, worker, serverNow) {
   var samePhase = prev.phase === worker.phase && (prev.tool || "") === (worker.phase_tool || "");
   row._liveness = {phase: worker.phase, tool: worker.phase_tool || "", since: map(worker.phase_since) || (samePhase && prev.since) || last,
     last: last, progress: worker.tool_progress || (samePhase ? prev.progress || "" : ""), open: prev.open || 0,
-    bytes: Math.max(worker.phase_bytes || 0, samePhase ? prev.bytes || 0 : 0)};
+    bytes: Math.max(worker.phase_bytes || 0, samePhase ? prev.bytes || 0 : 0), args: samePhase ? prev.args || "" : ""};
   renderWorkerLiveness(row);
 }
+// A status snapshot carries no arguments: the running call on the card does.
+function workerRunningArgs(row, tool) {
+  var items = row && row._activity && typeof row._activity.querySelectorAll === "function" ?
+    row._activity.querySelectorAll(".task-activity-item.running") : [];
+  for (var i = items.length - 1; i >= 0; i--) {
+    if (!tool || items[i].dataset.workerTool === tool) return items[i]._workerArgs || "";
+  }
+  return "";
+}
+function workerLiveStep(live, row) {
+  if (live.phase === "tool") return activityStep(live.tool, live.args || workerRunningArgs(row, live.tool));
+  if (live.phase === "args") return {kind: "prepare", tool: live.tool || "", detail: workerLiveSize(live.bytes)};
+  return {kind: "thinking", detail: ""};
+}
+// A worker's silence limit: a running command may stay quiet until its
+// timeout; anything else after WORKER_STALL_MS.
+function workerStallMS(step) {
+  if (step && step.command) return step.timeoutMs > 0 ? Math.max(step.timeoutMs, WORKER_STALL_MS) : 0;
+  return WORKER_STALL_MS;
+}
+// Steps shorter than a second never flash: the shown label changes only
+// once the new step has lasted 1 s, at most once per second.
+function activityDebounce(holder, label, since, now) {
+  var shown = holder._liveShown;
+  if (!shown || (shown.label !== label && now - since >= 1000 && now - shown.at >= 1000)) {
+    shown = holder._liveShown = {label: label, since: since, at: now};
+  }
+  return shown;
+}
+// short: the one line of the delegation panel ("Running tests · 1:12");
+// text/title: the expanded card line with details (command, file, progress).
 function workerLivenessView(row) {
   var live = row && row._liveness;
   if (!live || !live.phase || row._taskStatus !== "running" || row._workerStatusUnconfirmed) return null;
-  var now = workerNow(), quiet = Math.max(0, now - (live.last || now)), phase = Math.max(0, now - (live.since || now));
-  var step = live.phase === "tool" ?
-    t("task.liveTool").replace("{tool}", toolDisplayName(live.tool || "tool")).replace("{time}", workerLiveDuration(phase)) :
-    live.phase === "args" ?
-    t("task.liveArgs").replace("{tool}", toolDisplayName(live.tool || "tool")).replace("{size}", workerLiveSize(live.bytes)).replace("{time}", workerLiveDuration(phase)) :
-    t("task.liveModel").replace("{time}", workerLiveDuration(phase));
-  if (quiet >= WORKER_STALL_MS) return {stalled: true, text: t("task.stalled").replace("{time}", workerLiveDuration(quiet)) + " · " + step};
-  var parts = [step];
-  if (live.progress) parts.push(clip(workerProgressText(live.progress), 90));
-  parts.push(t("task.liveLast").replace("{time}", workerLiveDuration(quiet)));
-  return {stalled: false, text: parts.join(" · ")};
+  var now = workerNow(), quiet = Math.max(0, now - (live.last || now));
+  var step = workerLiveStep(live, row), label = activityLabel(step);
+  var shown = activityDebounce(row, label, live.since || now, now);
+  var line = shown.label + " · " + activityClock(now - (shown.since || now));
+  var details = [];
+  if (step.detail) details.push(clip(step.detail, 160));
+  if (live.progress) details.push(clip(workerProgressText(live.progress), 90));
+  var limit = workerStallMS(step);
+  if (limit > 0 && quiet >= limit) {
+    var calm = t("activity.quiet").replace("{time}", activityQuietText(quiet));
+    return {stalled: true, short: calm, text: [calm, line].concat(details).join(" · "), title: [line].concat(details).join("\n")};
+  }
+  return {stalled: false, short: line, text: [line].concat(details).join(" · "), title: details.join("\n")};
 }
 function renderWorkerLiveness(row) {
   // Minimal test doubles have no real DOM; the line is presentation only.
@@ -2346,9 +2691,13 @@ function renderWorkerLiveness(row) {
   }
   var item = row._taskID && workerOverview[row._taskID];
   if (item && item.row === row && item.live) {
+    // One line per worker: the live step replaces the task text and the
+    // "running" word (both stay in the tooltip and the expanded card).
     workerLiveToggle(item.button, "stalled", !!(view && view.stalled));
+    workerLiveToggle(item.button, "live", !!view);
     item.live.hidden = !view;
-    setNodeText(item.live, view ? view.text : "");
+    setNodeText(item.live, view ? view.short : "");
+    if (item.live.title !== (view ? view.title : "")) item.live.title = view ? view.title : "";
   }
   if (view) ensureWorkerLiveTimer();
 }
@@ -2398,6 +2747,7 @@ function taskStatusLabel(status) {
   if (status === "failed") return t("task.failed");
   if (status === "stopped") return t("task.stopped");
   if (status === "interrupted") return t("task.interrupted");
+  if (status === "review") return t("task.needsReview");
   if (status === "done" || status === "completed") return t("task.done");
   return t("task.statusUnconfirmed");
 }
@@ -2478,7 +2828,8 @@ function appendWorkerObservations(row) {
 
 function renderTaskResult(row, note, elapsed, prompt, err, history) {
   if (workerStatusTerminal(row._taskStatus) && note.status === "running") return;
-  row._taskStatus = err ? "failed" : note.status;
+  if (!err && note.review) note = Object.assign({}, note, { status: workerShownStatus(note.status, note.review) });
+  setTaskStatus(row, err ? "failed" : note.status);
   row._taskID = note.id || row._taskID;
   row._taskAgent = note.agent || row._taskAgent;
   // A replacement result must release its previous unopened report callback.
@@ -2497,15 +2848,20 @@ function renderTaskResult(row, note, elapsed, prompt, err, history) {
   if (prompt) row._taskPrompt = prompt;
   // A running acknowledgement keeps the task text the started event showed;
   // metrics replace it only once the worker has settled.
+  // The card keeps saying what the worker is for; step/token metrics move
+  // to the status tooltip once it settles.
   function taskHintText(n) {
-    var running = row._taskStatus === "running" || row._taskStatus === "created";
-    return running && row._taskPrompt ? row._taskPrompt : taskMetrics(n);
+    return row._taskPrompt || taskMetrics(n);
   }
   row._taskSummary = note.summary || "";
   row._taskElapsed = elapsed;
   setTaskHint(row, taskHintText(note));
   setRowClock(row, taskStatusLabel(err ? "failed" : note.status), elapsed != null ? elapsed : null);
   row._stat.classList.toggle("err", !!err || note.status === "failed");
+  if (row._taskPrompt && note.status !== "running" && note.status !== "created") {
+    var metrics = taskMetrics(note);
+    if (metrics && row._stat.title !== metrics && !row._stat.title) row._stat.title = metrics;
+  }
   if (typeof registerLanguageRefresh === "function") registerLanguageRefresh(row, function () {
     setTaskRowTitle(row, taskRowTitle(row, row._taskAgent, row._taskID));
     applyWorkerModelInfo(row, {model: row._workerModel, reasoning_effort: row._workerEffort});
@@ -2558,7 +2914,9 @@ function renderTaskResult(row, note, elapsed, prompt, err, history) {
   }
   row._activity = activity;
   row._body.appendChild(activity);
-  if (note.result) {
+  // A failed card shows its error once, as the outcome on top.
+  var failedOutcome = !!err || note.status === "failed" || note.status === "interrupted";
+  if (note.result && !failedOutcome) {
     row._body.appendChild(i18nEl("div", "lbl", "task.report"));
     var report = el("div", "task-report msg-assistant");
     row._body.appendChild(report);
@@ -2574,7 +2932,132 @@ function renderTaskResult(row, note, elapsed, prompt, err, history) {
   appendWorkerObservations(row);
   // Stopped, failed or interrupted workers keep their saved conversation.
   row._resumeButton = null;
+  // The Stop button lives in the summary line: drop it before re-rendering.
+  if (row._stopButton && row._stopButton.parentNode) row._stopButton.remove();
+  row._stopButton = null;
+  renderTaskOutcome(row, note, err);
   if ((err || note.status === "failed" || note.status === "stopped" || note.status === "interrupted") && note.id) addWorkerResumeAction(row, note.id);
+  if ((note.status === "running" || note.status === "created") && note.id) addWorkerStopAction(row, note.id);
+}
+
+// A delegation call the system declined (an automatic turn, a status
+// question, a repeated task, a resume without the user's word): shown as a
+// quiet note with what the user can do, the exact reason inside.
+// refusedKey names what was declined, from the system's own reason text.
+function refusedKey(toolName, reason) {
+  var r = String(reason || "");
+  if (/only asked for a status update/.test(r)) return "task.blockedStatus";
+  if (/already working on this exact task/.test(r)) return "task.blockedDuplicate";
+  if (/must ask for it explicitly/.test(r)) return toolName === "task_stop" ? "task.blockedStop" : "task.blockedNeedsWord";
+  if (/automatic turn/.test(r)) return toolName === "task" ? "task.blockedTask" : toolName === "task_stop" ? "task.blockedStop" : "task.blockedResume";
+  return toolName === "send_message" ? "task.blockedResume" : toolName === "task_stop" ? "task.blockedStop" : "task.blockedTask";
+}
+function applyRefusedDelegation(row, toolName, reason) {
+  row.classList.remove("running", "failed", "done", "task-row");
+  row.classList.add("refused");
+  var key = refusedKey(toolName, reason);
+  // A short label; the full sentence in the wide column (and its tooltip),
+  // never cut to the label's width.
+  if (row._tname) {
+    row._tname.textContent = "";
+    row._tname.appendChild(i18nEl("span", "tname-text", "task.blocked"));
+  }
+  if (row._thint) {
+    row._thint.textContent = "";
+    var sentence = i18nEl("span", "refused-text", key);
+    row._thint.appendChild(sentence);
+    row._thint.title = t(key);
+  }
+  if (row._stat) {
+    row._stat.classList.remove("err");
+    row._stat.textContent = "";
+  }
+  if (row._body) {
+    row._body.textContent = "";
+    row._body.appendChild(i18nEl("div", "lbl", "task.blockedDetails"));
+    row._body.appendChild(el("div", "task-brief", reason));
+  }
+}
+
+// The first thing an expanded card shows: why it failed, or what it produced.
+function renderTaskOutcome(row, note, err) {
+  if (!row || !row._body) return;
+  var failed = !!err || note.status === "failed" || note.status === "interrupted";
+  var review = !failed && note.review;
+  var text = failed ? String(note.result || note.summary || (row._stat && row._stat.title) || "") : String(review ? note.review : (note.result || ""));
+  if (review && typeof localizeSystemText === "function") text = localizeSystemText(text);
+  text = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  if (!text) return;
+  var old = row._body.querySelector(".task-outcome");
+  if (old) old.remove();
+  var box = el("div", "task-outcome" + (failed ? " failed" : review ? " review" : ""));
+  box.appendChild(i18nEl("span", "task-outcome-label", failed ? "common.error" : review ? "task.needsReview" : "task.report"));
+  if (failed) {
+    // A readable line first; the raw error (JSON from the provider, stack
+    // text) only when expanded.
+    var human = humanWorkerError(text);
+    var body = el("span", "task-outcome-text");
+    body.appendChild(document.createTextNode(clip(human, 300)));
+    if (human !== text) {
+      var more = el("details", "task-outcome-raw");
+      more.appendChild(i18nEl("summary", "", "task.errorDetails"));
+      more.appendChild(el("pre", "", clip(text, 4000)));
+      body.appendChild(more);
+    }
+    box.appendChild(body);
+  } else {
+    box.appendChild(el("span", "task-outcome-text", clip(text, 320)));
+  }
+  box.title = clip(text, 2000);
+  row._body.insertBefore(box, row._body.firstChild);
+}
+
+// humanWorkerError turns a provider error ("http 400: {\"error\":{...}}",
+// "agent: provider.Complete: sse: stream error: ...") into one readable line.
+function humanWorkerError(text) {
+  var s = String(text || "");
+  var m = s.match(/http (\d{3}):\s*(\{[\s\S]*\})/i);
+  if (m) {
+    var message = "";
+    try {
+      var data = JSON.parse(m[2]);
+      message = (data && data.error && (data.error.message || data.error.type)) || data.message || "";
+    } catch (e) {}
+    return t("task.errorHttp").replace("{code}", m[1]).replace("{message}", String(message || "").trim() || m[1]);
+  }
+  s = s.replace(/^(agent: )?(provider\.Complete: )?/i, "").replace(/^error: /i, "");
+  return s.split(/\n/)[0].trim();
+}
+// Stop belongs to one worker: it never stops the conversation's turn.
+function addWorkerStopAction(row, id) {
+  if (!id || !row || !row._body || row._stopButton) return;
+  var button = el("button", "worker-stop", t("task.stopWorker"));
+  button.type = "button";
+  button.title = t("task.stopWorkerHint");
+  button.addEventListener("click", function (event) {
+    if (event && event.preventDefault) event.preventDefault();
+    if (button.disabled) return; // a double click sends one request
+    button.disabled = true;
+    stopWorkerFromCard(id).catch(function () {
+      button.disabled = false;
+      if (typeof toast === "function") toast(t("task.stopFailed"));
+    });
+  });
+  row._stopButton = button;
+  // In the summary line, so it is there on a folded card too; a click must
+  // not toggle the card.
+  var summary = row.querySelector && row.querySelector("summary");
+  if (summary && row._stat && row._stat.parentNode === summary) {
+    button.classList.add("in-summary");
+    button.addEventListener("click", function (event) { if (event && event.stopPropagation) event.stopPropagation(); });
+    summary.insertBefore(button, row._stat);
+  } else {
+    row._body.insertBefore(button, row._body.firstChild);
+  }
+}
+function stopWorkerFromCard(id) {
+  if (typeof j !== "function") return Promise.reject(new Error("offline"));
+  return j("/api/workers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: id, action: "stop" }) });
 }
 
 function addHistoryTask(note, prompt, savedActivity) {
@@ -2655,6 +3138,9 @@ function addToolCall(name, args, id, at) {
   row.addEventListener("toggle", function () { body.hidden = !row.open; });
   row._t0 = performance.now();
   row._startedAtMS = at > 0 ? at : 0;
+  // While the question card is open it is the only place the question shows;
+  // the row appears (question + answer) once the user has answered.
+  if (name === "ask_user") row.hidden = true;
   if (name === "task" || name === "send_message") {
     row.classList.add("task-row");
     if (info.workerID) {
@@ -2724,19 +3210,27 @@ function addToolResult(id, output, err, at) {
   var row = toolRows[key];
   openToolOrder = openToolOrder.filter(function (k) { return k !== key; });
   if (!row) return;
+  if (row._toolName === "ask_user") row.hidden = false;
   clearInterval(row._clock);
   row._clock = null;
   row.classList.remove("running", "pending-approval");
   row._pendingApproval = false;
   row.classList.add(err && row._denied ? "denied" : err ? "failed" : "done");
   var ms = toolElapsed(row, at);
-  var task = (row._toolName === "task" || row._toolName === "send_message") ? parseTaskNotification(output || err) : null;
+  var task = (row._toolName === "task" || row._toolName === "send_message") ? (parseTaskNotification(output || err) || parseTaskFailure(err || output)) : null;
   if (task) {
     if (task.id && !workerRows[task.id]) workerRows[task.id] = row;
     renderTaskResult(row, task, ms, row._taskPrompt, err);
     // A background start is only an acknowledgement: keep timing the worker
     // until its finished event, report or terminal snapshot clears the clock.
     if (!err && task.status === "running" && row._taskStatus === "running") keepTaskClock(row);
+    smartScroll();
+    return;
+  }
+  if (err && (row._toolName === "task" || row._toolName === "send_message" || row._toolName === "task_stop") && /(^|\s|: )refused:/.test(String(err))) {
+    // The system declined the model's call (no user go-ahead). The worker is
+    // unchanged: no failed card, no overview change.
+    applyRefusedDelegation(row, row._toolName, String(err));
     smartScroll();
     return;
   }
@@ -3008,7 +3502,10 @@ function findTaskRow(taskID, agentName, parentCallID, run) {
 
 function workerModelInfo(model, effort) {
   if (!model) return "";
-  return t("task.modelThinking").replace("{model}", model).replace("{effort}", effort || "—");
+  // No reasoning ("none", unknown): the model alone, never a raw "none".
+  if (!effort || effort === "none" || effort === "—") return model;
+  var level = t("model.level." + effort);
+  return t("task.modelThinking").replace("{model}", model).replace("{effort}", level === "model.level." + effort ? effort : level);
 }
 function applyWorkerModelInfo(row, ev) {
   if (!ev.model) return;
@@ -3038,7 +3535,7 @@ function addWorkerProgress(ev) {
   noteWorkerLiveEvent(row, ev);
   if (ev.kind === "tool_args") return true; // liveness only, not an activity item
   if (ev.kind === "started") {
-    row._taskStatus = "running";
+    setTaskStatus(row, "running");
     row.classList.remove("done", "failed");
     row.classList.add("running");
     // Preserve the server-derived elapsed clock on ordinary/replayed starts.
@@ -3058,7 +3555,7 @@ function addWorkerProgress(ev) {
     return true;
   }
   if (ev.kind === "finished") {
-    row._taskStatus = ev.status || "done";
+    setTaskStatus(row, ev.status || "done");
     row._workerStatusUnconfirmed = false;
     row._taskActivitySerial = (row._taskActivitySerial || 0) + 1;
     row.classList.remove("running");
@@ -3168,24 +3665,42 @@ function addWorkerProgress(ev) {
 
 function generationSpeedText(ev) {
   var rate = ev && ev.generation_tps;
-  return typeof rate === "number" && Number.isFinite(rate) && rate > 0 ? rate.toFixed(1) + " tok/s" : "";
+  return typeof rate === "number" && Number.isFinite(rate) && rate > 0 ? fmtDecimal1(rate) + " tok/s" : "";
 }
 
-// Telemetry line: time · cache/eval/gen · cached% · think · tools
+// This message's own numbers in human words, the same order and number
+// format as the session panel: time · input · cached · output · reasoning ·
+// tools. Only fields with a value are shown.
+function turnMetaTime(ms) {
+  return ms >= 60000 && typeof activityClock === "function" ? activityClock(ms) : fmtDuration(ms || 0);
+}
+function turnMetaParts(ev, elapsed, toolCount) {
+  var num = typeof fmtCompactNumber === "function" ? fmtCompactNumber : fmtTok;
+  // A delegation turn that only hands work off takes no measurable time:
+  // no "0,0 s" then.
+  var parts = elapsed >= 100 ? [turnMetaTime(elapsed)] : [];
+  var cached = ev.tok_cached || 0, input = Math.max(0, (ev.tok_in || 0) - cached);
+  var field = function (key, n) { if (n > 0) parts.push(t(key).replace("{n}", num(n))); };
+  field("meta.input", input);
+  field("meta.cached", cached);
+  field("meta.output", ev.tok_out || 0);
+  field("meta.reasoning", ev.reasoning_tok || 0);
+  if (toolCount) parts.push(typeof tn === "function" ? tn("run.toolCount", toolCount) : toolCount + " " + t("run.tools"));
+  return parts;
+}
 function addTurnMeta(ev, elapsed, toolCount, seq) {
 	if (toolCount == null) toolCount = runToolCount;
-  var parts = [fmtDuration(elapsed)];
-  var evalTok = (ev.tok_in || 0) - (ev.tok_cached || 0);
-  if (ev.tok_cached) {
-    parts.push("cache " + fmtTok(ev.tok_cached) + " · eval " + fmtTok(evalTok) + " · gen " + fmtTok(ev.tok_out));
-  } else if (ev.tok_total) {
-    parts.push("in " + fmtTok(ev.tok_in) + " · gen " + fmtTok(ev.tok_out));
-  }
-  if (ev.cache_hit_pct) parts.push(ev.cache_hit_pct + "% " + t("run.cached"));
-  if (ev.reasoning_tok) parts.push(t("run.think") + " " + fmtTok(ev.reasoning_tok));
-	if (toolCount) parts.push(typeof tn === "function" ? tn("run.toolCount", toolCount) : toolCount + " " + t("run.tools"));
   var line = el("div", "turn-meta");
-	line.innerHTML = parts.map(function (p, i) { return i === 0 ? "<b>" + escHtml(p) + "</b>" : escHtml(p); }).join(" · ");
+  var refresh = function () {
+    line.innerHTML = turnMetaParts(ev, elapsed, toolCount).map(function (p, i) { return i === 0 && elapsed >= 100 ? "<b>" + escHtml(p) + "</b>" : escHtml(p); }).join(" · ");
+  };
+  refresh();
+  // The field names follow the UI language (the numbers never change).
+  if (typeof registerLanguageRefresh === "function") registerLanguageRefresh(line, function () {
+    var speed = line.querySelector(".generation-speed");
+    refresh();
+    if (speed) line.appendChild(speed);
+  });
 	var speed = generationSpeedText(ev);
   if (speed) {
     var speedNode = el("span", "generation-speed", " · " + speed);

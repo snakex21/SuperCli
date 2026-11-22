@@ -474,6 +474,7 @@ function buildHistoryFragment(messages, pager, prepend) {
         node._raw = m.content;
         node._history = true;
         renderAssistant(node);
+        if (Array.isArray(m.notes) && typeof addAnswerNote === "function") m.notes.forEach(function (n) { addAnswerNote(node, n.kind, n.detail || ""); });
         node.querySelectorAll("details[data-think-id]").forEach(function (d) { d.open = thinkingDisclosureOpen(true); });
         if (typeof addAssistantActions === "function") {
           addAssistantActions(node, {sessionID: transcriptSessionID || activeSessionID, seq: m.seq, messageID: m.message_id,
@@ -487,7 +488,7 @@ function buildHistoryFragment(messages, pager, prepend) {
         var persistedCall = historyCalls[m.tool_call_id] || null;
         var persistedName = (persistedCall && persistedCall.name) || m.name || "tool";
         var task = (persistedName === "task" || persistedName === "send_message") ?
-          parseTaskNotification(m.content) : null;
+          (parseTaskNotification(m.content) || parseTaskFailure(m.content)) : null;
         if (task) {
           var newerWorker = newerWorkers && newerWorkers[task.id];
           var saved = m.worker_activity;
@@ -566,6 +567,12 @@ function buildHistoryFragment(messages, pager, prepend) {
         }
         row.appendChild(body);
         appendStream(row);
+        if ((persistedName === "task" || persistedName === "send_message" || persistedName === "task_stop") &&
+            /(^|\s|: )refused:/.test(String(m.content || "")) && typeof applyRefusedDelegation === "function") {
+          // A declined delegation call reads as a quiet note in history too.
+          row._stat = historyStat;
+          applyRefusedDelegation(row, persistedName, String(m.content));
+        }
         appendToolMediaPreview(row, m.content, persistedName, /^error:/i.test(String(m.content || "")));
         // User-only preview thumbnails saved with the tool result record.
         if (Array.isArray(m.tool_previews) && m.tool_previews.length) appendNativeToolImages(row, m.tool_previews);
@@ -713,6 +720,7 @@ async function resumeSession(id, session, fromQueue, fromSync) {
     activeSessionID = id;
     composerDraftStore.restore("session:" + id);
     transcriptSessionID = id;
+    if (typeof restorePendingQuestions === "function") restorePendingQuestions(id);
     loadedTranscriptMessages = msgs;
     transcriptHasMore = !!page.has_more;
     transcriptBeforeSeq = page.before_seq || 0;

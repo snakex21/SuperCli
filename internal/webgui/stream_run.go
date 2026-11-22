@@ -57,6 +57,9 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	// their late reports) to the conversation's pump and wake-up scheduler.
 	var bg *sessionBackground
 	var bgLoop *agent.Loop
+	// runExternal is this run's event channel; once the run stops reading it,
+	// late worker events left in it are handed to the conversation's pump.
+	var runExternal chan agent.Event
 	defer func() {
 		if bgLoop == nil {
 			return
@@ -66,6 +69,20 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 			return
 		}
 		bg.attach(bgLoop, true)
+		// A background worker that progressed or finished between the run's
+		// last read and this hand-off left its events here; dropping them
+		// left the worker's card "running" until the next status poll.
+		for runExternal != nil {
+			select {
+			case ev := <-runExternal:
+				select {
+				case bg.events <- ev:
+				default:
+				}
+			default:
+				runExternal = nil
+			}
+		}
 	}()
 	var hostPowerLoop *agent.Loop
 	var hostPowerErr error
@@ -238,6 +255,11 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	bg = e.backgroundFor(sid, home)
 	bg.attach(loop, false)
 	bgLoop = loop
+	if ask := bg.askChannel(); ask != nil {
+		// Workers this run delegates keep asking the conversation after the
+		// run has ended (their questions must not hang unread).
+		ctx = tools.WithDurableAskChannel(ctx, ask)
+	}
 	if strings.TrimSpace(sessionID) != "" {
 		e.reconcileWorkersIntoRun(ctx, loop, sid)
 	}
@@ -266,6 +288,7 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	// Run channel. Bridge that sink into the same SSE response so delegations
 	// are visible in the transcript and Workers panel.
 	external := make(chan agent.Event, 32)
+	runExternal = external
 	loop.SetExternalSink(external)
 	// Not detached on exit: the deferred hand-off above re-points the sink
 	// to the conversation's background pump.

@@ -224,6 +224,18 @@ type TomlConfig struct {
 	// update); further reports wait for the next message or the GUI's
 	// Resume button. A turn with progress restores the budget. 0 = 20.
 	BackgroundWakeMaxAuto int `toml:"background_wake_max_auto"`
+	// BackgroundWakeDelegate lets automatic turns (no user message) hand the
+	// next planned task to a freed worker slot. nil = default (on); false =
+	// automatic turns only report and propose. Hard limits stay either way:
+	// no repeat of a failed/interrupted/stopped worker's task (by goal, not
+	// wording), no resume of a stopped worker, worker limits, the wake cap.
+	BackgroundWakeDelegate *bool `toml:"background_wake_delegate"`
+	// CommandTimeoutMS is the default wall-clock limit of one ctx_execute
+	// command (a build, a test run) when the model passes no timeout_ms.
+	// The process is killed when it runs out and the model gets a clear
+	// message. nil/0 = built-in default (DefaultCommandTimeoutMS, 30 min);
+	// -1 = no limit (only Stop ends a hung command).
+	CommandTimeoutMS int `toml:"command_timeout_ms"`
 	// CheckpointExclude adjusts what checkpoints skip besides .gitignore and
 	// the built-in build caches/outputs (node_modules, .zig-cache, zig-out,
 	// zig-global, target, build, dist, .gradle, __pycache__, .venv, ...):
@@ -711,6 +723,26 @@ func FindTomlPaths(dataDir, cwd string) (global, project string) {
 
 // mergeToml applies non-zero values from `src` onto `dst`.
 // src takes precedence; zero/empty values in src are skipped.
+
+// WakeDelegate reports whether automatic turns may start workers (default on).
+func (c *TomlConfig) WakeDelegate() bool {
+	return c == nil || c.BackgroundWakeDelegate == nil || *c.BackgroundWakeDelegate
+}
+
+// DefaultCommandTimeoutMS bounds one command when nothing is configured.
+const DefaultCommandTimeoutMS = 30 * 60 * 1000
+
+// CommandTimeout returns the default ctx_execute limit in milliseconds;
+// 0 means no limit.
+func (c *TomlConfig) CommandTimeout() int {
+	if c == nil || c.CommandTimeoutMS == 0 {
+		return DefaultCommandTimeoutMS
+	}
+	if c.CommandTimeoutMS < 0 {
+		return 0
+	}
+	return c.CommandTimeoutMS
+}
 
 // BackgroundWakeSettings returns the background wake-up policy (zero = defaults).
 func (c *TomlConfig) BackgroundWakeSettings() (mode string, debounceMS, maxAuto int) {

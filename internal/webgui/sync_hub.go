@@ -23,7 +23,10 @@ type syncFrame struct {
 	Background map[string]int `json:"background,omitempty"`
 	// Held: reports waiting at the automatic wake-up cap, per conversation
 	// (snapshot); Limit is the cap (type background_wake_held).
-	Held        map[string]int `json:"held,omitempty"`
+	Held map[string]int `json:"held,omitempty"`
+	// Questions: unanswered background-worker questions per conversation
+	// (snapshot; type background_questions carries one Count).
+	Questions   map[string]int `json:"questions,omitempty"`
 	Limit       int            `json:"limit,omitempty"`
 	State       string         `json:"state,omitempty"`
 	StartedAtMS int64          `json:"started_at_ms,omitempty"`
@@ -60,6 +63,8 @@ type syncHub struct {
 	// in snapshots so a refreshed view still shows the Resume banner.
 	backgroundHeld map[string]int
 	heldLimit      map[string]int
+	// Unanswered background-worker questions per conversation.
+	questionCounts map[string]int
 	subscribers    map[*syncSubscriber]struct{}
 }
 
@@ -209,6 +214,12 @@ func (h *syncHub) subscribe(session, client string) (*syncSubscriber, syncFrame,
 			}
 		}
 	}
+	if len(h.questionCounts) > 0 {
+		snapshot.Questions = make(map[string]int, len(h.questionCounts))
+		for id, n := range h.questionCounts {
+			snapshot.Questions[id] = n
+		}
+	}
 	for id, run := range h.runs {
 		snapshot.Runs = append(snapshot.Runs, run.info)
 		if id == session && (client == "" || client != run.info.ClientID) {
@@ -262,6 +273,22 @@ func (h *syncHub) background(session string, event wireEvent) {
 		event.At = time.Now().UnixMilli()
 	}
 	h.publishLocked(syncFrame{Type: "background_event", SessionID: session, Event: &event})
+}
+
+// backgroundQuestions publishes how many background-worker questions of one
+// conversation wait for an answer (session list badge).
+func (h *syncHub) backgroundQuestions(session string, count int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.questionCounts == nil {
+		h.questionCounts = map[string]int{}
+	}
+	if count > 0 {
+		h.questionCounts[session] = count
+	} else {
+		delete(h.questionCounts, session)
+	}
+	h.publishLocked(syncFrame{Type: "background_questions", SessionID: session, Count: count})
 }
 
 // backgroundAgents publishes the running background-agent count of one

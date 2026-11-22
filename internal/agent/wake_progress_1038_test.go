@@ -77,7 +77,7 @@ func newRefillLoop(t *testing.T, p *refillProvider, max int) (*Loop, chan Event,
 	}
 	ext := make(chan Event, 256)
 	loop.SetExternalSink(ext)
-	loop.SetBackgroundWake(WakeConfig{Debounce: testWakeDebounce, MaxConsecutive: 2})
+	loop.SetBackgroundWake(WakeConfig{Debounce: testWakeDebounce, MaxConsecutive: 2, Delegate: true}) // the user opted into unattended refills
 	return loop, ext, &refills
 }
 

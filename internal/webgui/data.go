@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"supercli/internal/checkpoint"
+	"supercli/internal/llm"
 	"supercli/internal/storage/session"
 )
 
@@ -65,11 +66,13 @@ type transcriptMsg struct {
 	ToolImageCarrier     bool                  `json:"tool_image_carrier,omitempty"`
 	// ToolPreviews restores user-only tool preview thumbnails (MCP
 	// image_mode=preview) saved with the tool result record.
-	ToolPreviews []string             `json:"tool_previews,omitempty"`
-	Name         string               `json:"name,omitempty"`
-	ToolCallID   string               `json:"tool_call_id,omitempty"`
-	ToolCalls    []transcriptToolCall `json:"tool_calls,omitempty"`
-	Turn         *transcriptTurn      `json:"turn,omitempty"`
+	ToolPreviews []string `json:"tool_previews,omitempty"`
+	// Notes: SuperCli's remarks about an answer, shown as translated badges.
+	Notes      []llm.AnswerNote     `json:"notes,omitempty"`
+	Name       string               `json:"name,omitempty"`
+	ToolCallID string               `json:"tool_call_id,omitempty"`
+	ToolCalls  []transcriptToolCall `json:"tool_calls,omitempty"`
+	Turn       *transcriptTurn      `json:"turn,omitempty"`
 	// Edited assistant replies carry the displayed (edited) text in Content.
 	Edited           bool `json:"edited,omitempty"`
 	EditModelVisible bool `json:"edit_model_visible,omitempty"`

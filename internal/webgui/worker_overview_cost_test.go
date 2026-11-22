@@ -110,10 +110,14 @@ function legacyUpdate(id, agentName, status, activity, row) {
   if (row) item.row = row;
   item.button.dataset.state = item.status;
   item.label.textContent = workerLabel(id) + (item.agent ? " · " + item.agent : "");
-  item.detail.textContent = clip(String(item.activity || "").split("\n")[0], 140);
+  // 1.0.39: the overview shows the task in human words (shortened paths).
+  item.detail.textContent = clip(humanTaskText(item.activity), 140);
   item.state.textContent = taskStatusLabel(item.status);
   item.button.title = clip([id, item.row && item.row._workerModelInfo, item.activity].filter(Boolean).join(" · "), 400);
   renderWorkerOverview();
+  // Shared liveness painter, as in production: a (re)bound item shows its
+  // worker's current step at once (the step label is debounced from then on).
+  if (item.row && item.row._liveness) renderWorkerLiveness(item.row);
 }
 function legacyRender() {
   var panel = $("#worker-overview");
@@ -135,11 +139,9 @@ function legacyRender() {
   });
   var counts = {};
   items.forEach(function (w) { counts[w.status] = (counts[w.status] || 0) + 1; });
-  var parts = [t("task.workers")];
-  [["running", "task.active"], ["done", "task.done"], ["failed", "task.failed"], ["stopped", "task.stopped"]].forEach(function (p) {
-    if (counts[p[0]]) parts.push(t(p[1]) + ": " + counts[p[0]]);
-  });
-  $("#worker-overview-summary").textContent = parts.join(" · ");
+  // 1.0.39: "Helper agents · 3 working · 1 failed" with plural forms; the
+  // shared summary painter (outside both renderers) adds the state dots.
+  renderWorkerOverviewSummary($("#worker-overview-summary"), counts);
   panel.hidden = !items.length;
   if (items.length && !workerOverviewUserToggled) {
     workerOverviewAutoOpen = !!counts.running;
@@ -151,6 +153,9 @@ function legacyRender() {
 const workerOverviewCostFixture = `(()=>{try {
 if(!window.fixtureReady)throw Error('scripts not ready');
 function check(ok,msg){if(!ok)throw Error(msg);}
+// One frozen clock: the liveness line (shared by both renderers) shows step
+// times and debounces step changes by 1 s, so a slower run must not differ.
+workerNow=function(){return 1700000000000;};
 const productionUpdate=updateWorkerOverview, productionRender=renderWorkerOverview;
 let renders=0, legacyOverviewBound=false;
 ` + workerOverviewLegacyFixture + `
@@ -264,7 +269,7 @@ const key='tool.running', previous=fixtureCatalog[key];fixtureCatalog[key]='LOCA
 updateWorkerOverview(item.id,'code','running',null,row);
 check(item.state.textContent===taskStatusLabel('running'),'localized status stale');
 fixtureCatalog[key]=previous;
-const summaryKey='task.active', previousSummary=fixtureCatalog[summaryKey];
+const summaryKey='task.sum.running', previousSummary=fixtureCatalog[summaryKey];
 fixtureCatalog[summaryKey]='LOCALIZED SUMMARY';refresh();
 check($('#worker-overview-summary').textContent.includes('LOCALIZED SUMMARY'),'summary-only localization stale');
 fixtureCatalog[summaryKey]=previousSummary;refresh();

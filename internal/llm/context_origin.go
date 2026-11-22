@@ -53,11 +53,30 @@ type ContextOrigin struct {
 	WorkerActivity json.RawMessage `json:"worker_activity,omitempty"`
 	// ToolPreviews are durable session-media paths of user-only tool preview
 	// images (MCP image_mode=preview). Transcript/UI only, never model input.
-	ToolPreviews []string      `json:"tool_previews,omitempty"`
-	Source       ContextSource `json:"source,omitempty"`
-	Spans        []ContextSpan `json:"spans,omitempty"`
-	Digest       [32]byte      `json:"digest,omitzero"`
+	ToolPreviews []string `json:"tool_previews,omitempty"`
+	// Notes are SuperCli's remarks about an answer (an unverified "tests
+	// pass", a stopped edit loop). Transcript/UI only: shown as a translated
+	// badge under the answer, never part of its text and never model input.
+	Notes  []AnswerNote  `json:"notes,omitempty"`
+	Source ContextSource `json:"source,omitempty"`
+	Spans  []ContextSpan `json:"spans,omitempty"`
+	Digest [32]byte      `json:"digest,omitzero"`
 }
+
+// AnswerNote is one UI-only remark about an assistant answer. Kind names a
+// translated message; Detail fills it (a command, a count).
+type AnswerNote struct {
+	Kind   string `json:"kind"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// Answer note kinds.
+const (
+	NoteUnverifiedClaim = "unverified_claim" // "tests pass" but no command ran (coordinator or workers)
+	NoteFailedCheck     = "failed_check"     // "tests pass" but the last check failed
+	NoteCheckCycleStop  = "check_cycle_stop" // the edit loop was stopped
+	NoteCutOff          = "cut_off"          // the answer hit the output limit and may be incomplete
+)
 
 // WithoutWorkerActivity drops only transcript display data. Provenance and
 // source spans remain intact, and the caller's canonical message is immutable.

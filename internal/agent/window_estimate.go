@@ -104,9 +104,11 @@ func (l *Loop) recordContextBaseline(estimated, exact int) (truncated bool) {
 	if estimated <= 0 || exact <= 0 {
 		return false
 	}
+	window := l.windowResolution().Tokens
 	l.sessUsageMu.Lock()
 	defer l.sessUsageMu.Unlock()
-	if serverTruncatedPrompt(l.contextBaseEstimated, l.contextBaseExact, estimated, exact) && l.contextBaseRoute == l.route {
+	if serverTruncatedPrompt(l.contextBaseEstimated, l.contextBaseExact, estimated, exact) && l.contextBaseRoute == l.route &&
+		(bigDrop(l.contextBaseExact, exact) || nearWindow(l.contextBaseExact, window)) {
 		// Keep the last trustworthy pair: the next estimate is then the old
 		// exact count plus local growth, i.e. what was really sent.
 		l.serverTruncated = true
@@ -141,6 +143,26 @@ func (l *Loop) takeServerTruncated() bool {
 //
 // A shrink beyond 2% while the local estimate did not shrink is truncation.
 // Compaction, pruning and hiding all shrink the local estimate as well.
+//
+// A server only cuts a prompt that no longer fits its window, so the previous
+// request must have filled a good part of it. Hosted APIs report input counts
+// that wobble by a few percent between requests (observed on a Responses
+// backend: 52277 then 50904 tokens for a larger request in a 500k window);
+// far below the window that is not truncation, and treating it as such forced
+// a compaction that aborted the turn with no answer.
+//
+// The resolved window is not always the server's: before Ollama or LM Studio
+// load a model it comes from metadata (e.g. 128k) while the server runs at
+// 4-32k. A real cut is large (32248 -> 16022, about 50%), hosted jitter is
+// small (about 2.6%), so a drop of 15% or more counts at any window size.
+func nearWindow(exact, window int) bool {
+	return window <= 0 || exact*2 >= window
+}
+
+func bigDrop(prevExact, exact int) bool {
+	return prevExact > 0 && (prevExact-exact)*100 >= prevExact*15
+}
+
 func serverTruncatedPrompt(prevEstimated, prevExact, estimated, exact int) bool {
 	if prevEstimated <= 0 || prevExact <= 0 || estimated < prevEstimated {
 		return false

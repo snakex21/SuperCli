@@ -91,6 +91,7 @@ func prepareWorkerHandoff(w *Worker, report string) workerHandoff {
 		Status: w.Status, CreatedAt: w.CreatedAt, UpdatedAt: w.UpdatedAt,
 		LastError: w.LastError, TokensIn: w.TokensIn, TokensOut: w.TokensOut,
 		Steps: w.Steps, ToolNames: append([]string(nil), w.ToolNames...), Runs: w.Runs,
+		Review: w.review,
 	}
 	evidence := w.lastEvidence
 	uiActivity := w.uiActivity
