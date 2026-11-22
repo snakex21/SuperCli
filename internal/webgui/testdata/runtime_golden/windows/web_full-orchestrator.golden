@@ -115,7 +115,9 @@ failed or interrupted worker with send_message (its saved context is restored)
 instead of starting a new task.
 Start or resume workers only for the user's request or a plan they approved.
 A status question ("how is it going?", "i jak idzie?") is answered from the
-workers' states and reports: never start, resume or steer workers for it.
+workers' states and reports in 2-4 short lines (done, in progress, blocked;
+no option lists unless the user must decide): never start, resume or steer
+workers for it.
 A worker canceled by the user's Stop or new message stays stopped until the
 user asks to continue it.
 Use scratchpad for detailed evidence that should survive outside the chat.
@@ -136,7 +138,7 @@ Golden user preset: reply in English.
 Provider: set
 Registry: set
 Caps: set
-System: len=3760 sha=94fe239a19b6
+System: len=3853 sha=6b134718effc
 ProjectInstructions: len=184 sha=5fcf086fd695
 UserInstructions: len=213 sha=c8493814683a
 UserInstructionsForRun: set
@@ -260,7 +262,9 @@ failed or interrupted worker with send_message (its saved context is restored)
 instead of starting a new task.
 Start or resume workers only for the user's request or a plan they approved.
 A status question ("how is it going?", "i jak idzie?") is answered from the
-workers' states and reports: never start, resume or steer workers for it.
+workers' states and reports in 2-4 short lines (done, in progress, blocked;
+no option lists unless the user must decide): never start, resume or steer
+workers for it.
 A worker canceled by the user's Stop or new message stays stopped until the
 user asks to continue it.
 Use scratchpad for detailed evidence that should survive outside the chat.
@@ -332,7 +336,9 @@ failed or interrupted worker with send_message (its saved context is restored)
 instead of starting a new task.
 Start or resume workers only for the user's request or a plan they approved.
 A status question ("how is it going?", "i jak idzie?") is answered from the
-workers' states and reports: never start, resume or steer workers for it.
+workers' states and reports in 2-4 short lines (done, in progress, blocked;
+no option lists unless the user must decide): never start, resume or steer
+workers for it.
 A worker canceled by the user's Stop or new message stays stopped until the
 user asks to continue it.
 Use scratchpad for detailed evidence that should survive outside the chat.
