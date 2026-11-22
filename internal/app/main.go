@@ -772,7 +772,7 @@ func Main() {
 	// Finished background workers wake the idle chat (BackgroundWakeEvent →
 	// TUI starts Loop.RunWake); policy from config.toml background_wake*.
 	wakeCfg := agent.WakeConfigFrom(tomlCfg.BackgroundWakeSettings())
-	wakeCfg.Delegate = tomlCfg.BackgroundWakeDelegate
+	wakeCfg.Delegate = tomlCfg.WakeDelegate()
 	loop.SetBackgroundWake(wakeCfg)
 
 	// Scan all configured providers for models in the

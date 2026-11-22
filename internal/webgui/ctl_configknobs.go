@@ -82,6 +82,7 @@ func knobDefs() []knobDef {
 		{"task_max_steps", "cap on model turns a delegated worker may take", knobInt, true},
 		{"task_max_tokens", "cap on a delegated worker's total token spend", knobInt, true},
 		{"max_parallel_agents", "how many delegated workers may run at the same time; empty = default 6, 0 or unlimited = no limit. High values multiply cost and provider rate limits (HTTP 429); a local LM Studio server answers one request at a time", knobText, true},
+		{"background_wake_delegate", "automatically assign next planned tasks when a worker slot frees up; never repeats a failed, interrupted or stopped worker and never resumes a stopped one; default on", knobTri, true},
 		{"background_wake_max_auto", "automatic wake-ups for finished background agents in a row that made no progress (no new worker, file change, command or goal update) before reports wait for you; a turn with progress resets the count; 0 = default 20", knobInt, true},
 		{"max_parallel_agents_per_provider", "optional cap per provider, provider=number separated by ';' (e.g. lmstudio=1; openrouter=4); empty = none", knobText, true},
 		{"task_model", "worker model/host for task delegation (\"model\" or \"provider/model\"; empty = coordinator's model)", knobText, true},
@@ -298,6 +299,9 @@ func knobValue(c *config.TomlConfig, key string) (value, source, raw string) {
 	case "draft_verify":
 		v, s := triKnob(c.DraftVerify, "off")
 		return v, s, ""
+	case "background_wake_delegate":
+		v, s := triKnob(c.BackgroundWakeDelegate, "on")
+		return v, s, ""
 	case "draft_verify_max_rounds":
 		return intKnob(c.DraftVerifyMaxRounds, "2")
 	case "verify_commands":
@@ -401,6 +405,8 @@ func knobState(c *config.TomlConfig, key string) string {
 		return tri(c.PreflightRepo)
 	case "draft_verify":
 		return tri(c.DraftVerify)
+	case "background_wake_delegate":
+		return tri(c.BackgroundWakeDelegate)
 	}
 	return ""
 }
@@ -414,7 +420,7 @@ func knobDefault(key string) string {
 		return "USD"
 	case "orchestrator", "navigator", "cache_prompt", "darwin_parallel", "task_parallel":
 		return "auto"
-	case "thinking", "stable_toolset", "preflight_repo", "show_generation_speed", "update_notify", "memory":
+	case "thinking", "stable_toolset", "preflight_repo", "show_generation_speed", "update_notify", "memory", "background_wake_delegate":
 		return "on"
 	case "allow_all", "noop_gate", "draft_verify", "discard_previous_reasoning", "darwin", "assistant_edit", "assistant_edit_model_sees", "retry_unknown_errors", "requests_per_minute":
 		return "off"

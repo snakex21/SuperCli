@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	"supercli/internal/checkpoint"
 	"supercli/internal/system/childproc"
@@ -81,6 +82,70 @@ func (a *AgentTool) reviewRun(ctx context.Context, w *Worker, before string) str
 		review += " — " + out
 	}
 	return review
+}
+
+// sameTask reports whether two task briefs ask for the same work, however
+// worded: the same goal line ("CEL:/GOAL:/TASK:"), or briefs that share most
+// of their meaningful words (shared project boilerplate excluded by using the
+// goal lines when both have one).
+func sameTask(a, b string) bool {
+	ga, gb := taskGoal(a), taskGoal(b)
+	if ga != "" && gb != "" {
+		a, b = ga, gb
+	}
+	wa, wb := taskWords(a), taskWords(b)
+	if len(wa) == 0 || len(wb) == 0 {
+		return false
+	}
+	shared := 0
+	for w := range wa {
+		if wb[w] {
+			shared++
+		}
+	}
+	smaller := len(wa)
+	if len(wb) < smaller {
+		smaller = len(wb)
+	}
+	union := len(wa) + len(wb) - shared
+	// Most of the shorter brief is in the other, or the two overlap broadly.
+	return float64(shared)/float64(smaller) >= 0.7 || float64(shared)/float64(union) >= 0.5
+}
+
+func taskGoal(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		l := strings.TrimSpace(line)
+		lower := strings.ToLower(l)
+		for _, p := range []string{"cel:", "goal:", "task:", "zadanie:"} {
+			if strings.HasPrefix(lower, p) {
+				return strings.TrimSpace(l[len(p):])
+			}
+		}
+	}
+	return ""
+}
+
+// taskStopWords carry no task meaning ("please", "the", "i", "w").
+var taskStopWords = map[string]bool{
+	"the": true, "a": true, "an": true, "and": true, "or": true, "to": true, "of": true, "in": true, "on": true, "for": true, "with": true,
+	"please": true, "again": true, "retry": true, "continue": true, "now": true, "it": true, "this": true, "that": true,
+	"i": true, "w": true, "z": true, "na": true, "do": true, "oraz": true, "lub": true, "proszę": true, "prosze": true,
+	"ponownie": true, "jeszcze": true, "raz": true, "dalej": true, "kontynuuj": true, "się": true, "sie": true,
+}
+
+func taskWords(s string) map[string]bool {
+	out := map[string]bool{}
+	for _, w := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
+		if len([]rune(w)) < 3 || taskStopWords[w] {
+			continue
+		}
+		// Light stemming: inflections of one word count as one ("pająka", "pająk").
+		if r := []rune(w); len(r) > 5 {
+			w = string(r[:5])
+		}
+		out[w] = true
+	}
+	return out
 }
 
 // installReview attaches the review check to a worker this tool runs.

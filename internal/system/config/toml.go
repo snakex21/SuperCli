@@ -224,10 +224,12 @@ type TomlConfig struct {
 	// update); further reports wait for the next message or the GUI's
 	// Resume button. A turn with progress restores the budget. 0 = 20.
 	BackgroundWakeMaxAuto int `toml:"background_wake_max_auto"`
-	// BackgroundWakeDelegate lets automatic turns (no user message) start new
-	// workers, e.g. to keep a pool of agents busy unattended. Off by default:
-	// an automatic turn reports and proposes; the user decides.
-	BackgroundWakeDelegate bool `toml:"background_wake_delegate"`
+	// BackgroundWakeDelegate lets automatic turns (no user message) hand the
+	// next planned task to a freed worker slot. nil = default (on); false =
+	// automatic turns only report and propose. Hard limits stay either way:
+	// no repeat of a failed/interrupted/stopped worker's task (by goal, not
+	// wording), no resume of a stopped worker, worker limits, the wake cap.
+	BackgroundWakeDelegate *bool `toml:"background_wake_delegate"`
 	// CommandTimeoutMS is the default wall-clock limit of one ctx_execute
 	// command (a build, a test run) when the model passes no timeout_ms.
 	// The process is killed when it runs out and the model gets a clear
@@ -721,6 +723,11 @@ func FindTomlPaths(dataDir, cwd string) (global, project string) {
 
 // mergeToml applies non-zero values from `src` onto `dst`.
 // src takes precedence; zero/empty values in src are skipped.
+
+// WakeDelegate reports whether automatic turns may start workers (default on).
+func (c *TomlConfig) WakeDelegate() bool {
+	return c == nil || c.BackgroundWakeDelegate == nil || *c.BackgroundWakeDelegate
+}
 
 // DefaultCommandTimeoutMS bounds one command when nothing is configured.
 const DefaultCommandTimeoutMS = 30 * 60 * 1000

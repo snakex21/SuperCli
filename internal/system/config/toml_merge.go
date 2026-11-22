@@ -177,8 +177,8 @@ func mergeToml(dst *TomlConfig, src TomlConfig) {
 	if src.CommandTimeoutMS != 0 {
 		dst.CommandTimeoutMS = src.CommandTimeoutMS
 	}
-	if src.BackgroundWakeDelegate {
-		dst.BackgroundWakeDelegate = true
+	if src.BackgroundWakeDelegate != nil {
+		dst.BackgroundWakeDelegate = src.BackgroundWakeDelegate
 	}
 	if src.BackgroundWakeMaxAuto != 0 {
 		dst.BackgroundWakeMaxAuto = src.BackgroundWakeMaxAuto

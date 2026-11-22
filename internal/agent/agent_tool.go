@@ -175,16 +175,29 @@ func (a *AgentTool) repeatedBrief(ctx context.Context, agentName, prompt string)
 	if a.ParentLoop == nil || !a.ParentLoop.wakeTurnForRun {
 		return ""
 	}
-	// Structural rule (review 3): an automatic turn starts no new workers
-	// unless the user enabled it (background_wake_delegate). Matching briefs
-	// word for word was easy to get around by rephrasing.
+	// An automatic turn starts new workers only when the user allows it
+	// (background_wake_delegate, on by default: the next planned task goes to
+	// a freed slot).
 	if s := a.ParentLoop.WakeScheduler(); s == nil || !s.Config().Delegate {
 		return "refused: this is an automatic turn without a user message; it does not start new workers. " +
 			"Report the outcome and propose the next step; the user decides (or enables background_wake_delegate for unattended refills)."
 	}
-	want := strings.Join(strings.Fields(prompt), " ")
+	// Even then it never repeats a worker of this conversation that failed,
+	// was interrupted or stopped, or is still working - matched by goal and
+	// task, not wording (a rephrased retry is still a retry) - nor redoes a
+	// finished worker's exact task.
 	check := func(id, agent, desc, status string) string {
-		if agent == agentName && strings.Join(strings.Fields(desc), " ") == want {
+		if agent != agentName {
+			return ""
+		}
+		similar := false
+		switch status {
+		case "failed", "stopped", WorkerStatusInterrupted, "running", "created":
+			similar = sameTask(desc, prompt)
+		default:
+			similar = strings.Join(strings.Fields(desc), " ") == strings.Join(strings.Fields(prompt), " ")
+		}
+		if similar {
 			return fmt.Sprintf("refused: this automatic turn (no user message) would repeat %s's task (%s). Report its outcome and let the user decide; the user resumes it with the Resume button or a message naming it.", id, status)
 		}
 		return ""

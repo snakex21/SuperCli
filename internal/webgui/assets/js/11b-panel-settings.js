@@ -75,7 +75,7 @@ var settingGroups = [
   ["set.group.display", ["show_generation_speed", "assistant_edit", "assistant_edit_model_sees", "cost_currency", "update_notify"]],
   ["set.group.memory", ["memory"]],
   ["set.group.agent", ["queue_merge", "orchestrator", "navigator", "orchestrator_model", "task_model", "task_reasoning_effort",
-    "task_parallel", "task_max_steps", "task_max_tokens", "max_parallel_agents", "max_parallel_agents_per_provider", "background_wake_max_auto", "advisor_model", "advisor_reasoning_effort", "review_model", "review_reasoning_effort"]],
+    "task_parallel", "task_max_steps", "task_max_tokens", "max_parallel_agents", "max_parallel_agents_per_provider", "background_wake_delegate", "background_wake_max_auto", "advisor_model", "advisor_reasoning_effort", "review_model", "review_reasoning_effort"]],
   ["set.group.context", ["thinking", "discard_previous_reasoning", "context_policy", "context_window", "prune_protect_tokens",
     "memory_briefing_tokens", "compact_model", "stable_toolset", "cache_prompt", "preflight_repo"]],
   ["set.group.darwin", ["darwin", "darwin_parallel", "darwin_models", "darwin_judge_model", "darwin_pool_size", "darwin_reasoning_effort", "darwin_auto_merge"]],
@@ -121,7 +121,7 @@ function currencyOptionLabel(code, names) {
 var modeKeys = [
   "queue_merge",
   "orchestrator", "navigator", "orchestrator_model", "task_model", "task_reasoning_effort", "task_parallel",
-  "task_max_steps", "task_max_tokens", "max_parallel_agents", "max_parallel_agents_per_provider", "background_wake_max_auto", "advisor_model", "advisor_reasoning_effort", "review_model", "review_reasoning_effort", "darwin_reasoning_effort",
+  "task_max_steps", "task_max_tokens", "max_parallel_agents", "max_parallel_agents_per_provider", "background_wake_delegate", "background_wake_max_auto", "advisor_model", "advisor_reasoning_effort", "review_model", "review_reasoning_effort", "darwin_reasoning_effort",
   "darwin", "darwin_parallel", "darwin_models", "darwin_judge_model", "darwin_auto_merge",
   "draft_verify", "draft_verify_max_rounds", "verify_commands", "compact_model",
   "context_policy", "context_window", "prune_protect_tokens", "memory_briefing_tokens",

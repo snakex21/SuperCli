@@ -233,6 +233,8 @@ func knobSet(c *config.TomlConfig, key, val string) error {
 		return setTri(&c.PreflightRepo)
 	case "draft_verify":
 		return setTri(&c.DraftVerify)
+	case "background_wake_delegate":
+		return setTri(&c.BackgroundWakeDelegate)
 	case "draft_verify_max_rounds":
 		return setInt(&c.DraftVerifyMaxRounds)
 	case "verify_commands":

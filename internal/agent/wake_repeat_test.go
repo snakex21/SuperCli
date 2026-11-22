@@ -21,17 +21,17 @@ func (b briefStore) ListWorkerBriefs(ctx context.Context, sid string) ([]WorkerR
 	return recs, err
 }
 
-// An automatic turn starts no new workers by default (review 3: matching
-// briefs word for word was beaten by rephrasing): even a reworded task is
-// refused. With background_wake_delegate the user allows unattended refills;
-// then a repeat of an existing worker's task (live or saved) is still refused.
+// With background_wake_delegate off an automatic turn starts no new workers at
+// all. On (the default) it may hand a new planned task to a free slot, but a
+// repeat of a failed, interrupted or stopped worker's task is still refused,
+// also when reworded (matched by goal and task, not wording).
 func TestWakeTurnStartsNoNewWorkers(t *testing.T) {
 	for _, delegate := range []bool{false, true} {
-		t.Run(map[bool]string{false: "default", true: "delegate"}[delegate], func(t *testing.T) {
+		t.Run(map[bool]string{false: "off", true: "on"}[delegate], func(t *testing.T) {
 			f, _ := contractFixture(t, true,
 				[][]llm.Delta{
 					callStep(tcall("t1", "task", `{"prompt":"add the spider"}`)), say("Delegated."),
-					callStep(tcall("t2", "task", `{"prompt":"add the spider"}`), tcall("t3", "task", `{"prompt":"add the creeper"}`), tcall("t4", "task", `{"prompt":"please add a spider mob, retry"}`)),
+					callStep(tcall("t2", "task", `{"prompt":"add the spider"}`), tcall("t3", "task", `{"prompt":"add the creeper"}`), tcall("t4", "task", `{"prompt":"please add a spider mob, retry"}`), tcall("t5", "task", `{"prompt":"write the README for the world generator"}`)),
 					say("Reported."),
 				},
 				[][]llm.Delta{say("partial")})
@@ -56,9 +56,9 @@ func TestWakeTurnStartsNoNewWorkers(t *testing.T) {
 					refused++
 				}
 			}
-			want := 3 // default: nothing starts
+			want := 4 // off: nothing starts
 			if delegate {
-				want = 2 // the two repeats; the reworded task is new work the user allowed
+				want = 3 // the repeats, reworded one included; only the new README task starts
 			}
 			if refused != want {
 				t.Fatalf("refused = %d, want %d", refused, want)
@@ -66,6 +66,26 @@ func TestWakeTurnStartsNoNewWorkers(t *testing.T) {
 			if !delegate && (len(f.task.Workers.List()) != 1 || atomic.LoadInt32(&f.child.calls) != childCalls) {
 				t.Fatalf("an automatic turn started work: workers=%d", len(f.task.Workers.List()))
 			}
+			if delegate && len(f.task.Workers.List()) != 2 {
+				t.Fatalf("on: the new planned task should start: workers=%d", len(f.task.Workers.List()))
+			}
 		})
+	}
+}
+
+func TestSameTaskMatchesRewordedRetries(t *testing.T) {
+	for _, c := range []struct {
+		a, b string
+		want bool
+	}{
+		{"add the spider", "please add a spider mob, retry", true},
+		{"Dodaj pająka do gry", "Ponownie dodaj pająki do gry", true},
+		{"CEL: naprawić generator świata\nKontekst: ...", "CEL: naprawić generator świata\nInny kontekst, inne słowa i kroki", true},
+		{"add the spider", "write the README for the world generator", false},
+		{"add the creeper", "add the spider", false},
+	} {
+		if got := sameTask(c.a, c.b); got != c.want {
+			t.Errorf("sameTask(%q, %q) = %v, want %v", c.a, c.b, got, c.want)
+		}
 	}
 }

@@ -57,7 +57,7 @@ func TestConfigKnobs_DefaultsMirrorTUI(t *testing.T) {
 		"queue_merge", "orchestrator", "show_generation_speed", "update_notify", "assistant_edit", "assistant_edit_model_sees", "cost_currency", "allow_all", "discard_previous_reasoning", "thinking", "navigator", "stable_toolset",
 		"cache_prompt", "darwin", "darwin_parallel", "darwin_models", "darwin_judge_model", "darwin_pool_size", "darwin_auto_merge", "task_parallel",
 		"context_policy", "context_window", "prune_protect_tokens", "memory", "memory_briefing_tokens", "task_max_steps", "task_max_tokens",
-		"max_parallel_agents", "background_wake_max_auto", "max_parallel_agents_per_provider", // background_wake_max_auto: GUI-only (1.0.38)
+		"max_parallel_agents", "background_wake_delegate", "background_wake_max_auto", "max_parallel_agents_per_provider", // background_wake_*: GUI-only (1.0.38)
 		"task_model", "task_reasoning_effort", "advisor_reasoning_effort", "review_reasoning_effort", "darwin_reasoning_effort", "advisor_model", "review_model", "orchestrator_model", "compact_model", "fallback_models", "fallback_cooldown_seconds",
 		"max_retries", "retry_unknown_errors", "requests_per_minute",
 		"noop_gate", "preflight_repo", "draft_verify",
@@ -78,6 +78,9 @@ func TestConfigKnobs_DefaultsMirrorTUI(t *testing.T) {
 	}
 	if k := findKnob(t, knobs, "allow_all"); k.Value != "off" || k.Source != "default" {
 		t.Errorf("allow_all default: %+v", k)
+	}
+	if k := findKnob(t, knobs, "background_wake_delegate"); k.Value != "on" || k.Source != "default" || k.Default != "on" || k.Kind != knobTri {
+		t.Errorf("background_wake_delegate must default to on: %+v", k)
 	}
 	if k := findKnob(t, knobs, "preflight_repo"); k.Value != "on" || k.Source != "default" {
 		t.Errorf("preflight_repo default: %+v", k)

@@ -51,7 +51,7 @@ type sessionBackground struct {
 func (e *Engine) wakeConfig(home string) agent.WakeConfig {
 	tc := e.tomlConfigAt(home)
 	cfg := agent.WakeConfigFrom(tc.BackgroundWakeSettings())
-	cfg.Delegate = tc.BackgroundWakeDelegate
+	cfg.Delegate = tc.WakeDelegate()
 	return cfg
 }
 
