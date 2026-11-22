@@ -257,7 +257,7 @@ function renderRuntimeDiagnostic(row, facts, details, endpoint, state, d) {
   if (d.last_call) {
     var c = d.last_call;
     if (c.ttft_ms) facts.appendChild(runtimeFact(t("runtime.ttft"), fmtDuration(c.ttft_ms), t("runtime.lastRun")));
-    if (c.tokens_per_second) facts.appendChild(runtimeFact(t("runtime.speed"), c.tokens_per_second.toFixed(1) + " tok/s", t("runtime.lastRun")));
+    if (c.tokens_per_second) facts.appendChild(runtimeFact(t("runtime.speed"), fmtDecimal1(c.tokens_per_second) + " tok/s", t("runtime.lastRun")));
     if (c.duration_ms) facts.appendChild(runtimeFact(t("runtime.duration"), fmtDuration(c.duration_ms), t("runtime.lastRun")));
   }
   var body = details.querySelector(".runtime-detail-body"); body.innerHTML = "";

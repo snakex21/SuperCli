@@ -1113,6 +1113,15 @@ function addEventLine(text, cls, tag) {
     // available as a tooltip for bug reports.
     line.title = text;
     registerLanguageRefresh(line, function () { body.nodeValue = localize(text); });
+    var detail = typeof systemTextDetail === "function" ? systemTextDetail(text) : "";
+    if (detail) {
+      // A raw transport error stays out of the line; it is one click away.
+      line.removeAttribute("title");
+      var more = el("details", "event-detail");
+      more.appendChild(i18nEl("summary", "", "task.blockedDetails"));
+      more.appendChild(el("code", "", detail));
+      line.appendChild(more);
+    }
   }
   appendStream(line);
   smartScroll();
@@ -1975,6 +1984,11 @@ function toolHint(name, args) {
         hint: clip(a.prompt || "", 90), agent: kind, prompt: a.prompt || "",
       };
     }
+    if (name === "ask_user") {
+      // The question card shows the question; the row names it, never the JSON.
+      var q = a.question || a.header || (Array.isArray(a.questions) && a.questions[0] && (a.questions[0].question || a.questions[0].header)) || "";
+      return { name: toolDisplayName(name), hint: clip(String(q), 90) };
+    }
     if (name === "send_message") {
       return { name: t("task.continue") + " · " + (a.to || "worker"),
         hint: clip(a.message || "", 90), agent: "", prompt: a.message || "", workerID: a.to || "" };
@@ -2280,7 +2294,7 @@ function setToolResultStatus(row, elapsed, err, changes) {
   if (changes && changes.added) row._stat.appendChild(el("span", "change-add", "+" + changes.added));
   if (changes && changes.removed) row._stat.appendChild(el("span", "change-remove", "−" + changes.removed));
   // A timing that would print as "0.0s" is noise; show it as "<0.1s".
-  var took = elapsed < 50 ? "<0.1s" : fmtDuration(elapsed);
+  var took = elapsed < 50 ? "<" + fmtDuration(100) : fmtDuration(elapsed);
   if (err && row._denied) {
     row._stat.appendChild(el("span", "status-denied", "⊘ " + t("tool.denied")));
     return;
@@ -2501,7 +2515,11 @@ function activityLabel(step) {
     case "edit": return t("activity.edit").replace("{file}", step.file || "");
     case "read": return t("activity.read");
     case "web": return t("activity.web");
-    case "prepare": return t("activity.prepare").replace("{tool}", toolDisplayName(step.tool || "tool"));
+    case "prepare": {
+      // The model is still writing the call: say what it is about to do.
+      var kind = typeof toolKind === "function" ? toolKind(step.tool || "") : "";
+      return t(kind === "write" ? "activity.prepareWrite" : kind === "run" ? "activity.prepareRun" : "activity.prepare");
+    }
     case "worker": return t("activity.waitWorker").replace("{worker}", workerLabel(step.worker || "worker"));
     case "user": return t("activity.waitUser");
     case "retry": return t(step.reason === "rate" ? "activity.retryRateLimit" : step.reason === "provider" ? "activity.retryProvider" : "activity.retryConnection")
@@ -3120,6 +3138,9 @@ function addToolCall(name, args, id, at) {
   row.addEventListener("toggle", function () { body.hidden = !row.open; });
   row._t0 = performance.now();
   row._startedAtMS = at > 0 ? at : 0;
+  // While the question card is open it is the only place the question shows;
+  // the row appears (question + answer) once the user has answered.
+  if (name === "ask_user") row.hidden = true;
   if (name === "task" || name === "send_message") {
     row.classList.add("task-row");
     if (info.workerID) {
@@ -3189,6 +3210,7 @@ function addToolResult(id, output, err, at) {
   var row = toolRows[key];
   openToolOrder = openToolOrder.filter(function (k) { return k !== key; });
   if (!row) return;
+  if (row._toolName === "ask_user") row.hidden = false;
   clearInterval(row._clock);
   row._clock = null;
   row.classList.remove("running", "pending-approval");
@@ -3643,7 +3665,7 @@ function addWorkerProgress(ev) {
 
 function generationSpeedText(ev) {
   var rate = ev && ev.generation_tps;
-  return typeof rate === "number" && Number.isFinite(rate) && rate > 0 ? rate.toFixed(1) + " tok/s" : "";
+  return typeof rate === "number" && Number.isFinite(rate) && rate > 0 ? fmtDecimal1(rate) + " tok/s" : "";
 }
 
 // This message's own numbers in human words, the same order and number
@@ -3654,7 +3676,9 @@ function turnMetaTime(ms) {
 }
 function turnMetaParts(ev, elapsed, toolCount) {
   var num = typeof fmtCompactNumber === "function" ? fmtCompactNumber : fmtTok;
-  var parts = [turnMetaTime(elapsed)];
+  // A delegation turn that only hands work off takes no measurable time:
+  // no "0,0 s" then.
+  var parts = elapsed >= 100 ? [turnMetaTime(elapsed)] : [];
   var cached = ev.tok_cached || 0, input = Math.max(0, (ev.tok_in || 0) - cached);
   var field = function (key, n) { if (n > 0) parts.push(t(key).replace("{n}", num(n))); };
   field("meta.input", input);
@@ -3668,7 +3692,7 @@ function addTurnMeta(ev, elapsed, toolCount, seq) {
 	if (toolCount == null) toolCount = runToolCount;
   var line = el("div", "turn-meta");
   var refresh = function () {
-    line.innerHTML = turnMetaParts(ev, elapsed, toolCount).map(function (p, i) { return i === 0 ? "<b>" + escHtml(p) + "</b>" : escHtml(p); }).join(" · ");
+    line.innerHTML = turnMetaParts(ev, elapsed, toolCount).map(function (p, i) { return i === 0 && elapsed >= 100 ? "<b>" + escHtml(p) + "</b>" : escHtml(p); }).join(" · ");
   };
   refresh();
   // The field names follow the UI language (the numbers never change).

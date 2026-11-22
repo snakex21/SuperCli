@@ -250,7 +250,10 @@ function checkMessageStatsAndReasoning(){return run(function(){
   // The message's own numbers in human words; only fields with a value.
   var parts=turnMetaParts({tok_in:83140,tok_cached:75399,tok_out:2391},72000,1);
   check(parts.join(' | ')===['1:12','wejście '+fmtCompactNumber(7741),'z cache '+fmtCompactNumber(75399),'wyjście '+fmtCompactNumber(2391),'1 narzędzie'].join(' | '),'stats: '+parts.join(' | '));
-  check(turnMetaParts({tok_out:12},4200,0).join(' | ')==='4.2s | wyjście 12','empty fields shown');
+  check(turnMetaParts({tok_out:12},4200,0).join(' | ')==='4,2 s | wyjście 12','empty fields shown');
+  // Decimal comma in Polish; a delegation turn that took no time shows no "0,0 s".
+  check(fmtDuration(16200)==='16,2 s','decimal separator: '+fmtDuration(16200));
+  check(turnMetaParts({tok_out:12},0,1).join(' | ')==='wyjście 12 | 1 narzędzie','zero time shown: '+turnMetaParts({tok_out:12},0,1).join(' | '));
   // One reasoning chip per turn: later segments are marked.
   stream.replaceChildren();
   addUserMsg('pytanie');

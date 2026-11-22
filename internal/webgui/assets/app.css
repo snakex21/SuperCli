@@ -1143,6 +1143,9 @@ button[data-sec="about"].has-update::after {
 .event-line .tag-auto { color: var(--status-running); border-color: color-mix(in srgb, var(--status-running) 45%, transparent); }
 .event-line .tag-auto::before { content: "\21BB"; }
 .event-line.error { color: var(--danger); }
+.event-line .event-detail { display: inline-block; margin-left: 8px; color: var(--muted); }
+.event-line .event-detail summary { cursor: pointer; }
+.event-line .event-detail code { display: block; margin-top: 4px; white-space: pre-wrap; word-break: break-all; }
 .event-line .event-continue { margin-left: 8px; padding: 1px 10px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--text); font: inherit; cursor: pointer; }
 .event-line .event-continue:hover { border-color: var(--accent); }
 .event-line .event-continue:disabled { opacity: .5; cursor: default; }

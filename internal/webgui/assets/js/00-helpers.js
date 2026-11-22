@@ -25,8 +25,16 @@ function clip(s, n) {
   s = String(s || "");
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
+// Seconds with one decimal in the UI language's separator: "16,2 s" in
+// Polish, "16.2 s" in English (the same separator as "10,2 tys.").
+function fmtDecimal1(n) {
+  n = Number(n);
+  if (!Number.isFinite(n)) n = 0;
+  try { return statsFormatter("decimal1", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(n); }
+  catch (e) { return n.toFixed(1); }
+}
 function fmtDuration(ms) {
-  if (ms < 59950) return (ms / 1000).toFixed(1) + "s";
+  if (ms < 59950) return fmtDecimal1(ms / 1000) + " s";
   var total = Math.round(ms / 1000), m = Math.floor(total / 60), s = total % 60;
   return m + "m" + (s < 10 ? "0" : "") + s + "s";
 }

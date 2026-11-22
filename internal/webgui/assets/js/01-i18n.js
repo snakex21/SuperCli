@@ -101,7 +101,8 @@ var SYSTEM_TEXTS = [
   // Retry progress is "3/5" or "12/∞" (max_retries = -1); keep in sync with llm.rateLimitNotice and the TUI localizeNotice.
   { key: "notice.rateLimitRetry", re: /^(.+): rate limited \(HTTP 429\) — retrying in (\S+) \(retry (\d+)\/(\d+|∞)\)$/, args: ["model", "wait", "attempt", "max"] },
   { key: "notice.providerRetry", re: /^(.+): (?:temporary )?provider error \(HTTP (\d+)\) — retrying in (\S+) \(retry (\d+)\/(\d+|∞)\)$/, args: ["model", "status", "wait", "attempt", "max"] },
-  { key: "notice.connectionRetry", re: /^connection to the model dropped \(([\s\S]*)\) — retrying in (\S+) \(retry (\d+)\/(\d+|∞)\)$/, args: ["reason", "wait", "attempt", "max"] },
+  // The raw transport error is shown only in the line's details (detail: 1).
+  { key: "notice.connectionRetry", re: /^connection to the model dropped \(([\s\S]*)\) — retrying in (\S+) \(retry (\d+)\/(\d+|∞)\)$/, args: ["reason", "wait", "attempt", "max"], detail: 1 },
   { key: "notice.connectionWait", re: /^Model connection unavailable — waiting (\S+) before retry (\d+)\/(\d+|∞)\.$/, args: ["wait", "attempt", "max"] },
   { key: "notice.requestLimit", re: /^(.+): request limit (\d+)\/min reached — waiting (\S+)$/, args: ["host", "n", "wait"] },
   { key: "notice.toolsUnsupported", re: /^model "(.+)" does not support tool calling on this endpoint; continuing without tools \(answers only\) — pick a function-calling model for agent work$/, args: ["model"] },
@@ -109,6 +110,18 @@ var SYSTEM_TEXTS = [
   { key: "error.loopSource", re: /^agent: stopped — the last (\d+) source-reading rounds only revisited unchanged lines/, args: ["n"] },
   { key: "error.loopFailure", re: /^agent: stopped — the same tool call failed (\d+) consecutive times/, args: ["n"] },
 ];
+// systemTextDetail returns the raw technical part of a known backend text
+// that the translated line leaves out (shown only when expanded), or "".
+function systemTextDetail(text) {
+  text = String(text || "");
+  for (var i = 0; i < SYSTEM_TEXTS.length; i++) {
+    var entry = SYSTEM_TEXTS[i];
+    if (!entry.detail) continue;
+    var m = entry.re.exec(text);
+    if (m) return m[entry.detail] || "";
+  }
+  return "";
+}
 function localizeSystemText(text) {
   text = String(text || "");
   for (var i = 0; i < SYSTEM_TEXTS.length; i++) {

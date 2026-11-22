@@ -92,12 +92,14 @@ function parallelAgentsHigh(raw) {
   return Number.isFinite(n) && n > 8;
 }
 function knobDisplayValue(k) {
-  var key = ({on:"set.state.on", off:"set.state.off", auto:"set.state.auto", parallel:"setting.value.parallel", sequential:"setting.value.sequential",
+  var key = ({on:"set.value.on", off:"set.value.off", auto:"set.state.auto", "default (main model's effort)":"setting.value.mainEffort", parallel:"setting.value.parallel", sequential:"setting.value.sequential",
     "default (700/300 by tier)":"setting.value.memoryBudget", "default (spec or 10)":"setting.value.workerSteps", "default (no cap)":"setting.value.noCap",
     "default (coordinator's model)":"setting.value.coordinator", "unlimited":"setting.value.unlimited", "default (none)":"setting.value.none", "default (main model)":"setting.value.main", "default (active model)":"setting.value.active", "default (worker model)":"setting.value.worker",
     "off (no automatic paid fallback)":"setting.value.noFallback", "none (diff-only verdict)":"setting.value.diffOnly"})[k.value];
   if (key) return t(key);
-  if (k.value === "default (off)") return t("setting.value.number").replace("{n}", t("set.state.off"));
+  // "default (on|off|auto)": a state in the UI language, never English.
+  var state = String(k.value || "").match(/^default \((auto|on|off)\)$/);
+  if (state) return t("setting.value.number").replace("{n}", t(state[1] === "auto" ? "set.state.auto" : "set.value." + state[1]));
   var number = String(k.value || "").match(/^default \((\d+|∞)\)$/);
   return number ? t("setting.value.number").replace("{n}", number[1]) : k.value;
 }
@@ -180,7 +182,8 @@ function knobRow(k, currencyCodes, section) {
       if (k.key === "orchestrator") {
         label = st === "default" ? t("stats.orchAuto") : (st === "on" ? t("stats.orchOn") : t("stats.orchOff"));
       } else if (st === "default" && k.default) {
-        label += " (" + t("set.state." + k.default) + ")";
+        // A state, not an action: "domyślnie (włączone)", not "(włącz)".
+        label += " (" + t(k.default === "on" || k.default === "off" ? "set.value." + k.default : "set.state." + k.default) + ")";
       }
       var b = el("button", "", label);
       b.type = "button";
