@@ -44,9 +44,6 @@ func TestCheckCommandMatrix(t *testing.T) {
 		{"dd", "if=/dev/zero", "of=/dev/sda"},
 		{"git", "push", "--force", "origin", "main"},
 		{"git", "push", "origin", "+main"},
-		{"git", "reset", "--hard", "HEAD~3"},
-		{"git", "-C", "x", "reset", "--hard"},
-		{"git", "-c", "core.x=y", "clean", "-fdx"},
 		{"sudo", "rm", "-rf", "/"},
 		{"env", "A=1", "rm", "-rf", "/"},
 	}
@@ -77,6 +74,14 @@ func TestCheckCommandMatrix(t *testing.T) {
 		{"rm", "-rf", filepath.Join(parent, "elsewhere")},
 		{"bash", "-c", "cd \"$X\" && rm -rf build"},
 		{"bash", "script.sh"},
+		// git commands that discard uncommitted work: asked, not blocked.
+		{"git", "reset", "--hard", "HEAD~3"},
+		{"git", "reset", "--hard", "HEAD"},
+		{"git", "-C", "x", "reset", "--hard"},
+		{"git", "checkout", "."},
+		{"git", "restore", "."},
+		{"git", "clean", "-fdx"},
+		{"git", "-c", "core.x=y", "clean", "-fdx"},
 	}
 	allow := [][]string{
 		{"go", "test", "./..."},
@@ -117,6 +122,10 @@ func TestCheckCommandMatrix(t *testing.T) {
 		if got := CheckCommand(argv, project, ""); got.Verdict != CommandAllow {
 			t.Errorf("ordinary command refused: %q -> %+v", argv, got)
 		}
+	}
+	got := CheckCommand([]string{"git", "reset", "--hard", "HEAD"}, project, "")
+	if !strings.Contains(got.Question, "uncommitted changes") || !strings.HasSuffix(got.Question, "Run it?") {
+		t.Errorf("git reset --hard question = %q", got.Question)
 	}
 	if runtime.GOOS == "windows" {
 		if got := CheckCommand([]string{"cmd", "/c", `rd /s /q "C:\Program Files"`}, project, ""); got.Verdict != CommandBlock {

@@ -8,26 +8,33 @@ import (
 	"strings"
 )
 
-// Destructive command guard (1.0.39). File tools are confined to the project
-// and their deletes go to the trash, but a command ran with no check at all:
-// one call could wipe a disk, the user's home, the project or its history.
-// Every tool that runs commands (ctx_execute, process_session start/write)
-// classifies the command before it runs. The rule is "ask by default" for
-// anything destructive (a blacklist is always full of holes):
+// Destructive command guard. File tools are confined to the project and their
+// deletes go to the trash, but commands run by ctx_execute and
+// process_session (start/write) are ordinary processes. Before one runs, this
+// guard classifies its command line.
 //
-//   - Allow: commands that delete or destroy nothing, and deletes whose every
-//     target is a literal path inside the project (after resolving cd,
-//     pushd, Set-Location, "..", "~") - not the project itself, not .git.
-//   - Block: unambiguous disasters - a drive or filesystem root, a home
-//     folder or its parents, a user's home, a system folder, the project or
-//     its .git; disk/partition/power commands, raw device writes; git reset
-//     --hard, force push, clean -f.
-//   - Ask (the user approves or denies; nothing runs silently): everything
-//     else that deletes - targets outside the project, targets from a pipe
-//     or a substitution ($(...), (...), backticks), variables, loops,
-//     encoded or dynamic commands (-EncodedCommand and every -e prefix, iex,
-//     Invoke-Expression, eval), deletes behind wrappers (sudo, busybox, env,
-//     nohup, xargs), an unknown working directory.
+// It is a safety net against common accidental destructive commands, NOT a
+// sandbox: it recognises the usual delete commands (rm, del, rd,
+// Remove-Item, find -delete, ...), disk/power commands and git commands that
+// destroy work. Any command it does not recognise is allowed - a program, a
+// script or an unusual tool can still change anything the user's account
+// can, and the process itself is not isolated.
+//
+//   - Allow: commands not recognised as destructive, and recognised deletes
+//     whose every target is a literal path inside the project (after
+//     resolving cd, pushd, Set-Location, "..", "~") - not the project itself,
+//     not .git.
+//   - Block: unambiguous disasters - deleting a drive or filesystem root, a
+//     home folder or its parents, a user's home, a system folder, the
+//     project or its .git; disk/partition/power commands, raw device writes;
+//     git force push.
+//   - Ask (the user approves or denies): the other recognised deletes -
+//     targets outside the project, targets from a pipe or a substitution
+//     ($(...), (...), backticks), variables, loops, encoded or dynamic
+//     commands (-EncodedCommand, iex, Invoke-Expression, eval), deletes
+//     behind wrappers (sudo, busybox, env, nohup, xargs), an unknown working
+//     directory - and git reset --hard, checkout/restore of the whole tree
+//     and clean -f, which discard uncommitted work.
 //
 // Commands are parsed with their quoting (POSIX sh, PowerShell, cmd), so a
 // separator inside a quoted argument ("fix bug & reboot fixture") is text.
@@ -45,6 +52,9 @@ const (
 type CommandCheck struct {
 	Verdict CommandVerdict
 	Reason  string
+	// Question, when set, is the plain question put to the user for an Ask
+	// verdict (otherwise the approval prompt is built from Reason).
+	Question string
 }
 
 type shellKind int
@@ -111,6 +121,12 @@ func (g *guard) home() string {
 func (g *guard) raise(v CommandVerdict, reason string) {
 	if v > g.result.Verdict {
 		g.result = CommandCheck{Verdict: v, Reason: reason}
+	}
+}
+
+func (g *guard) ask(reason, question string) {
+	if CommandAsk > g.result.Verdict {
+		g.result = CommandCheck{Verdict: CommandAsk, Reason: reason, Question: question}
 	}
 }
 
@@ -626,20 +642,23 @@ func (g *guard) git(args []string) {
 	case "reset":
 		for _, o := range opts {
 			if strings.EqualFold(o, "--hard") || strings.EqualFold(o, "--merge") {
-				g.raise(CommandBlock, "git reset --hard discards uncommitted work")
+				g.ask("git reset "+o+" discards uncommitted work",
+					"This discards uncommitted changes in the project (git reset "+o+"); they cannot be recovered. Run it?")
 			}
 		}
 	case "clean":
 		for _, o := range opts {
 			l := strings.ToLower(o)
 			if strings.HasPrefix(l, "-") && !strings.HasPrefix(l, "--") && strings.Contains(l, "f") || l == "--force" {
-				g.raise(CommandBlock, "git clean deletes untracked files")
+				g.ask("git clean deletes untracked files",
+					"This permanently deletes untracked files in the project (git clean "+o+"); they cannot be recovered. Run it?")
 			}
 		}
 	case "checkout", "restore":
 		for _, o := range opts {
 			if o == "." || o == "*" || o == ":/" {
-				g.raise(CommandBlock, "git "+sub+" of the whole tree discards uncommitted work")
+				g.ask("git "+sub+" of the whole tree discards uncommitted work",
+					"This discards uncommitted changes in the project (git "+sub+" "+o+"); they cannot be recovered. Run it?")
 			}
 		}
 	}
