@@ -47,7 +47,8 @@ func TestCheckCommandMatrix(t *testing.T) {
 		{"sudo", "rm", "-rf", "/"},
 		{"env", "A=1", "rm", "-rf", "/"},
 	}
-	ask := [][]string{
+	// Formerly asked; the guard never asks now, so all of these run.
+	unsure := [][]string{
 		{"rm", "-rf", "${HOME}"},
 		{"rm", "-rf", "$DIR"},
 		{"bash", "-c", "rm -rf \"$BUILD_DIR\""},
@@ -74,7 +75,7 @@ func TestCheckCommandMatrix(t *testing.T) {
 		{"rm", "-rf", filepath.Join(parent, "elsewhere")},
 		{"bash", "-c", "cd \"$X\" && rm -rf build"},
 		{"bash", "script.sh"},
-		// git commands that discard uncommitted work: asked, not blocked.
+		// git commands that discard uncommitted work: allowed.
 		{"git", "reset", "--hard", "HEAD~3"},
 		{"git", "reset", "--hard", "HEAD"},
 		{"git", "-C", "x", "reset", "--hard"},
@@ -113,19 +114,15 @@ func TestCheckCommandMatrix(t *testing.T) {
 			t.Errorf("not blocked: %q -> %+v", argv, got)
 		}
 	}
-	for _, argv := range ask {
-		if got := CheckCommand(argv, project, ""); got.Verdict != CommandAsk {
-			t.Errorf("not asked: %q -> %+v", argv, got)
+	for _, argv := range unsure {
+		if got := CheckCommand(argv, project, ""); got.Verdict != CommandAllow {
+			t.Errorf("unsure command not allowed: %q -> %+v", argv, got)
 		}
 	}
 	for _, argv := range allow {
 		if got := CheckCommand(argv, project, ""); got.Verdict != CommandAllow {
 			t.Errorf("ordinary command refused: %q -> %+v", argv, got)
 		}
-	}
-	got := CheckCommand([]string{"git", "reset", "--hard", "HEAD"}, project, "")
-	if !strings.Contains(got.Question, "uncommitted changes") || !strings.HasSuffix(got.Question, "Run it?") {
-		t.Errorf("git reset --hard question = %q", got.Question)
 	}
 	if runtime.GOOS == "windows" {
 		if got := CheckCommand([]string{"cmd", "/c", `rd /s /q "C:\Program Files"`}, project, ""); got.Verdict != CommandBlock {
@@ -144,43 +141,43 @@ func TestCheckCommandOrdinaryMaintenance(t *testing.T) {
 		argv []string
 		want CommandVerdict
 	}{
-		// .git: lock files allowed, other contents asked, .git itself blocked.
+		// .git: contents allowed, .git itself blocked.
 		{[]string{"rm", "-f", ".git/index.lock"}, CommandAllow},
 		{[]string{"cmd", "/c", `del .git\index.lock`}, CommandAllow},
 		{[]string{"rm", "-f", ".git/refs/heads/main.lock"}, CommandAllow},
-		{[]string{"rm", ".git/hooks/pre-commit"}, CommandAsk},
-		{[]string{"rm", "-rf", ".git/hooks"}, CommandAsk},
-		{[]string{"rm", "-f", ".git/*.lock"}, CommandAsk},
+		{[]string{"rm", ".git/hooks/pre-commit"}, CommandAllow},
+		{[]string{"rm", "-rf", ".git/hooks"}, CommandAllow},
+		{[]string{"rm", "-f", ".git/*.lock"}, CommandAllow},
 		{[]string{"rm", "-rf", ".git"}, CommandBlock},
 		{[]string{"rm", "-rf", ".git/"}, CommandBlock},
 		{[]string{"pwsh", "-c", "Remove-Item -Recurse -Force .git"}, CommandBlock},
 		// git push.
-		{[]string{"git", "push", "--force-with-lease"}, CommandAsk},
-		{[]string{"git", "push", "--force-with-lease=main:abc123", "origin", "main"}, CommandAsk},
-		{[]string{"git", "push", "--force-if-includes", "origin", "main"}, CommandAsk},
-		{[]string{"git", "push", "origin", "--delete", "old-branch"}, CommandAsk},
-		{[]string{"git", "push", "origin", "-d", "old-branch"}, CommandAsk},
-		{[]string{"git", "push", "origin", ":old-branch"}, CommandAsk},
+		{[]string{"git", "push", "--force-with-lease"}, CommandAllow},
+		{[]string{"git", "push", "--force-with-lease=main:abc123", "origin", "main"}, CommandAllow},
+		{[]string{"git", "push", "--force-if-includes", "origin", "main"}, CommandAllow},
+		{[]string{"git", "push", "origin", "--delete", "old-branch"}, CommandAllow},
+		{[]string{"git", "push", "origin", "-d", "old-branch"}, CommandAllow},
+		{[]string{"git", "push", "origin", ":old-branch"}, CommandAllow},
 		{[]string{"git", "push", "--force", "origin", "main"}, CommandBlock},
 		{[]string{"git", "push", "-f"}, CommandBlock},
 		{[]string{"git", "push", "origin", "+main"}, CommandBlock},
 		{[]string{"git", "push", "--force-with-lease", "--force"}, CommandBlock},
 		{[]string{"git", "push", "origin", "main"}, CommandAllow},
-		// Cache and tool folders in home: asked; home and other folders in it: blocked.
-		{[]string{"rm", "-rf", "~/.cache"}, CommandAsk},
-		{[]string{"rm", "-rf", "~/.npm"}, CommandAsk},
-		{[]string{"rm", "-rf", "~/.gradle"}, CommandAsk},
-		{[]string{"rm", "-rf", "~/.cache/*"}, CommandAsk},
-		{[]string{"rm", "-rf", "~/.cache/go-build"}, CommandAsk},
+		// Cache and tool folders in home: allowed; home and other folders in it: blocked.
+		{[]string{"rm", "-rf", "~/.cache"}, CommandAllow},
+		{[]string{"rm", "-rf", "~/.npm"}, CommandAllow},
+		{[]string{"rm", "-rf", "~/.gradle"}, CommandAllow},
+		{[]string{"rm", "-rf", "~/.cache/*"}, CommandAllow},
+		{[]string{"rm", "-rf", "~/.cache/go-build"}, CommandAllow},
 		{[]string{"rm", "-rf", "~"}, CommandBlock},
 		{[]string{"rm", "-rf", "~/Documents"}, CommandBlock},
 		{[]string{"rm", "-rf", "~/.ssh"}, CommandBlock},
 		{[]string{"rm", "-rf", "~/*"}, CommandBlock},
-		// cipher: /w wipes, the rest is asked.
+		// cipher: /w wipes, the rest is allowed.
 		{[]string{"cipher", "/w:C:"}, CommandBlock},
 		{[]string{"cipher", "/W:C:\\"}, CommandBlock},
-		{[]string{"cipher", "/e", "secret.txt"}, CommandAsk},
-		{[]string{"cipher"}, CommandAsk},
+		{[]string{"cipher", "/e", "secret.txt"}, CommandAllow},
+		{[]string{"cipher"}, CommandAllow},
 		// Unchanged.
 		{[]string{"rm", "-rf", "*"}, CommandBlock},
 	}
@@ -188,9 +185,6 @@ func TestCheckCommandOrdinaryMaintenance(t *testing.T) {
 		if got := CheckCommand(c.argv, project, ""); got.Verdict != c.want {
 			t.Errorf("%q -> %+v, want verdict %d", c.argv, got, c.want)
 		}
-	}
-	if got := CheckCommand([]string{"git", "push", "--force-with-lease"}, project, ""); !strings.HasSuffix(got.Question, "Run it?") {
-		t.Errorf("force-with-lease question = %q", got.Question)
 	}
 }
 

@@ -31,14 +31,12 @@ import (
 //     commands, cipher /w, raw device writes; git push --force/-f/+ref.
 //     Lock files inside .git (.git/index.lock) may be deleted; other
 //     deletes inside .git are asked.
-//   - Ask (the user approves or denies): the other recognised deletes -
-//     targets outside the project, targets from a pipe or a substitution
-//     ($(...), (...), backticks), variables, loops, encoded or dynamic
-//     commands (-EncodedCommand, iex, Invoke-Expression, eval), deletes
-//     behind wrappers (sudo, busybox, env, nohup, xargs), an unknown working
-//     directory - and git reset --hard, checkout/restore of the whole tree
-//     and clean -f, which discard uncommitted work; git push
-//     --force-with-lease and remote branch deletes.
+//   - Nothing is asked. What the guard cannot judge from literal text
+//     (targets outside the project, from a pipe or a substitution, variables,
+//     loops, encoded or dynamic commands, wrappers, an unknown working
+//     directory) runs, and so do git reset --hard, checkout/restore of the
+//     whole tree, clean -f, push --force-with-lease and remote branch
+//     deletes. CommandAsk stays in the API but this guard never returns it.
 //
 // Commands are parsed with their quoting (POSIX sh, PowerShell, cmd), so a
 // separator inside a quoted argument ("fix bug & reboot fixture") is text.
@@ -122,17 +120,18 @@ func (g *guard) home() string {
 	return g.homeDir
 }
 
+// raise records a Block. The guard never asks: ordinary work (variables,
+// pipes, loops, wrappers, git reset --hard, deletes outside the project)
+// must not stop on a question, so every "unsure" case is allowed and only
+// the literal catastrophes listed above are refused.
 func (g *guard) raise(v CommandVerdict, reason string) {
-	if v > g.result.Verdict {
+	if v == CommandBlock && v > g.result.Verdict {
 		g.result = CommandCheck{Verdict: v, Reason: reason}
 	}
 }
 
-func (g *guard) ask(reason, question string) {
-	if CommandAsk > g.result.Verdict {
-		g.result = CommandCheck{Verdict: CommandAsk, Reason: reason, Question: question}
-	}
-}
+// ask is kept for the call sites that name an unsure case; it allows.
+func (g *guard) ask(reason, question string) {}
 
 func cleanBase(base string) string {
 	if strings.TrimSpace(base) == "" {
