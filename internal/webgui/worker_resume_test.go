@@ -29,7 +29,8 @@ func (*resumedQuestionProvider) Complete(_ context.Context, messages []llm.Messa
 		}
 	}
 	var call *llm.ToolCall
-	if last.Role == llm.RoleUser {
+	// An automatic turn reads a worker report: answer, never delegate again.
+	if last.Role == llm.RoleUser && last.Name != llm.WorkerNotificationName && !strings.Contains(user, "<task-notification>") {
 		switch {
 		case strings.HasPrefix(strings.TrimSpace(user), "worker-fixture-resume"):
 			call = &llm.ToolCall{ID: "question-call", Name: "ask_user", Arguments: `{"question":"Resume choice?","options":[{"label":"A"},{"label":"B"}]}`}
@@ -51,6 +52,71 @@ func (*resumedQuestionProvider) Complete(_ context.Context, messages []llm.Messa
 	return out, nil
 }
 
+// resumeWorkerInNewWebRun drives the shared scenario: a first web run
+// delegates worker-1, a second (new) web run continues it with send_message.
+// The continuation runs in the background (1.0.39): the second run returns at
+// once, and the worker's question, live progress and final report reach the
+// conversation's views through its background frames.
+func resumeWorkerInNewWebRun(t *testing.T, eng *Engine) (continued wireEvent, events []wireEvent) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	rec := newSessionEventRecorder(t, eng)
+	if err := eng.runStream(ctx, "implement spawn-fixture", "", "", rec.emit); err != nil {
+		t.Fatal(err)
+	}
+	sid := rec.session()
+	rec.waitFor(t, 10*time.Second, "worker-1's first report", func(evs []wireEvent) bool {
+		for _, ev := range evs {
+			if ev.Type == "worker" && ev.ID == "worker-1" && ev.Status == "done" {
+				return true
+			}
+		}
+		return false
+	})
+	// Wait until the automatic turn for that report has released the
+	// conversation, so the next message is a plain new run.
+	deadline := time.Now().Add(10 * time.Second)
+	for eng.sessionRunActive(sid) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	started := time.Now()
+	if err := eng.runStream(ctx, "implement continue-fixture", sid, "", rec.emit); err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(started); took > 5*time.Second {
+		t.Fatalf("the continuing run waited %v for the worker", took)
+	}
+	for _, ev := range rec.snapshot() {
+		if ev.Type == "tool_result" && ev.ID == "resume-call" {
+			continued = ev
+		}
+	}
+	// The worker asks after the run that continued it has ended.
+	var question *questionWire
+	rec.waitFor(t, 10*time.Second, "the resumed worker's question", func(evs []wireEvent) bool {
+		for _, ev := range evs {
+			if ev.Type == "question" && ev.Question != nil {
+				question = ev.Question
+				return true
+			}
+		}
+		return false
+	})
+	if err := eng.answerQuestion(question.ID, tools.AskAnswer{Selected: []string{"B"}}); err != nil {
+		t.Fatal(err)
+	}
+	events = rec.waitFor(t, 10*time.Second, "the resumed worker's report", func(evs []wireEvent) bool {
+		for _, ev := range evs {
+			if ev.Type == "worker" && ev.ID == "worker-1" && ev.Run == 2 && ev.Status == "done" {
+				return true
+			}
+		}
+		return false
+	})
+	return continued, events
+}
+
 func TestResumedWorkerQuestionAndProgressUseNewWebRun(t *testing.T) {
 	dir := t.TempDir()
 	eng, err := NewEngine(echoConfig(), dir, dir)
@@ -59,35 +125,24 @@ func TestResumedWorkerQuestionAndProgressUseNewWebRun(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = eng.Close() })
 	eng.prov = &resumedQuestionProvider{}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	sid := ""
-	if err := eng.runStream(ctx, "implement spawn-fixture", "", "", func(ev wireEvent) {
-		if ev.Type == "session" {
-			sid = ev.SessionID
-		}
-	}); err != nil {
-		t.Fatal(err)
+	continued, events := resumeWorkerInNewWebRun(t, eng)
+	if continued.Err != "" || !strings.Contains(continued.Output, "continued in background") {
+		t.Fatalf("continuation result = %+v", continued)
 	}
-	var question, progress, result bool
-	err = eng.runStream(ctx, "implement continue-fixture", sid, "", func(ev wireEvent) {
-		if ev.Type == "question" {
-			question = true
-			if err := eng.answerQuestion(ev.Question.ID, tools.AskAnswer{Selected: []string{"B"}}); err != nil {
-				t.Error(err)
-			}
+	var questionClosed, progress, report bool
+	for _, ev := range events {
+		if ev.Type == "question_closed" {
+			questionClosed = true
 		}
+		// Progress of the new run (2) is bound to the call that continued it.
 		if ev.Type == "worker_progress" && ev.ParentCallID == "resume-call" && ev.Run == 2 {
 			progress = true
 		}
-		if ev.Type == "tool_result" && ev.ID == "resume-call" && ev.Err == "" && strings.Contains(ev.Output, "completed fixture") {
-			result = true
+		if ev.Type == "worker" && ev.ID == "worker-1" && ev.Run == 2 && strings.Contains(ev.Text+ev.Output, "completed fixture") {
+			report = true
 		}
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
-	if !question || !progress || !result {
-		t.Fatalf("question=%v progress=%v result=%v", question, progress, result)
+	if !progress || !report {
+		t.Fatalf("progress=%v report=%v questionClosed=%v", progress, report, questionClosed)
 	}
 }

@@ -1241,5 +1241,13 @@
   "setting.value.unlimited": "без ограничение",
   "setting.value.none": "няма",
   "modes.desc.max_parallel_agents": "Колко помощни агенти могат да работят едновременно. Празно = по подразбиране (6); 0 = без ограничение.",
-  "modes.desc.max_parallel_agents_per_provider": "Незадължителен лимит на доставчик: доставчик=число, разделени с ';' (напр. lmstudio=1; openrouter=4)."
+  "modes.desc.max_parallel_agents_per_provider": "Незадължителен лимит на доставчик: доставчик=число, разделени с ';' (напр. lmstudio=1; openrouter=4).",
+  "eventTag.stop": "Спряно",
+  "eventTag.error": "Грешка",
+  "eventTag.auto": "Автоматично",
+  "eventTag.info": "Инфо",
+  "task.stopWorker": "Спри",
+  "task.stopWorkerHint": "Спри само този помощен агент; разговорът продължава",
+  "task.stopFailed": "Агентът не можа да бъде спрян. Опитайте отново.",
+  "notice.emptyReply": "Моделът не върна отговор. Попитайте отново или изберете друг модел."
 }

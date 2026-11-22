@@ -1241,5 +1241,13 @@
   "setting.value.unlimited": "χωρίς όριο",
   "setting.value.none": "κανένα",
   "modes.desc.max_parallel_agents": "Πόσοι βοηθητικοί πράκτορες μπορούν να δουλεύουν ταυτόχρονα. Κενό = προεπιλογή (6)· 0 = χωρίς όριο.",
-  "modes.desc.max_parallel_agents_per_provider": "Προαιρετικό όριο ανά πάροχο: πάροχος=αριθμός, χωρισμένα με ';' (π.χ. lmstudio=1; openrouter=4)."
+  "modes.desc.max_parallel_agents_per_provider": "Προαιρετικό όριο ανά πάροχο: πάροχος=αριθμός, χωρισμένα με ';' (π.χ. lmstudio=1; openrouter=4).",
+  "eventTag.stop": "Διακόπηκε",
+  "eventTag.error": "Σφάλμα",
+  "eventTag.auto": "Αυτόματα",
+  "eventTag.info": "Πληροφορία",
+  "task.stopWorker": "Διακοπή",
+  "task.stopWorkerHint": "Διακοπή μόνο αυτού του βοηθητικού πράκτορα· η συνομιλία συνεχίζεται",
+  "task.stopFailed": "Ο πράκτορας δεν μπόρεσε να διακοπεί. Δοκιμάστε ξανά.",
+  "notice.emptyReply": "Το μοντέλο δεν επέστρεψε απάντηση. Ρωτήστε ξανά ή επιλέξτε άλλο μοντέλο."
 }

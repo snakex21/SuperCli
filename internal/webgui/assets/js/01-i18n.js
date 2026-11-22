@@ -89,6 +89,8 @@ function tn(key, n) {
 var SYSTEM_TEXTS = [
   { key: "notice.preflight", re: /^preflight: repo context ~(\d+) tok \(project turn\)$/, args: ["n"] },
   { key: "notice.loopWarning", re: /^repeated tool evidence: loop warning injected$/, args: [] },
+  // Keep in sync with agent.EmptyReplyNotice.
+  { key: "notice.emptyReply", re: /^empty reply: the model returned no answer; ask again or choose another model$/, args: [] },
   // Retry progress is "3/5" or "12/∞" (max_retries = -1); keep in sync with llm.rateLimitNotice and the TUI localizeNotice.
   { key: "notice.rateLimitRetry", re: /^(.+): rate limited \(HTTP 429\) — retrying in (\S+) \(retry (\d+)\/(\d+|∞)\)$/, args: ["model", "wait", "attempt", "max"] },
   { key: "notice.providerRetry", re: /^(.+): (?:temporary )?provider error \(HTTP (\d+)\) — retrying in (\S+) \(retry (\d+)\/(\d+|∞)\)$/, args: ["model", "status", "wait", "attempt", "max"] },

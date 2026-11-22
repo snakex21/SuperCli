@@ -1241,5 +1241,13 @@
   "setting.value.unlimited": "ingen grænse",
   "setting.value.none": "ingen",
   "modes.desc.max_parallel_agents": "Hvor mange hjælpeagenter der må arbejde samtidig. Tom = standard (6); 0 = ingen grænse.",
-  "modes.desc.max_parallel_agents_per_provider": "Valgfri grænse pr. udbyder: udbyder=tal adskilt af ';' (fx lmstudio=1; openrouter=4)."
+  "modes.desc.max_parallel_agents_per_provider": "Valgfri grænse pr. udbyder: udbyder=tal adskilt af ';' (fx lmstudio=1; openrouter=4).",
+  "eventTag.stop": "Stoppet",
+  "eventTag.error": "Fejl",
+  "eventTag.auto": "Automatisk",
+  "eventTag.info": "Info",
+  "task.stopWorker": "Stop",
+  "task.stopWorkerHint": "Stop kun denne hjælpeagent; samtalen fortsætter",
+  "task.stopFailed": "Agenten kunne ikke stoppes. Prøv igen.",
+  "notice.emptyReply": "Modellen returnerede intet svar. Spørg igen eller vælg en anden model."
 }

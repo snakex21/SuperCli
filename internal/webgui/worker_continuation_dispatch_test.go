@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-	"time"
 
 	"supercli/internal/llm"
-	"supercli/internal/tools"
 )
 
 // This is the envelope a stable tool catalog uses, rather than a direct native
@@ -40,33 +38,21 @@ func TestWorkerContinuationEnvelopeSurvivesNewWebRun(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = eng.Close() })
 	eng.prov = &workerContinuationEnvelopeProvider{}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	sid := ""
-	if err := eng.runStream(ctx, "implement spawn-fixture", "", "", func(ev wireEvent) {
-		if ev.Type == "session" {
-			sid = ev.SessionID
-		}
-	}); err != nil {
-		t.Fatal(err)
+	// The stable-catalog envelope (invoke_tool -> send_message) still reaches
+	// the retained worker from a fresh run's registry, without discovery; the
+	// continuation then runs in the background and reports back.
+	continued, events := resumeWorkerInNewWebRun(t, eng)
+	if continued.Err != "" {
+		t.Fatalf("continuation requires discovery: %s", continued.Err)
 	}
-	continued := false
-	if err := eng.runStream(ctx, "implement continue-fixture", sid, "", func(ev wireEvent) {
-		if ev.Type == "question" {
-			if err := eng.answerQuestion(ev.Question.ID, tools.AskAnswer{Selected: []string{"B"}}); err != nil {
-				t.Error(err)
-			}
-		}
-		if ev.Type == "tool_result" && ev.ID == "resume-call" {
-			if ev.Err != "" {
-				t.Errorf("continuation requires discovery: %s", ev.Err)
-			}
-			continued = ev.Err == "" && strings.Contains(ev.Output, "completed fixture")
-		}
-	}); err != nil {
-		t.Fatal(err)
+	if !strings.Contains(continued.Output, "continued in background") {
+		t.Fatalf("retained worker was not resumed: %+v", continued)
 	}
-	if !continued {
-		t.Fatal("retained worker was not resumed")
+	reported := false
+	for _, ev := range events {
+		reported = reported || ev.Type == "worker" && ev.ID == "worker-1" && ev.Run == 2 && strings.Contains(ev.Text+ev.Output, "completed fixture")
+	}
+	if !reported {
+		t.Fatal("resumed worker's report did not reach the conversation")
 	}
 }

@@ -1241,5 +1241,13 @@
   "setting.value.unlimited": "sınırsız",
   "setting.value.none": "yok",
   "modes.desc.max_parallel_agents": "Aynı anda kaç yardımcı ajan çalışabilir. Boş = varsayılan (6); 0 = sınırsız.",
-  "modes.desc.max_parallel_agents_per_provider": "Sağlayıcı başına isteğe bağlı sınır: sağlayıcı=sayı, ';' ile ayrılır (ör. lmstudio=1; openrouter=4)."
+  "modes.desc.max_parallel_agents_per_provider": "Sağlayıcı başına isteğe bağlı sınır: sağlayıcı=sayı, ';' ile ayrılır (ör. lmstudio=1; openrouter=4).",
+  "eventTag.stop": "Durduruldu",
+  "eventTag.error": "Hata",
+  "eventTag.auto": "Otomatik",
+  "eventTag.info": "Bilgi",
+  "task.stopWorker": "Durdur",
+  "task.stopWorkerHint": "Yalnızca bu yardımcı ajanı durdur; konuşma devam eder",
+  "task.stopFailed": "Ajan durdurulamadı. Yeniden deneyin.",
+  "notice.emptyReply": "Model yanıt döndürmedi. Yeniden sorun veya başka bir model seçin."
 }

@@ -1241,5 +1241,13 @@
   "setting.value.unlimited": "piiranguta",
   "setting.value.none": "puudub",
   "modes.desc.max_parallel_agents": "Mitu abiagenti võib korraga töötada. Tühi = vaikimisi (6); 0 = piiranguta.",
-  "modes.desc.max_parallel_agents_per_provider": "Valikuline piirang teenusepakkuja kohta: pakkuja=arv, eraldatud ';' (nt lmstudio=1; openrouter=4)."
+  "modes.desc.max_parallel_agents_per_provider": "Valikuline piirang teenusepakkuja kohta: pakkuja=arv, eraldatud ';' (nt lmstudio=1; openrouter=4).",
+  "eventTag.stop": "Peatatud",
+  "eventTag.error": "Viga",
+  "eventTag.auto": "Automaatne",
+  "eventTag.info": "Info",
+  "task.stopWorker": "Peata",
+  "task.stopWorkerHint": "Peata ainult see abiagent; vestlus jätkub",
+  "task.stopFailed": "Agenti ei õnnestunud peatada. Proovi uuesti.",
+  "notice.emptyReply": "Mudel ei andnud vastust. Küsi uuesti või vali teine mudel."
 }

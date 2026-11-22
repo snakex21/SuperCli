@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -30,6 +31,7 @@ type stubProvider struct {
 	reqs         [][]llm.Message // every Complete receives this; tests use it to inspect wire requests
 	toolReqs     []int           // schema count per Complete call
 	toolDefsReqs [][]llm.ToolDef // exact native contracts per Complete call
+	mu           sync.Mutex
 }
 
 func (p *stubProvider) Name() string { return p.name }
@@ -40,9 +42,12 @@ func (p *stubProvider) Complete(ctx context.Context, msgs []llm.Message, toolDef
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	// Parallel background workers can share one stub.
+	p.mu.Lock()
 	p.reqs = append(p.reqs, msgs)
 	p.toolReqs = append(p.toolReqs, len(toolDefs))
 	p.toolDefsReqs = append(p.toolDefsReqs, append([]llm.ToolDef(nil), toolDefs...))
+	p.mu.Unlock()
 	if len(p.scripts) == 0 {
 		ch := make(chan llm.Delta, 1)
 		go func() {

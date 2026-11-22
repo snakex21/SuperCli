@@ -1241,5 +1241,13 @@
   "setting.value.unlimited": "sem limite",
   "setting.value.none": "nenhum",
   "modes.desc.max_parallel_agents": "Quantos agentes auxiliares podem trabalhar ao mesmo tempo. Vazio = padrão (6); 0 = sem limite.",
-  "modes.desc.max_parallel_agents_per_provider": "Limite opcional por provedor: provedor=número separados por ';' (ex.: lmstudio=1; openrouter=4)."
+  "modes.desc.max_parallel_agents_per_provider": "Limite opcional por provedor: provedor=número separados por ';' (ex.: lmstudio=1; openrouter=4).",
+  "eventTag.stop": "Parado",
+  "eventTag.error": "Erro",
+  "eventTag.auto": "Automático",
+  "eventTag.info": "Info",
+  "task.stopWorker": "Parar",
+  "task.stopWorkerHint": "Parar apenas este agente auxiliar; a conversa continua",
+  "task.stopFailed": "Não foi possível parar o agente. Tente novamente.",
+  "notice.emptyReply": "O modelo não retornou resposta. Pergunte novamente ou escolha outro modelo."
 }

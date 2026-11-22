@@ -14,7 +14,9 @@ import (
 // prompt — addons are absent from the raw transcript.
 func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 	l.implementationHintForRun = ""
-	l.statusOnlyForRun = l.hasDelegationTools() && isStatusQuestion(prompt)
+	l.statusOnlyForRun = l.hasDelegationTools() && (isStatusQuestion(prompt) || isSmallTalk(prompt))
+	l.wakeTurnForRun = false
+	l.userPromptForRun = prompt
 	l.screenshotForRun = containsScreenshotReference(prompt)
 	l.headlessForRun = containsHeadlessReference(prompt)
 	l.downloadForRun = l.downloadRequestForPrompt(prompt).download
@@ -33,7 +35,7 @@ func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 	// background goroutine, so Run() returns immediately and the TUI
 	// never blocks on Enter waiting for the route decision.
 	switch {
-	case l.statusOnlyForRun:
+	case l.statusOnlyForRun && isStatusQuestion(prompt):
 		// A status question about delegated work needs the coordinator's
 		// worker context (states, reports, read_output), not the chat route.
 		l.route = RouteCoordinator
@@ -82,7 +84,7 @@ func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 	if l.route == RouteCoordinator && !l.skipImplementationHint {
 		l.implementationHintForRun = implementationVerificationHint(prompt)
 	}
-	if l.statusOnlyForRun {
+	if l.statusOnlyForRun && l.route == RouteCoordinator {
 		// Replaces the implementation hint: nothing is to be implemented.
 		l.implementationHintForRun = l.statusTurnContext()
 	}

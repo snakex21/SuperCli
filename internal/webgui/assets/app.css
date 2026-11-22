@@ -1125,12 +1125,23 @@ button[data-sec="about"].has-update::after {
   .task-activity-item .activity-status { min-width: 0; white-space: normal; text-align: right; }
 }
 
-/* Event lines — [compact], [prune], preflight, workers, errors */
+/* Event lines — compact, prune, preflight, workers, errors. The tag is a
+   translated chip (icon + word), never a raw [tag] marker. */
 .event-line {
   font: var(--fs-xs) var(--mono); color: var(--faint);
   padding-left: 2px; word-break: break-word;
 }
-.event-line .tag { color: var(--muted); }
+.event-line .tag {
+  display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; padding: 0 7px;
+  border: 1px solid var(--line); border-radius: 999px; color: var(--muted);
+  font: var(--fs-xs) var(--sans); line-height: 1.6; vertical-align: 1px;
+}
+.event-line .tag::before { content: "i"; font-weight: 700; font-size: 10px; }
+.event-line .tag-stop::before { content: "\25A0"; font-size: 9px; }
+.event-line .tag-error { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.event-line .tag-error::before { content: "!"; }
+.event-line .tag-auto { color: var(--status-running); border-color: color-mix(in srgb, var(--status-running) 45%, transparent); }
+.event-line .tag-auto::before { content: "\21BB"; }
 .event-line.error { color: var(--danger); }
 
 /* Telemetry — the quiet line under a finished answer */
@@ -2574,6 +2585,36 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
 }
 @keyframes bg-agents-pulse { 50% { opacity: .35; } }
 .event-line.auto-wake { color: var(--status-running); }
+
+/* Delegation cards: status as icon + word, outcome first, actions per worker. */
+/* data-task-status is set from the worker's real state (events, snapshots),
+   never from model text; a refused or plain tool error keeps its own mark. */
+.task-row[data-task-status] .tstat .tstat-label::before, .task-row[data-task-status] .tstat:not(:has(.tstat-clock))::before {
+  display: inline-block; width: 1.1em; text-align: center; margin-right: 3px; content: "\2022"; color: var(--faint);
+}
+.task-row[data-task-status="running"] .tstat .tstat-label::before, .task-row[data-task-status="running"] .tstat:not(:has(.tstat-clock))::before { content: "\25CF"; color: var(--accent); }
+.task-row[data-task-status="created"] .tstat .tstat-label::before, .task-row[data-task-status="created"] .tstat:not(:has(.tstat-clock))::before { content: "\25F7"; color: var(--muted); }
+.task-row[data-task-status="done"] .tstat .tstat-label::before, .task-row[data-task-status="done"] .tstat:not(:has(.tstat-clock))::before { content: "\2713"; color: var(--ok); }
+.task-row[data-task-status="failed"] .tstat .tstat-label::before, .task-row[data-task-status="failed"] .tstat:not(:has(.tstat-clock))::before { content: "\2715"; color: var(--danger); }
+.task-row[data-task-status="interrupted"] .tstat .tstat-label::before, .task-row[data-task-status="interrupted"] .tstat:not(:has(.tstat-clock))::before { content: "\23F8"; color: var(--danger); }
+.task-row[data-task-status="stopped"] .tstat .tstat-label::before, .task-row[data-task-status="stopped"] .tstat:not(:has(.tstat-clock))::before { content: "\25A0"; color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) {
+  .task-row[data-task-status="running"] .tstat .tstat-label::before { animation: bg-agents-pulse 1.6s ease-in-out infinite; }
+}
+.task-row .task-outcome {
+  display: flex; gap: 8px; align-items: baseline; margin: 2px 0 8px; padding: 6px 9px;
+  border-radius: 6px; background: var(--raise); border-left: 2px solid var(--ok); font-size: var(--fs-sm);
+}
+.task-row .task-outcome.failed { border-left-color: var(--danger); }
+.task-row .task-outcome-label { flex: none; color: var(--muted); font: var(--fs-xs) var(--mono); text-transform: uppercase; }
+.task-row .task-outcome.failed .task-outcome-label { color: var(--danger); }
+.task-row .task-outcome-text { min-width: 0; color: var(--text); overflow-wrap: anywhere; }
+.task-row .worker-stop {
+  margin: 0 0 8px; padding: 3px 10px; border-radius: 6px; font: inherit; font-size: var(--fs-xs);
+  color: var(--text); background: transparent; border: 1px solid var(--line); cursor: pointer;
+}
+.task-row .worker-stop:hover { border-color: var(--danger); color: var(--danger); }
+.task-row .worker-stop:disabled, .task-row .worker-resume:disabled { opacity: .55; cursor: default; }
 
 /* Resume a stopped/failed/interrupted worker with its saved conversation. */
 .task-row .worker-resume {

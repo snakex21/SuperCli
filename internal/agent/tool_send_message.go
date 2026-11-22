@@ -17,6 +17,9 @@ type SendMessageTool struct {
 	Workers *WorkerRegistry
 	// Restore rebuilds a saved worker that is not in memory (optional).
 	Restore func(context.Context, string) (*Worker, error)
+	// Background, when set and it reports true, started the continuation
+	// detached from the coordinator's turn (see NewSendMessageToolFor).
+	Background func(context.Context, *Worker, string) (bool, error)
 }
 
 func NewSendMessageTool(workers *WorkerRegistry) *SendMessageTool {
@@ -31,6 +34,15 @@ func NewSendMessageTool(workers *WorkerRegistry) *SendMessageTool {
 func NewSendMessageToolFor(a *AgentTool) *SendMessageTool {
 	s := NewSendMessageTool(a.Workers)
 	s.Restore = a.restoreWorker
+	s.Background = func(ctx context.Context, w *Worker, message string) (bool, error) {
+		// Only where finished reports wake the conversation (GUI, TUI with
+		// background_wake on). Elsewhere the follow-up keeps blocking, so no
+		// report can be stranded.
+		if !a.backgroundDelegation() {
+			return false, nil
+		}
+		return true, a.startBackgroundContinuation(ctx, w, message, s.Workers)
+	}
 	return s
 }
 
@@ -117,8 +129,38 @@ func (s *SendMessageTool) execute(ctx context.Context, raw json.RawMessage) (too
 		message = "Your original task (it never started: " + snap.LastError + "):\n" + w.Description +
 			"\n\nCoordinator follow-up:\n" + args.Message
 	}
+	if s.Background != nil {
+		// A continuation can run for many minutes. Run synchronously, it held
+		// the coordinator's turn (an automatic wake-up turn too) the whole
+		// time: the conversation looked busy while the coordinator only
+		// waited, and the user's Stop or next message canceled the worker.
+		if st := w.status(); st == "created" || st == "running" {
+			return tools.Result{Err: fmt.Errorf("worker %s is already running; its current task must finish before a follow-up (use mode=steer to correct it)", w.ID)}, nil
+		}
+		if err := s.Workers.checkActiveLimit(w.provider); err != nil {
+			return tools.Result{Err: fmt.Errorf("send_message: %w", err)}, nil
+		}
+		started, err := s.Background(ctx, w, message)
+		if err != nil {
+			return tools.Result{Err: fmt.Errorf("send_message: %s did not start (background checkpoint binding): %w", w.ID, err)}, nil
+		}
+		if started {
+			return tools.Result{Text: backgroundRunningNotice(w, "continued in background")}, nil
+		}
+	}
 	handoff, err := runWorkerInvocation(llm.WithCallReason(ctx, llm.ReasonResume), w, message, s.Workers)
 	return handoff.result(w, err), nil
+}
+
+// backgroundRunningNotice is the immediate result of a detached worker run.
+func backgroundRunningNotice(w *Worker, what string) string {
+	return fmt.Sprintf(`<task-notification>
+<task-id>%s</task-id>
+<agent>%s</agent>
+<status>running</status>
+<summary>%s %s</summary>
+<continuation>Results arrive automatically. Continue independent work, or end this response to wait. Do not restart this task or use its worker ID with read_output; use send_message only for new instructions.</continuation>
+</task-notification>`, w.ID, w.Agent, w.Agent, what)
 }
 
 func runWorkerLoop(ctx context.Context, w *Worker, prompt string) (string, error) {

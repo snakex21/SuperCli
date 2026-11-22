@@ -1241,5 +1241,13 @@
   "setting.value.unlimited": "bez limitu",
   "setting.value.none": "žádný",
   "modes.desc.max_parallel_agents": "Kolik pomocných agentů může pracovat současně. Prázdné = výchozí (6); 0 = bez limitu.",
-  "modes.desc.max_parallel_agents_per_provider": "Volitelný limit na poskytovatele: poskytovatel=číslo oddělené ';' (např. lmstudio=1; openrouter=4)."
+  "modes.desc.max_parallel_agents_per_provider": "Volitelný limit na poskytovatele: poskytovatel=číslo oddělené ';' (např. lmstudio=1; openrouter=4).",
+  "eventTag.stop": "Zastaveno",
+  "eventTag.error": "Chyba",
+  "eventTag.auto": "Automaticky",
+  "eventTag.info": "Info",
+  "task.stopWorker": "Zastavit",
+  "task.stopWorkerHint": "Zastavit jen tohoto pomocného agenta; konverzace pokračuje",
+  "task.stopFailed": "Agenta se nepodařilo zastavit. Zkuste to znovu.",
+  "notice.emptyReply": "Model nevrátil žádnou odpověď. Zeptejte se znovu nebo zvolte jiný model."
 }

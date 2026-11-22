@@ -510,6 +510,8 @@ const wakeRunPrompt = "[automatic wake-up: background agents finished]"
 func (l *Loop) prepareWakeRoute() {
 	l.implementationHintForRun = wakeTurnHint + wakeUserGoal(l.Messages)
 	l.statusOnlyForRun = false
+	l.wakeTurnForRun = true
+	l.userPromptForRun = ""
 	l.screenshotForRun, l.headlessForRun = false, false
 	l.downloadForRun, l.downloadPageForRun = false, false
 	l.webForRun, l.webURLForRun = false, false

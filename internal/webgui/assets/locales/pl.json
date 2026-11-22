@@ -1241,5 +1241,13 @@
   "setting.value.unlimited": "bez limitu",
   "setting.value.none": "brak",
   "modes.desc.max_parallel_agents": "Ilu agentów pomocniczych może pracować jednocześnie. Puste = domyślnie (6); 0 = bez limitu.",
-  "modes.desc.max_parallel_agents_per_provider": "Opcjonalny limit na dostawcę: dostawca=liczba, rozdzielone ';' (np. lmstudio=1; openrouter=4)."
+  "modes.desc.max_parallel_agents_per_provider": "Opcjonalny limit na dostawcę: dostawca=liczba, rozdzielone ';' (np. lmstudio=1; openrouter=4).",
+  "eventTag.stop": "Zatrzymano",
+  "eventTag.error": "Błąd",
+  "eventTag.auto": "Automatycznie",
+  "eventTag.info": "Info",
+  "task.stopWorker": "Zatrzymaj",
+  "task.stopWorkerHint": "Zatrzymaj tylko tego agenta pomocniczego; rozmowa trwa dalej",
+  "task.stopFailed": "Nie udało się zatrzymać agenta. Spróbuj ponownie.",
+  "notice.emptyReply": "Model nie zwrócił odpowiedzi. Zapytaj ponownie albo wybierz inny model."
 }

@@ -8,6 +8,7 @@ import (
 
 	"supercli/internal/agent"
 	"supercli/internal/llm"
+	"supercli/internal/tools"
 )
 
 // Background agents in the web GUI. Every chat run builds a fresh agent.Loop,
@@ -37,6 +38,8 @@ type sessionBackground struct {
 	home   string
 	sched  *agent.WakeScheduler
 	events chan agent.Event
+	// ask is the conversation's durable question route (background_questions.go).
+	ask chan tools.AskRequest
 
 	mu    sync.Mutex
 	loops map[*agent.Loop]struct{}
@@ -68,11 +71,12 @@ func (e *Engine) backgroundFor(sid, home string) *sessionBackground {
 	if e.bg == nil {
 		e.bg = make(map[string]*sessionBackground)
 	}
-	bg := &sessionBackground{e: e, sid: sid, home: home, events: make(chan agent.Event, 256), loops: map[*agent.Loop]struct{}{}}
+	bg := &sessionBackground{e: e, sid: sid, home: home, events: make(chan agent.Event, 256), ask: make(chan tools.AskRequest, backgroundAskBuffer), loops: map[*agent.Loop]struct{}{}}
 	bg.sched = agent.NewWakeScheduler(e.wakeConfig(home), bg.state, bg.startWake, bg.held)
 	bg.sched.SetReleaseHook(func() { e.syncHub.backgroundWakeHeld(sid, 0, 0) })
 	e.bg[sid] = bg
 	go bg.pump()
+	go bg.askPump()
 	return bg
 }
 

@@ -395,6 +395,11 @@ func (l *Loop) runStep(
 			l.statsEndStep(stepStart)
 			return stepContinue
 		}
+		// A coordinator that answers nothing at all (no text, only reasoning,
+		// no tools) must not leave the user staring at an empty turn: say so.
+		if !hasVisibleUserReply(text) && !messagesHaveRecentToolResult(l.Messages) && !inWorkerRun(ctx) && l.hasDelegationTools() {
+			out <- NoticeEvent{Text: EmptyReplyNotice}
+		}
 		// F9 Sisyphus: when ultrawork is on AND
 		// the active /goal still has unfinished
 		// tasks, re-prompt the model instead of

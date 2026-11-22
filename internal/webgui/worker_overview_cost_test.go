@@ -110,7 +110,8 @@ function legacyUpdate(id, agentName, status, activity, row) {
   if (row) item.row = row;
   item.button.dataset.state = item.status;
   item.label.textContent = workerLabel(id) + (item.agent ? " · " + item.agent : "");
-  item.detail.textContent = clip(String(item.activity || "").split("\n")[0], 140);
+  // 1.0.39: the overview shows the task in human words (shortened paths).
+  item.detail.textContent = clip(humanTaskText(item.activity), 140);
   item.state.textContent = taskStatusLabel(item.status);
   item.button.title = clip([id, item.row && item.row._workerModelInfo, item.activity].filter(Boolean).join(" · "), 400);
   renderWorkerOverview();
@@ -135,9 +136,10 @@ function legacyRender() {
   });
   var counts = {};
   items.forEach(function (w) { counts[w.status] = (counts[w.status] || 0) + 1; });
+  // 1.0.39: "Helper agents · 3 working · 1 error".
   var parts = [t("task.workers")];
-  [["running", "task.active"], ["done", "task.done"], ["failed", "task.failed"], ["stopped", "task.stopped"]].forEach(function (p) {
-    if (counts[p[0]]) parts.push(t(p[1]) + ": " + counts[p[0]]);
+  [["running", "task.active"], ["failed", "task.failed"], ["interrupted", "task.interrupted"], ["stopped", "task.stopped"], ["done", "task.done"], ["unknown", "task.statusUnconfirmed"]].forEach(function (p) {
+    if (counts[p[0]]) parts.push(counts[p[0]] + " " + t(p[1]));
   });
   $("#worker-overview-summary").textContent = parts.join(" · ");
   panel.hidden = !items.length;

@@ -1241,5 +1241,13 @@
   "setting.value.unlimited": "bez ierobežojuma",
   "setting.value.none": "nav",
   "modes.desc.max_parallel_agents": "Cik palīgaģentu var strādāt vienlaikus. Tukšs = noklusējums (6); 0 = bez ierobežojuma.",
-  "modes.desc.max_parallel_agents_per_provider": "Neobligāts ierobežojums uz sniedzēju: sniedzējs=skaitlis, atdalīts ar ';' (piem., lmstudio=1; openrouter=4)."
+  "modes.desc.max_parallel_agents_per_provider": "Neobligāts ierobežojums uz sniedzēju: sniedzējs=skaitlis, atdalīts ar ';' (piem., lmstudio=1; openrouter=4).",
+  "eventTag.stop": "Apturēts",
+  "eventTag.error": "Kļūda",
+  "eventTag.auto": "Automātiski",
+  "eventTag.info": "Info",
+  "task.stopWorker": "Apturēt",
+  "task.stopWorkerHint": "Apturēt tikai šo palīgaģentu; saruna turpinās",
+  "task.stopFailed": "Aģentu neizdevās apturēt. Mēģiniet vēlreiz.",
+  "notice.emptyReply": "Modelis neatgrieza atbildi. Jautājiet vēlreiz vai izvēlieties citu modeli."
 }

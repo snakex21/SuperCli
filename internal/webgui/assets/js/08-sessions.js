@@ -487,7 +487,7 @@ function buildHistoryFragment(messages, pager, prepend) {
         var persistedCall = historyCalls[m.tool_call_id] || null;
         var persistedName = (persistedCall && persistedCall.name) || m.name || "tool";
         var task = (persistedName === "task" || persistedName === "send_message") ?
-          parseTaskNotification(m.content) : null;
+          (parseTaskNotification(m.content) || parseTaskFailure(m.content)) : null;
         if (task) {
           var newerWorker = newerWorkers && newerWorkers[task.id];
           var saved = m.worker_activity;

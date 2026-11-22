@@ -100,6 +100,9 @@ function syncBackgroundEvent(ev) {
   if (!ev) return;
   if (ev.type === "worker_progress" && typeof addWorkerProgress === "function") addWorkerProgress(ev);
   else if (ev.type === "worker" && typeof handleEvent === "function") handleEvent(ev, null);
+  // A background worker's question (no turn is running): answer it here.
+  else if (ev.type === "question" && ev.question && typeof showQuestion === "function") showQuestion(ev.question);
+  else if (ev.type === "question_closed" && typeof closeQuestionOverlay === "function") closeQuestionOverlay(ev.id);
   else if (ev.type === "background_held" && typeof toast === "function") toast(t("background.held").replace("{n}", String(ev.run || 0)));
 }
 function syncRenderElsewhere() {

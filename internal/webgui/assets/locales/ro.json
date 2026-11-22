@@ -1241,5 +1241,13 @@
   "setting.value.unlimited": "fără limită",
   "setting.value.none": "niciuna",
   "modes.desc.max_parallel_agents": "Câți agenți auxiliari pot lucra simultan. Gol = implicit (6); 0 = fără limită.",
-  "modes.desc.max_parallel_agents_per_provider": "Limită opțională per furnizor: furnizor=număr separate prin ';' (ex. lmstudio=1; openrouter=4)."
+  "modes.desc.max_parallel_agents_per_provider": "Limită opțională per furnizor: furnizor=număr separate prin ';' (ex. lmstudio=1; openrouter=4).",
+  "eventTag.stop": "Oprit",
+  "eventTag.error": "Eroare",
+  "eventTag.auto": "Automat",
+  "eventTag.info": "Info",
+  "task.stopWorker": "Oprește",
+  "task.stopWorkerHint": "Oprește doar acest agent ajutător; conversația continuă",
+  "task.stopFailed": "Agentul nu a putut fi oprit. Încearcă din nou.",
+  "notice.emptyReply": "Modelul nu a returnat niciun răspuns. Întreabă din nou sau alege alt model."
 }

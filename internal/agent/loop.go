@@ -386,6 +386,11 @@ type Loop struct {
 	// statusOnlyForRun marks a user turn that only asks how the work is
 	// going: delegation calls are refused (see status_turn.go).
 	statusOnlyForRun bool
+	// wakeTurnForRun marks an automatic wake-up turn (no user message): it
+	// reports worker results but never resumes a failed or stopped worker.
+	wakeTurnForRun bool
+	// userPromptForRun is this turn's raw user message ("" in a wake turn).
+	userPromptForRun string
 	// workerStatusSource lists this conversation's workers for a status
 	// turn. Bound by NewAgentTool; nil without delegation.
 	workerStatusSource func() []Snapshot

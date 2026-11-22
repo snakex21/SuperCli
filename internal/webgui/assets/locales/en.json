@@ -1241,5 +1241,13 @@
   "setting.value.unlimited": "no limit",
   "setting.value.none": "none",
   "modes.desc.max_parallel_agents": "How many helper agents may run at the same time. Empty = default (6); 0 = no limit.",
-  "modes.desc.max_parallel_agents_per_provider": "Optional cap per provider: provider=number separated by ';' (e.g. lmstudio=1; openrouter=4)."
+  "modes.desc.max_parallel_agents_per_provider": "Optional cap per provider: provider=number separated by ';' (e.g. lmstudio=1; openrouter=4).",
+  "eventTag.stop": "Stopped",
+  "eventTag.error": "Error",
+  "eventTag.auto": "Automatic",
+  "eventTag.info": "Info",
+  "task.stopWorker": "Stop",
+  "task.stopWorkerHint": "Stop only this helper agent; the conversation keeps going",
+  "task.stopFailed": "Could not stop the agent. Try again.",
+  "notice.emptyReply": "The model returned no answer. Ask again or choose another model."
 }

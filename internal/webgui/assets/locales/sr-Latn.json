@@ -1241,5 +1241,13 @@
   "setting.value.unlimited": "bez ograničenja",
   "setting.value.none": "nema",
   "modes.desc.max_parallel_agents": "Koliko pomoćnih agenata može raditi istovremeno. Prazno = podrazumevano (6); 0 = bez ograničenja.",
-  "modes.desc.max_parallel_agents_per_provider": "Opcioni limit po dobavljaču: dobavljač=broj odvojeno sa ';' (npr. lmstudio=1; openrouter=4)."
+  "modes.desc.max_parallel_agents_per_provider": "Opcioni limit po dobavljaču: dobavljač=broj odvojeno sa ';' (npr. lmstudio=1; openrouter=4).",
+  "eventTag.stop": "Zaustavljeno",
+  "eventTag.error": "Greška",
+  "eventTag.auto": "Automatski",
+  "eventTag.info": "Info",
+  "task.stopWorker": "Zaustavi",
+  "task.stopWorkerHint": "Zaustavi samo ovog pomoćnog agenta; razgovor se nastavlja",
+  "task.stopFailed": "Agent nije mogao da se zaustavi. Pokušajte ponovo.",
+  "notice.emptyReply": "Model nije vratio odgovor. Pitajte ponovo ili izaberite drugi model."
 }

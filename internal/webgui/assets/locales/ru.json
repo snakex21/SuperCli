@@ -1241,5 +1241,13 @@
   "setting.value.unlimited": "без ограничения",
   "setting.value.none": "нет",
   "modes.desc.max_parallel_agents": "Сколько вспомогательных агентов может работать одновременно. Пусто = по умолчанию (6); 0 = без ограничения.",
-  "modes.desc.max_parallel_agents_per_provider": "Необязательный лимит на провайдера: провайдер=число через ';' (напр. lmstudio=1; openrouter=4)."
+  "modes.desc.max_parallel_agents_per_provider": "Необязательный лимит на провайдера: провайдер=число через ';' (напр. lmstudio=1; openrouter=4).",
+  "eventTag.stop": "Остановлено",
+  "eventTag.error": "Ошибка",
+  "eventTag.auto": "Автоматически",
+  "eventTag.info": "Инфо",
+  "task.stopWorker": "Остановить",
+  "task.stopWorkerHint": "Остановить только этого вспомогательного агента; разговор продолжается",
+  "task.stopFailed": "Не удалось остановить агента. Попробуйте ещё раз.",
+  "notice.emptyReply": "Модель не вернула ответ. Спросите ещё раз или выберите другую модель."
 }

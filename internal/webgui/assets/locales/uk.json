@@ -1241,5 +1241,13 @@
   "setting.value.unlimited": "без обмеження",
   "setting.value.none": "немає",
   "modes.desc.max_parallel_agents": "Скільки допоміжних агентів можуть працювати одночасно. Порожньо = типово (6); 0 = без обмеження.",
-  "modes.desc.max_parallel_agents_per_provider": "Необов’язковий ліміт на постачальника: постачальник=число через ';' (напр. lmstudio=1; openrouter=4)."
+  "modes.desc.max_parallel_agents_per_provider": "Необов’язковий ліміт на постачальника: постачальник=число через ';' (напр. lmstudio=1; openrouter=4).",
+  "eventTag.stop": "Зупинено",
+  "eventTag.error": "Помилка",
+  "eventTag.auto": "Автоматично",
+  "eventTag.info": "Інфо",
+  "task.stopWorker": "Зупинити",
+  "task.stopWorkerHint": "Зупинити лише цього допоміжного агента; розмова триває",
+  "task.stopFailed": "Не вдалося зупинити агента. Спробуйте ще раз.",
+  "notice.emptyReply": "Модель не повернула відповіді. Запитайте ще раз або виберіть іншу модель."
 }

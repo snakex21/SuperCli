@@ -547,15 +547,28 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) (r
 
 	// A status question never starts, resumes, steers or stops workers: the
 	// user asked what is happening, not for more work (status_turn.go).
+	refusal := ""
 	if l.statusOnlyForRun && statusTurnTools[tc.Name] {
-		out <- ToolResultEvent{ID: tc.ID, Err: fmt.Errorf("%s", statusTurnRefusal)}
+		refusal = statusTurnRefusal
+	} else if r := destructiveCommandRefusal(tc.Name, tc.Arguments); r != "" {
+		// Wiping a disk, the home folder or uncommitted work is never the
+		// model's call (destructive_guard.go).
+		refusal = r
+	} else {
+		// A worker that failed, lost its connection or was stopped resumes
+		// only on the user's word: never in an automatic turn, and in a user
+		// turn only when the message asks for it.
+		refusal = l.wakeResumeRefusal(tc)
+	}
+	if refusal != "" {
+		out <- ToolResultEvent{ID: tc.ID, Err: fmt.Errorf("%s", refusal)}
 		return toolResult{
 			failed: true,
 			followUps: []llm.Message{{
 				Role:       llm.RoleTool,
 				ToolCallID: tc.ID,
 				Name:       tc.Name,
-				Content:    statusTurnRefusal,
+				Content:    refusal,
 			}},
 		}
 	}

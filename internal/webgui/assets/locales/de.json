@@ -1241,5 +1241,13 @@
   "setting.value.unlimited": "kein Limit",
   "setting.value.none": "keine",
   "modes.desc.max_parallel_agents": "Wie viele Hilfsagenten gleichzeitig arbeiten dürfen. Leer = Standard (6); 0 = kein Limit.",
-  "modes.desc.max_parallel_agents_per_provider": "Optionales Limit pro Anbieter: Anbieter=Zahl, getrennt durch ';' (z. B. lmstudio=1; openrouter=4)."
+  "modes.desc.max_parallel_agents_per_provider": "Optionales Limit pro Anbieter: Anbieter=Zahl, getrennt durch ';' (z. B. lmstudio=1; openrouter=4).",
+  "eventTag.stop": "Gestoppt",
+  "eventTag.error": "Fehler",
+  "eventTag.auto": "Automatisch",
+  "eventTag.info": "Info",
+  "task.stopWorker": "Stoppen",
+  "task.stopWorkerHint": "Nur diesen Hilfsagenten stoppen; das Gespräch läuft weiter",
+  "task.stopFailed": "Der Agent konnte nicht gestoppt werden. Bitte erneut versuchen.",
+  "notice.emptyReply": "Das Modell hat keine Antwort geliefert. Frag erneut oder wähle ein anderes Modell."
 }

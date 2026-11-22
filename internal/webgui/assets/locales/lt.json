@@ -1241,5 +1241,13 @@
   "setting.value.unlimited": "be ribos",
   "setting.value.none": "nėra",
   "modes.desc.max_parallel_agents": "Kiek pagalbinių agentų gali dirbti vienu metu. Tuščia = numatytasis (6); 0 = be ribos.",
-  "modes.desc.max_parallel_agents_per_provider": "Neprivalomas ribojimas vienam teikėjui: teikėjas=skaičius, atskirta ';' (pvz., lmstudio=1; openrouter=4)."
+  "modes.desc.max_parallel_agents_per_provider": "Neprivalomas ribojimas vienam teikėjui: teikėjas=skaičius, atskirta ';' (pvz., lmstudio=1; openrouter=4).",
+  "eventTag.stop": "Sustabdyta",
+  "eventTag.error": "Klaida",
+  "eventTag.auto": "Automatiškai",
+  "eventTag.info": "Info",
+  "task.stopWorker": "Stabdyti",
+  "task.stopWorkerHint": "Sustabdyti tik šį pagalbinį agentą; pokalbis tęsiasi",
+  "task.stopFailed": "Agento sustabdyti nepavyko. Bandykite dar kartą.",
+  "notice.emptyReply": "Modelis negrąžino atsakymo. Paklauskite dar kartą arba pasirinkite kitą modelį."
 }

@@ -1241,5 +1241,13 @@
   "setting.value.unlimited": "ei rajaa",
   "setting.value.none": "ei mitään",
   "modes.desc.max_parallel_agents": "Montako apuagenttia voi työskennellä yhtä aikaa. Tyhjä = oletus (6); 0 = ei rajaa.",
-  "modes.desc.max_parallel_agents_per_provider": "Valinnainen raja palveluntarjoajaa kohti: tarjoaja=luku ';'-merkillä eroteltuna (esim. lmstudio=1; openrouter=4)."
+  "modes.desc.max_parallel_agents_per_provider": "Valinnainen raja palveluntarjoajaa kohti: tarjoaja=luku ';'-merkillä eroteltuna (esim. lmstudio=1; openrouter=4).",
+  "eventTag.stop": "Pysäytetty",
+  "eventTag.error": "Virhe",
+  "eventTag.auto": "Automaattinen",
+  "eventTag.info": "Tieto",
+  "task.stopWorker": "Pysäytä",
+  "task.stopWorkerHint": "Pysäytä vain tämä apuagentti; keskustelu jatkuu",
+  "task.stopFailed": "Agenttia ei voitu pysäyttää. Yritä uudelleen.",
+  "notice.emptyReply": "Malli ei palauttanut vastausta. Kysy uudelleen tai valitse toinen malli."
 }

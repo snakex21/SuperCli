@@ -1241,5 +1241,13 @@
   "setting.value.unlimited": "geen limiet",
   "setting.value.none": "geen",
   "modes.desc.max_parallel_agents": "Hoeveel hulpagents tegelijk mogen werken. Leeg = standaard (6); 0 = geen limiet.",
-  "modes.desc.max_parallel_agents_per_provider": "Optionele limiet per provider: provider=getal gescheiden door ';' (bijv. lmstudio=1; openrouter=4)."
+  "modes.desc.max_parallel_agents_per_provider": "Optionele limiet per provider: provider=getal gescheiden door ';' (bijv. lmstudio=1; openrouter=4).",
+  "eventTag.stop": "Gestopt",
+  "eventTag.error": "Fout",
+  "eventTag.auto": "Automatisch",
+  "eventTag.info": "Info",
+  "task.stopWorker": "Stoppen",
+  "task.stopWorkerHint": "Alleen deze hulpagent stoppen; het gesprek gaat door",
+  "task.stopFailed": "De agent kon niet worden gestopt. Probeer het opnieuw.",
+  "notice.emptyReply": "Het model gaf geen antwoord. Vraag het opnieuw of kies een ander model."
 }

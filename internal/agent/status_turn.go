@@ -1,10 +1,13 @@
 package agent
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 	"unicode"
+
+	"supercli/internal/llm"
 )
 
 // Status turns (1.0.39). A coordinator with workers that is asked only how
@@ -68,6 +71,39 @@ var statusActionStems = []string{
 // statusMaxWords keeps the classifier to short questions; a longer message
 // carries more than a status request and takes the normal path.
 const statusMaxWords = 8
+
+// smallTalk is a greeting or thanks with nothing to do ("hej", "dzięki").
+// Like a status question it never starts or resumes workers. "ok" and "tak"
+// are not here: they often approve a plan the coordinator just proposed.
+var smallTalk = map[string]bool{
+	"cześć": true, "czesc": true, "witam": true, "dzień dobry": true, "dzien dobry": true, "dobry wieczór": true,
+	"dzięki": true, "dzieki": true, "dziękuję": true, "dziekuje": true, "dzięki wielkie": true, "wielkie dzięki": true,
+	"hello": true, "thanks": true, "thank you": true, "thx": true, "good morning": true,
+}
+
+var greetingWords = map[string]bool{"hej": true, "hejka": true, "siema": true, "halo": true, "hi": true, "hey": true, "yo": true}
+
+// isSmallTalk reports a greeting or thanks only.
+func isSmallTalk(prompt string) bool {
+	words := statusWords(prompt)
+	if len(words) == 0 {
+		return false
+	}
+	rest := words
+	for len(rest) > 0 && statusFillers[rest[0]] {
+		rest = rest[1:]
+	}
+	if len(rest) == 0 {
+		// Only greetings ("hej", "siema"); "no", "tak", "ok" may approve a plan.
+		for _, w := range words {
+			if !greetingWords[w] {
+				return false
+			}
+		}
+		return true
+	}
+	return smallTalk[strings.Join(rest, " ")]
+}
 
 // isStatusQuestion reports whether prompt only asks how the work is going.
 func isStatusQuestion(prompt string) bool {
@@ -184,3 +220,78 @@ func statusClip(s string, max int) string {
 	}
 	return s
 }
+
+// wakeResumeRefusal: an automatic turn (no user message) must not continue a
+// worker whose last run failed, lost its connection, was interrupted or was
+// stopped. In the reported session the coordinator resumed such a worker on
+// its own and then waited on it. Steering a running worker and starting new
+// work for the user's standing goal stay allowed.
+func (l *Loop) wakeResumeRefusal(tc llm.ToolCall) string {
+	if tc.Name != "send_message" {
+		return ""
+	}
+	var args struct {
+		To   string `json:"to"`
+		Mode string `json:"mode"`
+	}
+	if json.Unmarshal([]byte(tc.Arguments), &args) != nil || strings.TrimSpace(args.Mode) == "steer" {
+		return ""
+	}
+	to := strings.TrimSpace(args.To)
+	status := ""
+	if l.workerStatusSource != nil {
+		for _, s := range l.workerStatusSource() {
+			if s.ID == to {
+				status = s.Status
+				break
+			}
+		}
+	}
+	switch status {
+	case "failed", "stopped", WorkerStatusInterrupted:
+	default:
+		return ""
+	}
+	if l.wakeTurnForRun {
+		return fmt.Sprintf("refused: %s is %s, and this is an automatic turn without a user message. "+
+			"Do not resume it on your own: report what happened and offer to resume it; the user resumes it with the Resume button or a message.", to, status)
+	}
+	// No turn context (direct dispatch outside a run): nothing to judge by.
+	if strings.TrimSpace(l.userPromptForRun) == "" || hasResumeIntent(l.userPromptForRun, to) {
+		return ""
+	}
+	return fmt.Sprintf("refused: %s is %s and the user's message does not ask to continue it. "+
+		"Answer the user; if it should continue, say so and wait for the user's go-ahead (or the Resume button).", to, status)
+}
+
+// resumeIntentStems: the user's message asks for work to go on (or approves
+// a proposal to resume). Deliberately broad; it only has to tell an unrelated
+// question ("co to za plik?") apart from an instruction.
+var resumeIntentStems = []string{
+	"wznów", "wznow", "kontynu", "dalej", "ponów", "ponow", "spróbuj", "sprobuj", "dokończ", "dokoncz",
+	"odpal", "uruchom", "napraw", "popraw", "zrób", "zrob", "rób", "rob", "jedź", "jedz", "działaj", "dzialaj",
+	"tak", "ok", "okej", "dobra", "jasne", "zgoda", "pewnie",
+	"resume", "continue", "retry", "restart", "again", "fix", "finish", "go", "yes", "sure", "proceed",
+}
+
+// hasResumeIntent reports whether prompt asks to continue work or names the
+// worker ("worker-7", "7").
+func hasResumeIntent(prompt, workerID string) bool {
+	words := statusWords(prompt)
+	num := strings.TrimPrefix(workerID, "worker-")
+	for _, w := range words {
+		if w == num || w == strings.ReplaceAll(workerID, "-", "") {
+			return true
+		}
+		for _, stem := range resumeIntentStems {
+			if w == stem || len(stem) > 3 && strings.HasPrefix(w, stem) {
+				return true
+			}
+		}
+	}
+	return strings.Contains(strings.ToLower(prompt), strings.ToLower(workerID))
+}
+
+// EmptyReplyNotice is shown when the model ended a turn without any text for
+// the user (empty, or reasoning only). Hosts localize it by this exact text.
+const EmptyReplyNotice = "empty reply: the model returned no answer; ask again or choose another model"

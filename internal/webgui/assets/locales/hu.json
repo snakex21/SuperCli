@@ -1241,5 +1241,13 @@
   "setting.value.unlimited": "korlátlan",
   "setting.value.none": "nincs",
   "modes.desc.max_parallel_agents": "Hány segédügynök dolgozhat egyszerre. Üres = alapértelmezett (6); 0 = korlátlan.",
-  "modes.desc.max_parallel_agents_per_provider": "Opcionális korlát szolgáltatónként: szolgáltató=szám ';'-vel elválasztva (pl. lmstudio=1; openrouter=4)."
+  "modes.desc.max_parallel_agents_per_provider": "Opcionális korlát szolgáltatónként: szolgáltató=szám ';'-vel elválasztva (pl. lmstudio=1; openrouter=4).",
+  "eventTag.stop": "Leállítva",
+  "eventTag.error": "Hiba",
+  "eventTag.auto": "Automatikus",
+  "eventTag.info": "Infó",
+  "task.stopWorker": "Leállítás",
+  "task.stopWorkerHint": "Csak ezt a segédügynököt állítja le; a beszélgetés folytatódik",
+  "task.stopFailed": "Az ügynököt nem sikerült leállítani. Próbálja újra.",
+  "notice.emptyReply": "A modell nem adott választ. Kérdezzen újra, vagy válasszon másik modellt."
 }

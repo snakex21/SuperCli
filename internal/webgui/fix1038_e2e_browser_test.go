@@ -80,7 +80,7 @@ func (p *fix1038Provider) Complete(ctx context.Context, msgs []llm.Message, defs
 	}
 	if strings.HasPrefix(user, "SPAWN") {
 		return workerSteeringWireCall(fmt.Sprintf("spawn-%d", p.parentCalls.Load()), "task",
-			map[string]any{"agent": "explore", "prompt": "WORKER-1038 write the file", "async": true})
+			map[string]any{"agent": "explore", "prompt": "WORKER-1038 write the file (" + clipFix1037(user) + ")", "async": true})
 	}
 	return workerSteeringWireDeltas(llm.Delta{Content: "REPLY to " + clipFix1037(user), FinishReason: "stop"}), nil
 }

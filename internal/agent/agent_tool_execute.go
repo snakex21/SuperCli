@@ -226,7 +226,15 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	// TryAdd enforces the global active-worker cap (see
 	// DefaultMaxActiveWorkers): failing fast here keeps the coordinator's
 	// turn moving instead of silently queueing behind a full pool.
+	// The duplicate check and the registration are one step: parallel
+	// identical calls in one response must not both start.
+	a.startMu.Lock()
+	if dup := a.runningDuplicate(ar.Agent, ar.Prompt); dup != "" {
+		a.startMu.Unlock()
+		return tools.Result{Err: fmt.Errorf("task: refused: %s is already working on this exact task in this conversation; wait for its report (it arrives automatically) or use send_message mode=steer to change it", dup)}, nil
+	}
 	w, err := workers.TryAddFor(a.workerProviderName(ar), ar.Agent, ar.Prompt, loop)
+	a.startMu.Unlock()
 	if err != nil {
 		return tools.Result{Err: fmt.Errorf("task: %w", err)}, nil
 	}
@@ -259,6 +267,14 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	sid := sessionIDOf(a.ParentLoop)
 	w.setState(func(w *Worker) { w.sessionID, w.baseDir = sid, baseDir })
 	workers.persist(w)
+	// Where reports wake the conversation, every delegated run goes to the
+	// background: a synchronous worker held the coordinator's turn for its
+	// whole run (minutes), the conversation looked busy, and the user's Stop or
+	// next message canceled the worker. Advisor calls (a short second opinion
+	// the coordinator needs inline) and the draft-verify ladder stay inline.
+	if !ar.Async && !ar.Advise && !a.draftVerifyEnabled() && a.backgroundDelegation() {
+		ar.Async = true
+	}
 	if ar.Async {
 		if err := a.startBackgroundWorker(ctx, w, workerPrompt, maxSteps); err != nil {
 			// Definite, saved state: the worker never started (never a

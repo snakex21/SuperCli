@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -105,6 +106,10 @@ type AgentTool struct {
 
 	// A completed probe is cached; caller cancellation leaves it untested.
 	// Concurrent delegations share one probe and can cancel their own wait.
+	// startMu makes the duplicate-task check and the worker registration
+	// one step (parallel identical task calls in one response).
+	startMu sync.Mutex
+
 	workerProbeMu   sync.Mutex
 	workerProbeDone chan struct{}
 	workerProbed    bool
@@ -143,6 +148,23 @@ func NewAgentTool(reg *SubAgentRegistry, parent *Loop, base *tools.Registry, pro
 		parent.workerStatusSource = a.conversationWorkers
 	}
 	return a, nil
+}
+
+// runningDuplicate returns the id of this conversation's worker that is
+// already running (or queued) the same agent with the same brief, or "".
+// A model that sends one task twice (in one response or across turns) would
+// otherwise run the same work twice, in parallel, on the same files.
+func (a *AgentTool) runningDuplicate(agentName, prompt string) string {
+	want := strings.Join(strings.Fields(prompt), " ")
+	if want == "" || a.ParentLoop == nil {
+		return ""
+	}
+	for _, s := range a.conversationWorkers() {
+		if (s.Status == "running" || s.Status == "created") && s.Agent == agentName && strings.Join(strings.Fields(s.Description), " ") == want {
+			return s.ID
+		}
+	}
+	return ""
 }
 
 // conversationWorkers returns snapshots of the parent conversation's workers

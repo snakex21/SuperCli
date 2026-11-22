@@ -1241,5 +1241,13 @@
   "setting.value.unlimited": "ingen gräns",
   "setting.value.none": "ingen",
   "modes.desc.max_parallel_agents": "Hur många hjälpagenter som får arbeta samtidigt. Tomt = standard (6); 0 = ingen gräns.",
-  "modes.desc.max_parallel_agents_per_provider": "Valfri gräns per leverantör: leverantör=tal separerat med ';' (t.ex. lmstudio=1; openrouter=4)."
+  "modes.desc.max_parallel_agents_per_provider": "Valfri gräns per leverantör: leverantör=tal separerat med ';' (t.ex. lmstudio=1; openrouter=4).",
+  "eventTag.stop": "Stoppad",
+  "eventTag.error": "Fel",
+  "eventTag.auto": "Automatiskt",
+  "eventTag.info": "Info",
+  "task.stopWorker": "Stoppa",
+  "task.stopWorkerHint": "Stoppa bara den här hjälpagenten; samtalet fortsätter",
+  "task.stopFailed": "Agenten kunde inte stoppas. Försök igen.",
+  "notice.emptyReply": "Modellen gav inget svar. Fråga igen eller välj en annan modell."
 }

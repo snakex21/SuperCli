@@ -462,30 +462,35 @@ func TestEngine_WebDelegationRunsWorkerAndEmitsWorkerEvent(t *testing.T) {
 	eng.prov = provider
 	eng.mu.Unlock()
 
-	var events []wireEvent
-	if err := eng.runStream(context.Background(), "delegate this", "", "", func(ev wireEvent) {
-		events = append(events, ev)
-	}); err != nil {
+	// Delegated work runs in the background (1.0.39): the run returns at once
+	// and the worker's events arrive live in the run, then through the
+	// conversation's background frames; the report wakes the conversation.
+	rec := newSessionEventRecorder(t, eng)
+	if err := eng.runStream(context.Background(), "delegate this", "", "", rec.emit); err != nil {
 		t.Fatal(err)
 	}
 	var sawTaskCall, sawWorkerCall, sawWorkerResult, sawWorker, sawDone bool
-	for _, ev := range events {
-		if ev.Type == "tool_call" && ev.Name == "task" {
-			sawTaskCall = true
+	events := rec.waitFor(t, 10*time.Second, "the worker's progress and report", func(events []wireEvent) bool {
+		sawTaskCall, sawWorkerCall, sawWorkerResult, sawWorker, sawDone = false, false, false, false, false
+		for _, ev := range events {
+			if ev.Type == "tool_call" && ev.Name == "task" {
+				sawTaskCall = true
+			}
+			if ev.Type == "worker" && ev.Name == "explore" && ev.Status == "done" {
+				sawWorker = true
+			}
+			if ev.Type == "worker_progress" && ev.Kind == "tool_call" && ev.Tool == "search_code" {
+				sawWorkerCall = true
+			}
+			if ev.Type == "worker_progress" && ev.Kind == "tool_result" && ev.CallID == "search-1" {
+				sawWorkerResult = true
+			}
+			if ev.Type == "done" {
+				sawDone = true
+			}
 		}
-		if ev.Type == "worker" && ev.Name == "explore" && ev.Status == "done" {
-			sawWorker = true
-		}
-		if ev.Type == "worker_progress" && ev.Kind == "tool_call" && ev.Tool == "search_code" {
-			sawWorkerCall = true
-		}
-		if ev.Type == "worker_progress" && ev.Kind == "tool_result" && ev.CallID == "search-1" {
-			sawWorkerResult = true
-		}
-		if ev.Type == "done" {
-			sawDone = true
-		}
-	}
+		return sawTaskCall && sawWorkerCall && sawWorkerResult && sawWorker && sawDone
+	})
 	provider.mu.Lock()
 	providerTask := provider.sawTask
 	childSearch := provider.childTools["search_code"]
