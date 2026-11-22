@@ -244,9 +244,12 @@ func workspaceFingerprint(ctx context.Context, dir string) string {
 	if inside, err := git("rev-parse", "--is-inside-work-tree"); err == nil && strings.TrimSpace(inside) == "true" {
 		head, _ := git("rev-parse", "HEAD")
 		// One status (untracked files listed one by one) and one diff against
-		// HEAD (staged and unstaged content). Measured on a 46k-file repo:
-		// ~0.26 s, against ~0.12 s for status alone; it runs in the worker's
-		// goroutine at the start and end of a run, never on the GUI path.
+		// HEAD (staged and unstaged content), streamed into the hash. Measured
+		// on a 46k-file repo: ~0.26 s, against ~0.12 s for status alone. It
+		// runs at the start and end of a worker run, in the goroutine running
+		// that worker: the worker's own for a background run, the
+		// coordinator's tool call for a synchronous delegation. Never on the
+		// GUI request path.
 		status, err := git("status", "--porcelain=v1", "-z", "--untracked-files=all")
 		if err == nil {
 			h := sha256.New()
@@ -260,11 +263,13 @@ func workspaceFingerprint(ctx context.Context, dir string) string {
 				diffs = [][]string{{"diff", "--no-ext-diff", "--binary"}, {"diff", "--cached", "--no-ext-diff", "--binary"}}
 			}
 			for _, args := range diffs {
-				out, err := git(args...)
-				if err != nil {
+				// A large diff is hashed as it streams, never held in memory.
+				cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+				childproc.HideWindow(cmd)
+				cmd.Stdout = h
+				if err := cmd.Run(); err != nil {
 					return fingerprintUnchecked
 				}
-				h.Write([]byte(out))
 				h.Write([]byte{0})
 			}
 			for _, entry := range strings.Split(status, "\x00") {
