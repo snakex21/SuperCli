@@ -216,3 +216,21 @@ func TestReasoningOnlyReplyAsksToContinue(t *testing.T) {
 		t.Fatal("the continued answer was not streamed")
 	}
 }
+
+// Review: a local server that cuts the prompt is detected even when the
+// resolved window comes from metadata far larger than the loaded context.
+func TestLocalServerCutDetectedUnderMetadataWindow(t *testing.T) {
+	echo, _ := llm.NewEcho("qwen-local")
+	l := &Loop{provider: echo, route: RouteCoordinator,
+		contextWindowFor: func(string) ContextWindowResolution {
+			return ContextWindowResolution{Tokens: 128_000, Source: "catalog"}
+		}}
+	l.Messages = []llm.Message{{Role: llm.RoleUser, Content: strings.Repeat("base ", 300)}}
+	if l.recordContextBaseline(l.estimateNextRequestTokensRaw(), 32_248) {
+		t.Fatal("first baseline reported as truncation")
+	}
+	l.Messages = append(l.Messages, llm.Message{Role: llm.RoleTool, Content: strings.Repeat("new-result ", 60)})
+	if !l.recordContextBaseline(l.estimateNextRequestTokensRaw(), 16_022) {
+		t.Fatal("a 50% cut by a local server under a 128k metadata window was not detected")
+	}
+}
