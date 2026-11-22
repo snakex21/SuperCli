@@ -279,7 +279,8 @@ func (a *AgentTool) conversationWorkersWithSaved() []Snapshot {
 	}
 	for _, rec := range recs {
 		if !seen[rec.ID] {
-			live = append(live, Snapshot{ID: rec.ID, Agent: rec.Agent, Description: rec.Description, Status: rec.Status, SessionID: sid})
+			live = append(live, Snapshot{ID: rec.ID, Agent: rec.Agent, Description: rec.Description, Status: rec.Status, SessionID: sid,
+				CommandsRun: rec.CommandsRun, ChecksRun: rec.ChecksRun})
 		}
 	}
 	return live

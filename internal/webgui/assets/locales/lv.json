@@ -1258,6 +1258,7 @@
   "error.contextCompact": "Konteksta saspiešana neizdevās ({detail}); gājiens apstājās bez atbildes.",
   "chat.continue": "Turpināt",
   "notice.emptyReply": "Modelis neatgrieza atbildi. Jautājiet vēlreiz vai izvēlieties citu modeli.",
+  "task.doneNotChecked": "gatavs · izmaiņas nav pārbaudītas",
   "task.needsReview": "jāpārbauda",
   "task.reviewNoChanges": "Aģents ziņoja par veiksmi, bet nemainīja nevienu failu.",
   "task.reviewVerifyFailed": "Projekta pārbaude neizdevās pēc aģenta izmaiņām: {command} (kods {code}).",

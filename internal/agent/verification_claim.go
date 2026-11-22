@@ -142,13 +142,36 @@ func (l *Loop) verificationClaimNote(text string) *llm.AnswerNote {
 // commandTools run commands; a worker that used one has run checks of its own.
 var commandTools = map[string]bool{"ctx_execute": true, "process_session": true}
 
+// isCheckCall reports whether a command tool call's arguments run a
+// recognisable check (tests, build, lint), command given as a list or a line.
+func isCheckCall(args string) bool {
+	var call struct {
+		Command json.RawMessage `json:"command"`
+	}
+	if json.Unmarshal([]byte(args), &call) == nil && len(call.Command) > 0 {
+		var list []string
+		if json.Unmarshal(call.Command, &list) == nil {
+			return isVerificationCommand(list) || looseCheckRE.MatchString(strings.Join(list, " "))
+		}
+		var line string
+		if json.Unmarshal(call.Command, &line) == nil {
+			return looseCheckRE.MatchString(line)
+		}
+	}
+	return looseCheckRE.MatchString(args)
+}
+
 // workersRanCommands reports whether any worker of this conversation ran a
-// command (its tool list, from the live registry or the database).
+// command: its saved lifetime counter (survives restarts and resumes), or its
+// latest run's tool list.
 func (l *Loop) workersRanCommands() bool {
 	if l.workerStatusSource == nil {
 		return false
 	}
 	for _, s := range l.workerStatusSource() {
+		if s.CommandsRun > 0 {
+			return true
+		}
 		for _, name := range s.ToolNames {
 			if commandTools[strings.TrimSpace(strings.SplitN(name, "×", 2)[0])] {
 				return true

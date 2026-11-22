@@ -1258,6 +1258,7 @@
   "error.contextCompact": "Bağlam sıkıştırma başarısız oldu ({detail}); tur yanıtsız durdu.",
   "chat.continue": "Devam et",
   "notice.emptyReply": "Model yanıt döndürmedi. Yeniden sorun veya başka bir model seçin.",
+  "task.doneNotChecked": "bitti · değişiklikler kontrol edilmedi",
   "task.needsReview": "kontrol gerekli",
   "task.reviewNoChanges": "Ajan başarı bildirdi ama hiçbir dosyayı değiştirmedi.",
   "task.reviewVerifyFailed": "Ajanın değişikliklerinden sonra proje kontrolü başarısız oldu: {command} (kod {code}).",

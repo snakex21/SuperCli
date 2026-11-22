@@ -29,6 +29,8 @@ type WorkerRecord struct {
 	Status      string
 	LastError   string
 	Runs        int
+	CommandsRun int
+	ChecksRun   int
 	Messages    []llm.Message
 	UpdatedAt   time.Time
 }
@@ -105,7 +107,8 @@ func (r *WorkerRegistry) persist(w *Worker) {
 	}
 	s := w.Snapshot()
 	rec := WorkerRecord{SessionID: w.sessionID, ID: w.ID, Agent: w.Agent, Description: w.Description, Model: s.Model,
-		BaseDir: w.baseDir, Status: s.Status, LastError: s.LastError, Runs: s.Runs, UpdatedAt: time.Now()}
+		BaseDir: w.baseDir, Status: s.Status, LastError: s.LastError, Runs: s.Runs,
+		CommandsRun: s.CommandsRun, ChecksRun: s.ChecksRun, UpdatedAt: time.Now()}
 	if w.Loop != nil {
 		rec.Messages = persistableMessages(w.Loop.Messages)
 	}
@@ -142,6 +145,7 @@ func (r *WorkerRegistry) addRestored(rec WorkerRecord, loop *Loop) (*Worker, err
 	now := time.Now()
 	w := &Worker{ID: rec.ID, Agent: rec.Agent, Description: rec.Description, Model: rec.Model, Loop: loop,
 		CreatedAt: now, UpdatedAt: now, Status: status, LastError: rec.LastError, Runs: rec.Runs,
+		CommandsRun: rec.CommandsRun, ChecksRun: rec.ChecksRun,
 		sessionID: rec.SessionID, baseDir: rec.BaseDir, registry: r}
 	delete(r.evicted, rec.ID)
 	r.workers[rec.ID] = w

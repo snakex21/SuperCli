@@ -1258,6 +1258,7 @@
   "error.contextCompact": "Compactarea contextului a eșuat ({detail}); tura s-a oprit fără răspuns.",
   "chat.continue": "Continuă",
   "notice.emptyReply": "Modelul nu a returnat niciun răspuns. Întreabă din nou sau alege alt model.",
+  "task.doneNotChecked": "gata · modificările nu au fost verificate",
   "task.needsReview": "necesită verificare",
   "task.reviewNoChanges": "Agentul a raportat succes, dar nu a modificat niciun fișier.",
   "task.reviewVerifyFailed": "Verificarea proiectului a eșuat după modificările agentului: {command} (cod {code}).",

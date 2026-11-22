@@ -109,7 +109,9 @@ func TestDelegatedHostWaitPausesModelWatchdogAndResumesItAfterReports(t *testing
 	}
 	for _, mode := range []string{"complete", "cancel", "stalled-parent-after-report"} {
 		t.Run(mode, func(t *testing.T) {
-			const modelIdle = 200 * time.Millisecond
+			// Generous under parallel load (-race, full suite): the watchdog must
+			// not fire on ordinary scheduling delays between fixture steps.
+			const modelIdle = 750 * time.Millisecond
 			srv := newTestServer(t, false)
 			srv.eng.setHome(t.TempDir())
 			// background_wake = "off" keeps the blocking in-turn wait this test

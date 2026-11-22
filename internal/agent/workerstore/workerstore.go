@@ -13,12 +13,14 @@ type Store struct{ S *session.Store }
 
 func toRow(r agent.WorkerRecord) session.WorkerRow {
 	return session.WorkerRow{SessionID: r.SessionID, ID: r.ID, Agent: r.Agent, Description: r.Description, Model: r.Model,
-		BaseDir: r.BaseDir, Status: r.Status, LastError: r.LastError, Runs: r.Runs, Messages: r.Messages, UpdatedAt: r.UpdatedAt}
+		BaseDir: r.BaseDir, Status: r.Status, LastError: r.LastError, Runs: r.Runs, CommandsRun: r.CommandsRun, ChecksRun: r.ChecksRun,
+		Messages: r.Messages, UpdatedAt: r.UpdatedAt}
 }
 
 func toRecord(r session.WorkerRow) agent.WorkerRecord {
 	return agent.WorkerRecord{SessionID: r.SessionID, ID: r.ID, Agent: r.Agent, Description: r.Description, Model: r.Model,
-		BaseDir: r.BaseDir, Status: r.Status, LastError: r.LastError, Runs: r.Runs, Messages: r.Messages, UpdatedAt: r.UpdatedAt}
+		BaseDir: r.BaseDir, Status: r.Status, LastError: r.LastError, Runs: r.Runs, CommandsRun: r.CommandsRun, ChecksRun: r.ChecksRun,
+		Messages: r.Messages, UpdatedAt: r.UpdatedAt}
 }
 
 func (s Store) SaveWorker(ctx context.Context, rec agent.WorkerRecord) error {
@@ -47,7 +49,8 @@ func (s Store) ListWorkerBriefs(ctx context.Context, sessionID string) ([]agent.
 	}
 	out := make([]agent.WorkerRecord, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, agent.WorkerRecord{SessionID: sessionID, ID: r.ID, Agent: r.Agent, Description: r.Description, Status: r.Status})
+		out = append(out, agent.WorkerRecord{SessionID: sessionID, ID: r.ID, Agent: r.Agent, Description: r.Description, Status: r.Status,
+			CommandsRun: r.CommandsRun, ChecksRun: r.ChecksRun})
 	}
 	return out, nil
 }

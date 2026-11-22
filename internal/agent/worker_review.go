@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/fs"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -28,7 +29,10 @@ import (
 // localize them by these exact texts.
 
 const (
-	ReviewNoChanges     = "review: no file changes were recorded in this run"
+	ReviewNoChanges = "review: no file changes were recorded in this run"
+	// ReviewNotChecked is neutral, not a "needs review": the workspace was
+	// too large (or too slow) to fingerprint, so nothing is claimed either way.
+	ReviewNotChecked    = "unchecked: file changes were not checked (workspace too large)"
 	reviewVerifyFailedF = "review: verify command failed: %s (exit %d)"
 )
 
@@ -60,7 +64,11 @@ func (a *AgentTool) reviewRun(ctx context.Context, w *Worker, before string) str
 	// generate, sed) show in the workspace fingerprint (review 4).
 	changed := w.Loop.runMutations.Load() > 0
 	if !changed && before != "" {
-		changed = workspaceFingerprint(ctx, dir) != before
+		after := workspaceFingerprint(ctx, dir)
+		if before == fingerprintUnchecked || after == fingerprintUnchecked || after == "" {
+			return ReviewNotChecked
+		}
+		changed = after != before
 	}
 	if !changed {
 		return ReviewNoChanges
@@ -156,11 +164,18 @@ func (a *AgentTool) installReview(w *Worker) {
 	}
 }
 
-// workspaceFingerprint describes the state of dir cheaply: in a git work tree
-// the HEAD commit plus "git status --porcelain" (tracked and untracked
-// changes); elsewhere the count, total size and newest modification time of
-// the files (build caches and VCS folders skipped, bounded). Two equal
-// fingerprints mean nothing visible changed. "" when it cannot be taken.
+// fingerprintUnchecked: the workspace could not be fingerprinted within the
+// file and time bounds; no "changed"/"unchanged" verdict may rest on it.
+const fingerprintUnchecked = "unchecked"
+
+// workspaceFingerprint describes the state of dir: in a git work tree the
+// HEAD commit, "git status --porcelain", the content of the unstaged and
+// staged diffs and the size and modification time of every untracked file
+// (so a second edit of an already modified file changes it too); elsewhere
+// the count, total size and newest modification time of the files (build
+// caches and VCS folders skipped). Two equal fingerprints mean nothing
+// visible changed. fingerprintUnchecked when the walk hits its bounds, ""
+// when it cannot be taken at all.
 func workspaceFingerprint(ctx context.Context, dir string) string {
 	if dir == "" {
 		return ""
@@ -177,15 +192,48 @@ func workspaceFingerprint(ctx context.Context, dir string) string {
 		head, _ := git("rev-parse", "HEAD")
 		status, err := git("status", "--porcelain=v1", "-z", "--untracked-files=normal")
 		if err == nil {
-			sum := sha256.Sum256([]byte(head + "\x00" + status))
-			return "git:" + hex.EncodeToString(sum[:])
+			h := sha256.New()
+			for _, part := range []string{head, status} {
+				h.Write([]byte(part))
+				h.Write([]byte{0})
+			}
+			for _, args := range [][]string{{"diff", "--no-ext-diff", "--binary"}, {"diff", "--cached", "--no-ext-diff", "--binary"}} {
+				out, err := git(args...)
+				if err != nil {
+					return fingerprintUnchecked
+				}
+				h.Write([]byte(out))
+				h.Write([]byte{0})
+			}
+			untracked, err := git("ls-files", "--others", "--exclude-standard", "-z")
+			if err != nil {
+				return fingerprintUnchecked
+			}
+			for _, name := range strings.Split(untracked, "\x00") {
+				if name == "" {
+					continue
+				}
+				fmt.Fprintf(h, "%s", name)
+				if info, err := os.Stat(filepath.Join(dir, filepath.FromSlash(name))); err == nil {
+					fmt.Fprintf(h, ":%d:%d", info.Size(), info.ModTime().UnixNano())
+				}
+				h.Write([]byte{0})
+			}
+			if ctx.Err() != nil {
+				return fingerprintUnchecked
+			}
+			return "git:" + hex.EncodeToString(h.Sum(nil))
 		}
 	}
 	var files, size int64
 	var newest time.Time
-	const maxFiles = 50000
+	var truncated bool
 	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || ctx.Err() != nil {
+		if ctx.Err() != nil {
+			truncated = true
+			return fs.SkipAll
+		}
+		if err != nil {
 			return filepath.SkipDir
 		}
 		if d.IsDir() {
@@ -203,7 +251,8 @@ func workspaceFingerprint(ctx context.Context, dir string) string {
 		case ".db", ".db-wal", ".db-shm", ".log", ".lock":
 			return nil
 		}
-		if files++; files > maxFiles {
+		if files++; files > fingerprintMaxFiles {
+			truncated = true
 			return fs.SkipAll
 		}
 		if info, err := d.Info(); err == nil {
@@ -214,5 +263,11 @@ func workspaceFingerprint(ctx context.Context, dir string) string {
 		}
 		return nil
 	})
+	if truncated {
+		return fingerprintUnchecked
+	}
 	return fmt.Sprintf("fs:%d:%d:%d", files, size, newest.UnixNano())
 }
+
+// fingerprintMaxFiles bounds the walk outside git (a variable for tests).
+var fingerprintMaxFiles int64 = 50000

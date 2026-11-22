@@ -1258,6 +1258,7 @@
   "error.contextCompact": "Falló la compactación del contexto ({detail}); el turno terminó sin respuesta.",
   "chat.continue": "Continuar",
   "notice.emptyReply": "El modelo no devolvió ninguna respuesta. Pregunta de nuevo o elige otro modelo.",
+  "task.doneNotChecked": "hecho · cambios sin comprobar",
   "task.needsReview": "requiere revisión",
   "task.reviewNoChanges": "El agente informó éxito, pero no cambió ningún archivo.",
   "task.reviewVerifyFailed": "La comprobación del proyecto falló tras los cambios del agente: {command} (código {code}).",

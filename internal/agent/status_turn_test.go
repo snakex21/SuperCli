@@ -230,6 +230,14 @@ func TestNamesWorkerWithoutNegation(t *testing.T) {
 		{"przerwij worker-7", "stop", true},
 		{"kill worker 7", "stop", true},
 		{"worker-7 wznów", "resume", false},
+		// Review 3: a conditional order or another activity is not consent now.
+		{"stop worrying about worker-7", "stop", false},
+		{"Kontynuuj z worker-7 dopiero jak skończy worker-3", "resume", false},
+		{"kontynuuj worker-7 jak skończy worker-3", "resume", false},
+		{"resume worker-7 after worker-3 is done", "resume", false},
+		{"stop worker-7 if it fails again", "stop", false},
+		{"kontynuuj worker-7 jak najszybciej", "resume", true},
+		{"stop worker-7", "stop", true},
 	} {
 		if got := namesWorkerWithoutNegation(tc.prompt, "worker-7", tc.action); got != tc.want {
 			t.Errorf("%s %q = %v, want %v", tc.action, tc.prompt, got, tc.want)

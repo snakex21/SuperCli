@@ -262,6 +262,11 @@ func (s *Store) migrate() error {
 		}
 	}
 	// Editing a safe merged batch invalidates its cached merge status.
+	for _, column := range []string{"commands_run", "checks_run"} {
+		if err := s.ensureTableColumn("session_workers", column, "INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return err
+		}
+	}
 	if err := s.ensureTableColumn("prompt_queue", "merge_dirty", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
@@ -319,7 +324,7 @@ func (s *Store) ensureSessionColumn(name, definition string) error {
 }
 
 func (s *Store) ensureTableColumn(table, name, definition string) error {
-	if table != "messages" && table != "sessions" && table != "session_turns" && table != "session_usage" && table != "billing_usage" && table != "prompt_queue" {
+	if table != "messages" && table != "sessions" && table != "session_turns" && table != "session_usage" && table != "billing_usage" && table != "prompt_queue" && table != "session_workers" {
 		return fmt.Errorf("unsupported migration table %q", table)
 	}
 	rows, err := s.db.Query(`PRAGMA table_info(` + table + `)`)

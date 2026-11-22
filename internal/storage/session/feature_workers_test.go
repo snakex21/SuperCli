@@ -49,3 +49,34 @@ func TestWorkerRowsRoundTripAndCascade(t *testing.T) {
 		t.Fatal("worker row survived its session")
 	}
 }
+
+// A worker's command/check counters are saved, listed with the briefs and
+// never lowered by a later save (a resumed run starts its own tool list).
+func TestWorkerCommandCountersPersist(t *testing.T) {
+	store, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	sess, err := store.Create(t.TempDir(), "m", "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	row := WorkerRow{SessionID: sess.ID, ID: "worker-4", Agent: "code", Description: "task", Status: "done", Runs: 1, CommandsRun: 3, ChecksRun: 2}
+	if err := store.SaveWorker(ctx, row); err != nil {
+		t.Fatal(err)
+	}
+	row.CommandsRun, row.ChecksRun, row.Runs = 0, 0, 2
+	if err := store.SaveWorker(ctx, row); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := store.LoadWorker(ctx, sess.ID, "worker-4")
+	if err != nil || !ok || got.CommandsRun != 3 || got.ChecksRun != 2 {
+		t.Fatalf("load = %+v ok=%v err=%v", got, ok, err)
+	}
+	briefs, err := store.ListWorkerBriefs(ctx, sess.ID)
+	if err != nil || len(briefs) != 1 || briefs[0].CommandsRun != 3 || briefs[0].ChecksRun != 2 {
+		t.Fatalf("briefs = %+v %v", briefs, err)
+	}
+}

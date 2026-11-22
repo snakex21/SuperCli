@@ -1258,6 +1258,7 @@
   "error.contextCompact": "Kontekstin tiivistys epäonnistui ({detail}); vuoro päättyi ilman vastausta.",
   "chat.continue": "Jatka",
   "notice.emptyReply": "Malli ei palauttanut vastausta. Kysy uudelleen tai valitse toinen malli.",
+  "task.doneNotChecked": "valmis · muutoksia ei tarkistettu",
   "task.needsReview": "vaatii tarkistuksen",
   "task.reviewNoChanges": "Agentti ilmoitti onnistuneensa, mutta ei muuttanut yhtään tiedostoa.",
   "task.reviewVerifyFailed": "Projektin tarkistus epäonnistui agentin muutosten jälkeen: {command} (koodi {code}).",

@@ -1258,6 +1258,7 @@
   "error.contextCompact": "Échec du compactage du contexte ({detail}) ; le tour s'est arrêté sans réponse.",
   "chat.continue": "Continuer",
   "notice.emptyReply": "Le modèle n’a renvoyé aucune réponse. Reposez la question ou choisissez un autre modèle.",
+  "task.doneNotChecked": "terminé · modifications non vérifiées",
   "task.needsReview": "à vérifier",
   "task.reviewNoChanges": "L’agent a signalé un succès sans modifier aucun fichier.",
   "task.reviewVerifyFailed": "La vérification du projet a échoué après les modifications de l’agent : {command} (code {code}).",

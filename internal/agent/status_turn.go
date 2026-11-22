@@ -29,6 +29,8 @@ import (
 const statusTurnHint = "[status question — not a work request] The user only asked how the work is going. " +
 	"Answer now, in the user's language, from the worker states below and the latest worker reports in this conversation: " +
 	"what finished, what is still running, what failed or was stopped and why, and what remains. " +
+	"Keep it short: 2-4 lines (done / in progress / blocked), no option lists unless the user must decide something, " +
+	"details only if the user asks. " +
 	"Do not start, resume, retry, steer or stop workers in this turn and do not begin new work; " +
 	"if something should be resumed or started, say so and wait for the user's instruction."
 
@@ -178,7 +180,9 @@ func renderStatusWorkers(snaps []Snapshot) string {
 			break
 		}
 		status := s.Status
-		if s.Review != "" && (status == "done" || status == "completed") {
+		if strings.HasPrefix(s.Review, "unchecked:") && (status == "done" || status == "completed") {
+			status = "done (file changes not checked: workspace too large)"
+		} else if s.Review != "" && (status == "done" || status == "completed") {
 			// The same state the panel shows: done, but needs a look.
 			status = "done, needs review (" + strings.TrimPrefix(s.Review, "review: ") + ")"
 		}
@@ -307,6 +311,32 @@ var negationWords = map[string]bool{
 	"pomiń": true, "pomin": true, "leave": true, "ignore": true, "ignoruj": true, "nieważne": true, "niewazne": true,
 }
 
+// conditionWords make an order conditional ("continue worker-7 only once
+// worker-3 finishes", "stop it if it fails"): not consent to act now.
+var conditionWords = map[string]bool{
+	"if": true, "when": true, "once": true, "after": true, "until": true, "unless": true, "later": true, "afterwards": true,
+	"dopiero": true, "jeśli": true, "jesli": true, "jeżeli": true, "jezeli": true, "gdy": true, "kiedy": true, "później": true,
+	"pozniej": true, "potem": true, "chyba": true, "ewentualnie": true, "wtedy": true,
+}
+
+// conditional reports a condition in the clause words; "jak" counts only in
+// its "when it finishes" sense ("jak skończy", "jak tylko").
+func conditional(words []string) bool {
+	for i, w := range words {
+		if conditionWords[w] {
+			return true
+		}
+		if (w == "jak" || w == "as") && i+1 < len(words) {
+			next := words[i+1]
+			if next == "tylko" || next == "soon" || strings.HasPrefix(next, "skończ") || strings.HasPrefix(next, "skoncz") ||
+				strings.HasPrefix(next, "zakończ") || strings.HasPrefix(next, "zakoncz") || strings.HasPrefix(next, "będzie") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // questionWords open a question; a question is never consent.
 var questionWords = map[string]bool{
 	"dlaczego": true, "czemu": true, "czy": true, "co": true, "jak": true, "kiedy": true, "gdzie": true, "ile": true,
@@ -349,7 +379,7 @@ func namesWorkerWithoutNegation(prompt, workerID, action string) bool {
 				break
 			}
 		}
-		if negated {
+		if negated || conditional(words) {
 			continue
 		}
 		// The imperative verb opens the clause (after polite words).
@@ -358,6 +388,11 @@ func namesWorkerWithoutNegation(prompt, workerID, action string) bool {
 			i++
 		}
 		if i < len(words) && verbs[words[i]] {
+			// "stop worrying about worker-7", "przestań się martwić": the verb
+			// governs another activity, not the worker.
+			if i+1 < len(words) && (strings.HasSuffix(words[i+1], "ing") || words[i+1] == "się" || words[i+1] == "sie") {
+				continue
+			}
 			return true
 		}
 	}

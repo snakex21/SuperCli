@@ -1258,6 +1258,7 @@
   "error.contextCompact": "Compattazione del contesto non riuscita ({detail}); il turno si è fermato senza risposta.",
   "chat.continue": "Continua",
   "notice.emptyReply": "Il modello non ha restituito alcuna risposta. Chiedi di nuovo o scegli un altro modello.",
+  "task.doneNotChecked": "fatto · modifiche non verificate",
   "task.needsReview": "da verificare",
   "task.reviewNoChanges": "L’agente ha segnalato successo ma non ha modificato alcun file.",
   "task.reviewVerifyFailed": "Il controllo del progetto è fallito dopo le modifiche dell’agente: {command} (codice {code}).",

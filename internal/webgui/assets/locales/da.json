@@ -1258,6 +1258,7 @@
   "error.contextCompact": "Komprimering af konteksten mislykkedes ({detail}); turen stoppede uden svar.",
   "chat.continue": "Fortsæt",
   "notice.emptyReply": "Modellen returnerede intet svar. Spørg igen eller vælg en anden model.",
+  "task.doneNotChecked": "færdig · ændringer ikke kontrolleret",
   "task.needsReview": "kræver gennemsyn",
   "task.reviewNoChanges": "Agenten meldte succes, men ændrede ingen filer.",
   "task.reviewVerifyFailed": "Projektkontrollen fejlede efter agentens ændringer: {command} (kode {code}).",

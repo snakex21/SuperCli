@@ -381,6 +381,12 @@ func runWorkerLoopLocked(ctx context.Context, w *Worker, prompt string, workers 
 				if len(w.ToolNames) < 32 {
 					w.ToolNames = append(w.ToolNames, e.Name)
 				}
+				if commandTools[e.Name] {
+					w.CommandsRun++
+					if isCheckCall(e.Args) {
+						w.ChecksRun++
+					}
+				}
 			})
 			emit(WorkerProgressEvent{
 				Kind: "tool_call", CallID: e.ID, Tool: e.Name,

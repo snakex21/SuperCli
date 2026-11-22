@@ -1258,6 +1258,7 @@
   "error.contextCompact": "Nie udało się skompaktować kontekstu ({detail}); tura zatrzymała się bez odpowiedzi.",
   "chat.continue": "Kontynuuj",
   "notice.emptyReply": "Model nie zwrócił odpowiedzi. Zapytaj ponownie albo wybierz inny model.",
+  "task.doneNotChecked": "gotowe · zmian nie sprawdzono",
   "task.needsReview": "wymaga sprawdzenia",
   "task.reviewNoChanges": "Agent zgłosił sukces, ale nie zmienił żadnego pliku.",
   "task.reviewVerifyFailed": "Sprawdzenie projektu nie przeszło po zmianach agenta: {command} (kod {code}).",

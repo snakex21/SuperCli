@@ -1258,6 +1258,7 @@
   "error.contextCompact": "Sažimanje konteksta nije uspjelo ({detail}); potez je stao bez odgovora.",
   "chat.continue": "Nastavi",
   "notice.emptyReply": "Model nije vratio odgovor. Pitajte ponovno ili odaberite drugi model.",
+  "task.doneNotChecked": "gotovo · promjene nisu provjerene",
   "task.needsReview": "treba provjeru",
   "task.reviewNoChanges": "Agent je prijavio uspjeh, ali nije promijenio nijednu datoteku.",
   "task.reviewVerifyFailed": "Provjera projekta nije uspjela nakon promjena agenta: {command} (kod {code}).",

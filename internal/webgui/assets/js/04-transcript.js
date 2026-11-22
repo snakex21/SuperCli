@@ -1227,7 +1227,8 @@ function setTaskStatus(row, status) {
 function workerStatusTerminal(status) { return status === "done" || status === "review" || status === "failed" || status === "stopped" || status === "interrupted"; }
 // "done" with a review note (no file changes, red verify command) is shown as
 // "needs review": the run ended, the result still needs a look.
-function workerShownStatus(status, review) { return (status === "done" || status === "completed") && review ? "review" : status; }
+// "unchecked: ..." is neutral (changes could not be checked): it stays "done".
+function workerShownStatus(status, review) { return (status === "done" || status === "completed") && review && !/^unchecked:/.test(review) ? "review" : status; }
 function updateWorkerOverview(id, agentName, status, activity, row) {
   if (!id) return;
   var item = workerOverview[id];
@@ -1472,6 +1473,7 @@ function applyWorkerStatusSnapshot(workers, bindings, serverNow, livenessOnly) {
       row.classList.add("done");
       row._stat.textContent = taskStatusLabel(status);
       row._stat.title = status === "failed" ? (worker.last_error || "") : "";
+      if (status === "done" && /^unchecked:/.test(worker.review || "")) row._stat.textContent = t("task.doneNotChecked");
       if (row._stopButton) { row._stopButton.remove(); row._stopButton = null; }
       // A card rebuilt from history learns the error only from the snapshot.
       if (status === "failed" && worker.last_error) renderTaskOutcome(row, { status: "failed", result: worker.last_error }, true);

@@ -1258,6 +1258,7 @@
   "error.contextCompact": "Stiskanje konteksta ni uspelo ({detail}); poteza se je ustavila brez odgovora.",
   "chat.continue": "Nadaljuj",
   "notice.emptyReply": "Model ni vrnil odgovora. Vprašajte znova ali izberite drug model.",
+  "task.doneNotChecked": "končano · spremembe niso preverjene",
   "task.needsReview": "potrebuje pregled",
   "task.reviewNoChanges": "Agent je javil uspeh, a ni spremenil nobene datoteke.",
   "task.reviewVerifyFailed": "Preverjanje projekta ni uspelo po agentovih spremembah: {command} (koda {code}).",

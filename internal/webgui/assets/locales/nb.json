@@ -1258,6 +1258,7 @@
   "error.contextCompact": "Komprimering av konteksten mislyktes ({detail}); runden stoppet uten svar.",
   "chat.continue": "Fortsett",
   "notice.emptyReply": "Modellen ga ikke noe svar. Spør igjen eller velg en annen modell.",
+  "task.doneNotChecked": "ferdig · endringer ikke kontrollert",
   "task.needsReview": "må kontrolleres",
   "task.reviewNoChanges": "Agenten meldte suksess, men endret ingen filer.",
   "task.reviewVerifyFailed": "Prosjektsjekken feilet etter agentens endringer: {command} (kode {code}).",

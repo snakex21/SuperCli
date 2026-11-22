@@ -1258,6 +1258,7 @@
   "error.contextCompact": "Context comprimeren mislukt ({detail}); de beurt stopte zonder antwoord.",
   "chat.continue": "Doorgaan",
   "notice.emptyReply": "Het model gaf geen antwoord. Vraag het opnieuw of kies een ander model.",
+  "task.doneNotChecked": "klaar · wijzigingen niet gecontroleerd",
   "task.needsReview": "moet worden nagekeken",
   "task.reviewNoChanges": "De agent meldde succes, maar wijzigde geen enkel bestand.",
   "task.reviewVerifyFailed": "De projectcontrole mislukte na de wijzigingen van de agent: {command} (code {code}).",
