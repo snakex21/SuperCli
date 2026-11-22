@@ -183,22 +183,27 @@ func (a *AgentTool) repeatedBrief(ctx context.Context, agentName, prompt string)
 			"Report the outcome and propose the next step; the user decides (or enables background_wake_delegate for unattended refills)."
 	}
 	// Even then it never repeats a worker of this conversation that failed,
-	// was interrupted or stopped, or is still working - matched by goal and
-	// task, not wording (a rephrased retry is still a retry) - nor redoes a
-	// finished worker's exact task.
+	// was interrupted or stopped - matched by goal and task, not wording (a
+	// rephrased retry is still a retry) - nor starts a worker's exact task
+	// again while it runs or after it finished.
 	check := func(id, agent, desc, status string) string {
 		if agent != agentName {
 			return ""
 		}
-		similar := false
+		exact := strings.Join(strings.Fields(desc), " ") == strings.Join(strings.Fields(prompt), " ")
 		switch status {
-		case "failed", "stopped", WorkerStatusInterrupted, "running", "created":
-			similar = sameTask(desc, prompt)
+		case "failed", "stopped", WorkerStatusInterrupted:
+			if sameTask(desc, prompt) {
+				return fmt.Sprintf("refused: this automatic turn (no user message) would repeat %s's task (%s). Failed or stopped tasks are not delegated again automatically: report its outcome and let the user decide; the user resumes it with the Resume button or a message naming it.", id, status)
+			}
+		case "running", "created":
+			if exact {
+				return fmt.Sprintf("refused: %s is already working on this task. Do not start it twice; its report will start an automatic turn.", id)
+			}
 		default:
-			similar = strings.Join(strings.Fields(desc), " ") == strings.Join(strings.Fields(prompt), " ")
-		}
-		if similar {
-			return fmt.Sprintf("refused: this automatic turn (no user message) would repeat %s's task (%s). Report its outcome and let the user decide; the user resumes it with the Resume button or a message naming it.", id, status)
+			if exact {
+				return fmt.Sprintf("refused: this automatic turn (no user message) would redo %s's finished task (%s). Use its report instead of starting it again.", id, status)
+			}
 		}
 		return ""
 	}

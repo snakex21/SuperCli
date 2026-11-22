@@ -92,14 +92,32 @@ func (a *AgentTool) reviewRun(ctx context.Context, w *Worker, before string) str
 	return review
 }
 
-// sameTask reports whether two task briefs ask for the same work, however
-// worded: the same goal line ("CEL:/GOAL:/TASK:"), or briefs that share most
-// of their meaningful words (shared project boilerplate excluded by using the
-// goal lines when both have one).
+// sameTask reports whether a brief retries a failed, interrupted or stopped
+// worker's task, however worded: the same goal line ("CEL:/GOAL:/TASK:"), or
+// briefs that share most of their meaningful words (project boilerplate
+// excluded by using the goal lines when both have one). Identifiers (paths,
+// file names, snake_case and CamelCase names) decide first: briefs from one
+// template that name different identifiers are different tasks ("tests for
+// internal/parser" vs "internal/lexer", "de.json" vs "fr.json",
+// "TestLoginHandler" vs "TestLogoutHandler").
 func sameTask(a, b string) bool {
 	ga, gb := taskGoal(a), taskGoal(b)
 	if ga != "" && gb != "" {
 		a, b = ga, gb
+	}
+	ia, ib := taskIdentifiers(a), taskIdentifiers(b)
+	if len(ia) > 0 && len(ib) > 0 {
+		if len(ia) != len(ib) {
+			return false
+		}
+		for id := range ia {
+			if !ib[id] {
+				return false
+			}
+		}
+		// The same identifiers as a failed or stopped task: a retry of it
+		// (only failed/interrupted/stopped workers are compared loosely).
+		return true
 	}
 	wa, wb := taskWords(a), taskWords(b)
 	if len(wa) == 0 || len(wb) == 0 {
@@ -118,6 +136,41 @@ func sameTask(a, b string) bool {
 	union := len(wa) + len(wb) - shared
 	// Most of the shorter brief is in the other, or the two overlap broadly.
 	return float64(shared)/float64(smaller) >= 0.7 || float64(shared)/float64(union) >= 0.5
+}
+
+// taskIdentifiers returns the identifier-like words of a brief: paths, file
+// names (a dot between letters), snake_case, CamelCase and letter+digit names.
+func taskIdentifiers(s string) map[string]bool {
+	out := map[string]bool{}
+	for _, tok := range strings.FieldsFunc(s, func(r rune) bool {
+		return unicode.IsSpace(r) || strings.ContainsRune(`,;:()[]{}"'`+"`", r)
+	}) {
+		tok = strings.Trim(tok, ".-")
+		if len(tok) < 3 {
+			continue
+		}
+		ident := strings.ContainsAny(tok, `/\_`)
+		letters, digits := false, false
+		prev := rune(0)
+		for i, r := range tok {
+			switch {
+			case unicode.IsDigit(r):
+				digits = true
+			case unicode.IsLetter(r):
+				letters = true
+				if i > 0 && unicode.IsUpper(r) && unicode.IsLower(prev) {
+					ident = true // CamelCase
+				}
+			case r == '.' && unicode.IsLetter(prev) && i+1 < len(tok):
+				ident = true // file.ext, pkg.Name
+			}
+			prev = r
+		}
+		if ident || letters && digits {
+			out[strings.ToLower(tok)] = true
+		}
+	}
+	return out
 }
 
 func taskGoal(s string) string {

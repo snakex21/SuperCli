@@ -83,6 +83,12 @@ func TestSameTaskMatchesRewordedRetries(t *testing.T) {
 		{"CEL: naprawić generator świata\nKontekst: ...", "CEL: naprawić generator świata\nInny kontekst, inne słowa i kroki", true},
 		{"add the spider", "write the README for the world generator", false},
 		{"add the creeper", "add the spider", false},
+		// Review: one template, different identifiers = different tasks.
+		{"Implement unit tests for the parser module in internal/parser", "Implement unit tests for the lexer module in internal/lexer", false},
+		{"Translate the UI strings to German (de.json)", "Translate the UI strings to French (fr.json)", false},
+		{"Fix the failing TestLoginHandler test", "Fix the failing TestLogoutHandler test", false},
+		{"Add an index to internal/storage/session", "Add an index to internal/storage/workers", false},
+		{"Fix the failing TestLoginHandler test", "please retry: fix TestLoginHandler, it still fails", true},
 	} {
 		if got := sameTask(c.a, c.b); got != c.want {
 			t.Errorf("sameTask(%q, %q) = %v, want %v", c.a, c.b, got, c.want)
