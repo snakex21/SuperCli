@@ -93,6 +93,8 @@ function runActivityNote(model, ev, now) {
       break;
     case "notice":
       var retry = activityRetryStep(ev.text);
+      // Consecutive retries are one step: its clock counts from the first.
+      if (retry && model.step && model.step.kind === "retry") retry.since = model.step.since;
       if (retry && !model.waitUser) runActivitySet(model, retry, now);
       break;
     case "done":
@@ -112,8 +114,9 @@ function runActivityView(model, now, userWaiting) {
   else model.userSince = 0;
   var step = userWaiting ? {kind: "user", detail: model.step.kind === "user" ? model.step.detail : "", since: model.step.kind === "user" ? model.step.since : model.userSince} : model.step;
   var label = runActivityStepLabel(step);
-  // The user's turn is shown at once; other changes wait out the 1 s debounce.
-  var shown = step.kind === "user" ? (model._liveShown = {label: label, since: step.since, at: now}) :
+  // The user's turn and a retry are shown at once (a retry is never a
+  // flicker: it waits seconds); other changes wait out the 1 s debounce.
+  var shown = step.kind === "user" || step.kind === "retry" ? (model._liveShown = {label: label, since: step.since, at: now}) :
     activityDebounce(model, label, step.since, now);
   var quiet = Math.max(0, now - model.last), limit = userWaiting ? 0 : activitySilenceMS(step);
   var view = {kind: step.kind, label: shown.label, step: activityClock(now - shown.since), turn: activityClock(now - model.start),

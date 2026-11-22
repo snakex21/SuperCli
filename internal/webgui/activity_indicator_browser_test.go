@@ -148,6 +148,13 @@ function checkActivityStates(){return run(function(){
   runActivityNote(m,{type:'tool_result',id:'c4'},T+14000);
   runActivityNote(m,{type:'notice',text:'connection to the model dropped (EOF) — retrying in 2s (retry 2/5)'},T+15000);
   check(label(m,T+16100)==='Ponawia po błędzie połączenia (2/5)','retry: '+label(m,T+16100));
+  // A retry shows at once (no debounce), with one clock across attempts.
+  var r=runActivityNew(T);
+  runActivityNote(r,{type:'notice',text:'connection to the model dropped (EOF) — retrying in 600ms (retry 1/5)'},T+200);
+  check(label(r,T+300)==='Ponawia po błędzie połączenia (1/5)','retry shown at once: '+label(r,T+300));
+  runActivityNote(r,{type:'notice',text:'connection to the model dropped (EOF) — retrying in 2s (retry 2/5)'},T+900);
+  var rv=runActivityView(r,T+3200);
+  check(rv.label==='Ponawia po błędzie połączenia (2/5)'&&rv.step==='0:03','retry clock from the first attempt: '+rv.label+' '+rv.step);
   runActivityNote(m,{type:'notice',text:'fake: rate limited (HTTP 429) — retrying in 1m0s (retry 1/3)'},T+17000);
   check(label(m,T+18100)==='Limit zapytań, ponawia (1/3)','rate limit: '+label(m,T+18100));
   runActivityNote(m,{type:'tool_call',id:'c5',name:'send_message',args:args({to:'worker-2',message:'dalej'})},T+19000);

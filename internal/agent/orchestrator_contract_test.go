@@ -65,9 +65,14 @@ func runTurnWithin(t *testing.T, l *Loop, prompt string, within time.Duration) s
 	}
 }
 
+// contractWakeWait bounds waits for a wake-up or a worker state. A passing
+// test returns as soon as the event arrives; the bound only has to outlast a
+// loaded machine (-race next to the webgui suite took more than 5 s).
+const contractWakeWait = 20 * time.Second
+
 func waitWorker(t *testing.T, w *Worker, what string, ok func(Snapshot) bool) Snapshot {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(contractWakeWait)
 	for {
 		s := w.Snapshot()
 		if ok(s) {
@@ -99,7 +104,7 @@ func TestContractTaskRunsInBackgroundWithoutAsyncFlag(t *testing.T) {
 	w := f.task.Workers.List()[0]
 	waitWorker(t, w, "should be running in the background", func(s Snapshot) bool { return s.Status == "running" })
 	close(release)
-	if _, ok := waitWakeEvent(t, ext, 5*time.Second); !ok {
+	if _, ok := waitWakeEvent(t, ext, contractWakeWait); !ok {
 		t.Fatal("the finished worker did not wake the conversation")
 	}
 	waitWorker(t, w, "should finish", func(s Snapshot) bool { return s.Status == "done" })
@@ -137,7 +142,7 @@ func TestContractContinuationRunsInBackground(t *testing.T) {
 	runTurnWithin(t, f.parent, "kontynuuj worker-1: szkielet", 3*time.Second)
 	waitWorker(t, w, "continuation should run in the background", func(s Snapshot) bool { return s.Status == "running" && s.Runs == 2 })
 	close(release)
-	if _, ok := waitWakeEvent(t, ext, 5*time.Second); !ok {
+	if _, ok := waitWakeEvent(t, ext, contractWakeWait); !ok {
 		t.Fatal("the continued worker's report did not wake the conversation")
 	}
 	waitWorker(t, w, "continuation should finish", func(s Snapshot) bool { return s.Status == "done" })
@@ -246,7 +251,7 @@ func TestContractParallelContinuationsStartOnce(t *testing.T) {
 	runTurnWithin(t, f.parent, "Pająk.", 3*time.Second)
 	w := f.task.Workers.List()[0]
 	waitWorker(t, w, "first run", func(s Snapshot) bool { return s.Status == "done" })
-	if _, ok := waitWakeEvent(t, ext, 5*time.Second); !ok {
+	if _, ok := waitWakeEvent(t, ext, contractWakeWait); !ok {
 		t.Fatal("no wake for the first report")
 	}
 	f.child.onCalled = func(int) { <-release }
@@ -392,7 +397,7 @@ func TestContractTwoWorkersFinishingTogetherAreBothDelivered(t *testing.T) {
 	for _, w := range f.task.Workers.List() {
 		waitWorker(t, w, "should finish", func(s Snapshot) bool { return s.Status == "done" })
 	}
-	if _, ok := waitWakeEvent(t, ext, 5*time.Second); !ok {
+	if _, ok := waitWakeEvent(t, ext, contractWakeWait); !ok {
 		t.Fatal("no wake-up for the finished workers")
 	}
 	deadline := time.Now().Add(5 * time.Second)
