@@ -383,6 +383,12 @@ type Loop struct {
 	// Role policy: analysis workers must not be instructed to implement edits.
 	skipImplementationHint   bool
 	implementationHintForRun string
+	// statusOnlyForRun marks a user turn that only asks how the work is
+	// going: delegation calls are refused (see status_turn.go).
+	statusOnlyForRun bool
+	// workerStatusSource lists this conversation's workers for a status
+	// turn. Bound by NewAgentTool; nil without delegation.
+	workerStatusSource func() []Snapshot
 	// navAuto (only meaningful with navigate) makes routing keyword-first:
 	// a confident RouteMap hit skips the extra navigator model round-trip;
 	// only ambiguous prompts fall back to the model navigator.

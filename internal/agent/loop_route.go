@@ -14,6 +14,7 @@ import (
 // prompt — addons are absent from the raw transcript.
 func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 	l.implementationHintForRun = ""
+	l.statusOnlyForRun = l.hasDelegationTools() && isStatusQuestion(prompt)
 	l.screenshotForRun = containsScreenshotReference(prompt)
 	l.headlessForRun = containsHeadlessReference(prompt)
 	l.downloadForRun = l.downloadRequestForPrompt(prompt).download
@@ -32,6 +33,10 @@ func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 	// background goroutine, so Run() returns immediately and the TUI
 	// never blocks on Enter waiting for the route decision.
 	switch {
+	case l.statusOnlyForRun:
+		// A status question about delegated work needs the coordinator's
+		// worker context (states, reports, read_output), not the chat route.
+		l.route = RouteCoordinator
 	case l.screenshotForRun || l.headlessForRun || l.downloadForRun || webOnly:
 		// Capture is an OS tool capability, not a conceptual chat question.
 		l.route = RouteCoordinator
@@ -76,6 +81,10 @@ func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 	// resumed workers. Earlier user text and the cacheable prefix stay intact.
 	if l.route == RouteCoordinator && !l.skipImplementationHint {
 		l.implementationHintForRun = implementationVerificationHint(prompt)
+	}
+	if l.statusOnlyForRun {
+		// Replaces the implementation hint: nothing is to be implemented.
+		l.implementationHintForRun = l.statusTurnContext()
 	}
 	if l.route == RouteCoordinator && l.computeHintOn {
 		if hint := l.computeHint(prompt); hint != "" {

@@ -106,6 +106,11 @@ After starting background workers (async), end your turn with a short status;
 never poll or wait: each report starts an automatic turn. Resume a stopped,
 failed or interrupted worker with send_message (its saved context is restored)
 instead of starting a new task.
+Start or resume workers only for the user's request or a plan they approved.
+A status question ("how is it going?", "i jak idzie?") is answered from the
+workers' states and reports: never start, resume or steer workers for it.
+A worker canceled by the user's Stop or new message stays stopped until the
+user asks to continue it.
 Use scratchpad for detailed evidence that should survive outside the chat.
 
 Web GUI: use task with async=true for long or parallel work, then end your turn; reports start an automatic turn.
@@ -124,7 +129,7 @@ Golden user preset: reply in English.
 Provider: set
 Registry: set
 Caps: set
-System: len=3094 sha=30bed14d28d5
+System: len=3423 sha=3a12ebbf7568
 ProjectInstructions: len=184 sha=5fcf086fd695
 UserInstructions: len=213 sha=c8493814683a
 UserInstructionsForRun: set
@@ -239,6 +244,11 @@ After starting background workers (async), end your turn with a short status;
 never poll or wait: each report starts an automatic turn. Resume a stopped,
 failed or interrupted worker with send_message (its saved context is restored)
 instead of starting a new task.
+Start or resume workers only for the user's request or a plan they approved.
+A status question ("how is it going?", "i jak idzie?") is answered from the
+workers' states and reports: never start, resume or steer workers for it.
+A worker canceled by the user's Stop or new message stays stopped until the
+user asks to continue it.
 Use scratchpad for detailed evidence that should survive outside the chat.
 
 Web GUI: use task with async=true for long or parallel work, then end your turn; reports start an automatic turn.
@@ -318,6 +328,11 @@ After starting background workers (async), end your turn with a short status;
 never poll or wait: each report starts an automatic turn. Resume a stopped,
 failed or interrupted worker with send_message (its saved context is restored)
 instead of starting a new task.
+Start or resume workers only for the user's request or a plan they approved.
+A status question ("how is it going?", "i jak idzie?") is answered from the
+workers' states and reports: never start, resume or steer workers for it.
+A worker canceled by the user's Stop or new message stays stopped until the
+user asks to continue it.
 Use scratchpad for detailed evidence that should survive outside the chat.
 
 Web GUI: use task with async=true for long or parallel work, then end your turn; reports start an automatic turn.

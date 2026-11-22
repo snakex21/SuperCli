@@ -443,7 +443,8 @@ func (l *Loop) backgroundWorkerFinished() {
 const wakeTurnHint = "[automatic wake-up — not user input] Background agent(s) you started have finished; their reports are the task-notification messages above. " +
 	"Keep pursuing the user's stated goal and standing instructions (below and in the goal state) without waiting for a new message: " +
 	"if more steps remain, start them now (e.g. refill freed worker slots when the user asked to keep agents busy); " +
-	"when the goal is reached or blocked, tell the user the outcome concisely. Do not restart finished tasks. " +
+	"when the goal is reached or blocked, tell the user the outcome concisely. Do not restart finished tasks, " +
+	"and do not resume a worker that was canceled or stopped (\"context canceled\", stopped by request): report it and let the user decide. " +
 	"A report shown only as a preview can be read in full with read_output using its handle."
 
 // wakeGoalBudget bounds the user's recent instructions repeated in a wake-up
@@ -508,6 +509,7 @@ const wakeRunPrompt = "[automatic wake-up: background agents finished]"
 // coordinator handles reports with no navigator call and no one-shot addons.
 func (l *Loop) prepareWakeRoute() {
 	l.implementationHintForRun = wakeTurnHint + wakeUserGoal(l.Messages)
+	l.statusOnlyForRun = false
 	l.screenshotForRun, l.headlessForRun = false, false
 	l.downloadForRun, l.downloadPageForRun = false, false
 	l.webForRun, l.webURLForRun = false, false

@@ -545,6 +545,21 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) (r
 		}
 	}
 
+	// A status question never starts, resumes, steers or stops workers: the
+	// user asked what is happening, not for more work (status_turn.go).
+	if l.statusOnlyForRun && statusTurnTools[tc.Name] {
+		out <- ToolResultEvent{ID: tc.ID, Err: fmt.Errorf("%s", statusTurnRefusal)}
+		return toolResult{
+			failed: true,
+			followUps: []llm.Message{{
+				Role:       llm.RoleTool,
+				ToolCallID: tc.ID,
+				Name:       tc.Name,
+				Content:    statusTurnRefusal,
+			}},
+		}
+	}
+
 	// Check at the dispatch boundary. Tools (including extensions) may ignore
 	// context cancellation, so an ended turn must never start the next call.
 	// Still close its protocol/UI pair; later calls in the batch do the same.

@@ -126,7 +126,7 @@ func NewAgentTool(reg *SubAgentRegistry, parent *Loop, base *tools.Registry, pro
 	if factory == nil {
 		return nil, fmt.Errorf("agent.NewAgentTool: NewLoop factory is nil")
 	}
-	return &AgentTool{
+	a := &AgentTool{
 		Registry:              reg,
 		ParentLoop:            parent,
 		BaseRegistry:          base,
@@ -136,7 +136,30 @@ func NewAgentTool(reg *SubAgentRegistry, parent *Loop, base *tools.Registry, pro
 		Workers:               NewWorkerRegistry(),
 		TimeoutPerStep:        30 * time.Second,
 		inheritParentProvider: parent != nil && sameProviderInstance(provider, parent.provider),
-	}, nil
+	}
+	if parent != nil {
+		// Status turns list this conversation's workers. Read a.Workers at
+		// call time: hosts replace it with their shared registry after this.
+		parent.workerStatusSource = a.conversationWorkers
+	}
+	return a, nil
+}
+
+// conversationWorkers returns snapshots of the parent conversation's workers
+// in the live registry (the registry is process-wide in the GUI).
+func (a *AgentTool) conversationWorkers() []Snapshot {
+	if a == nil || a.Workers == nil {
+		return nil
+	}
+	sid := sessionIDOf(a.ParentLoop)
+	var out []Snapshot
+	for _, w := range a.Workers.List() {
+		s := w.Snapshot()
+		if s.SessionID == sid {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // Spec returns the tools.Tool description. The schema lists
