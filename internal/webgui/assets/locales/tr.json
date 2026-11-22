@@ -1256,7 +1256,7 @@
   "storage.recovered": "{file} veritabanı bozuktu. Kopyası {backup} konumunda; SuperCli yenisiyle başladı.",
   "task.blocked": "engellendi",
   "task.blockedResume": "Otomatik devam engellendi — isterseniz Devam Et'e tıklayın",
-  "task.blockedTask": "İsteğiniz olmadan yeni ajan başlatılmadı",
+  "task.blockedTask": "Otomatik tur yeni ajan başlatmaz — rapor verir, siz karar verirsiniz",
   "task.blockedStop": "Ajan isteğiniz olmadan durdurulmadı",
   "task.blockedDetails": "Ayrıntılar",
   "task.sum.running": "çalışıyor",
@@ -1265,5 +1265,13 @@
   "task.sum.interrupted": "kesildi",
   "task.sum.stopped": "durduruldu",
   "task.sum.done": "hazır",
-  "task.sum.unknown": "onaylanmadı"
+  "task.sum.unknown": "onaylanmadı",
+  "task.errorHttp": "Model isteği reddetti (HTTP {code}): {message}",
+  "task.errorDetails": "Hata ayrıntıları",
+  "task.blockedStatus": "Durum sorusu: hiçbir ajan başlatılmadı, sürdürülmedi veya durdurulmadı",
+  "task.blockedNeedsWord": "Devam ettirmek için açık isteğiniz gerekir — Devam Et'e tıklayın veya ajanı belirtin",
+  "task.blockedDuplicate": "Bu ajan zaten aynı görev üzerinde çalışıyor",
+  "note.unverifiedClaim": "testleri doğrulayan çalıştırılmış bir komut bulunamadı",
+  "note.failedCheck": "bu turdaki son kontrol başarısız oldu: {detail}",
+  "note.checkCycleStop": "düzenleme döngüsü durduruldu: dosyalar {detail} kez aynı kontrolden zaten kalmış bir sürüme döndü"
 }

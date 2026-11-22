@@ -1256,7 +1256,7 @@
   "storage.recovered": "Baza de date {file} era deteriorată. Copia ei este în {backup}; SuperCli a pornit cu una nouă.",
   "task.blocked": "blocat",
   "task.blockedResume": "Reluarea automată a fost blocată — apasă Reia dacă vrei",
-  "task.blockedTask": "Niciun agent nou pornit fără cererea ta",
+  "task.blockedTask": "O tură automată nu pornește agenți noi — raportează, tu decizi",
   "task.blockedStop": "Agentul nu a fost oprit fără cererea ta",
   "task.blockedDetails": "Detalii",
   "task.sum.running": "lucrează",
@@ -1265,5 +1265,13 @@
   "task.sum.interrupted": "întrerupt|întrerupte",
   "task.sum.stopped": "oprit|oprite",
   "task.sum.done": "gata",
-  "task.sum.unknown": "neconfirmat|neconfirmate"
+  "task.sum.unknown": "neconfirmat|neconfirmate",
+  "task.errorHttp": "Modelul a respins cererea (HTTP {code}): {message}",
+  "task.errorDetails": "Detaliile erorii",
+  "task.blockedStatus": "Întrebare despre stare: niciun agent nu a fost pornit, reluat sau oprit",
+  "task.blockedNeedsWord": "Reluarea cere solicitarea ta explicită — apasă Reia sau numește agentul",
+  "task.blockedDuplicate": "Acest agent lucrează deja la aceeași sarcină",
+  "note.unverifiedClaim": "nu s-a găsit nicio comandă rulată care să confirme testele",
+  "note.failedCheck": "ultima verificare din această tură a eșuat: {detail}",
+  "note.checkCycleStop": "bucla de editare a fost oprită: fișierele au revenit de {detail} ori la o versiune care deja eșuase aceeași verificare"
 }

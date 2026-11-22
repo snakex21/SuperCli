@@ -1256,7 +1256,7 @@
   "storage.recovered": "Il database {file} era danneggiato. La sua copia è in {backup}; SuperCli è partito con uno nuovo.",
   "task.blocked": "bloccato",
   "task.blockedResume": "Ripresa automatica bloccata — fai clic su Riprendi se vuoi",
-  "task.blockedTask": "Nessun nuovo agente avviato senza la tua richiesta",
+  "task.blockedTask": "Un turno automatico non avvia nuovi agenti — riferisce, decidi tu",
   "task.blockedStop": "Agente non fermato senza la tua richiesta",
   "task.blockedDetails": "Dettagli",
   "task.sum.running": "al lavoro",
@@ -1265,5 +1265,13 @@
   "task.sum.interrupted": "interrotto|interrotti",
   "task.sum.stopped": "fermato|fermati",
   "task.sum.done": "pronto|pronti",
-  "task.sum.unknown": "non confermato|non confermati"
+  "task.sum.unknown": "non confermato|non confermati",
+  "task.errorHttp": "Il modello ha rifiutato la richiesta (HTTP {code}): {message}",
+  "task.errorDetails": "Dettagli dell’errore",
+  "task.blockedStatus": "Domanda sullo stato: nessun agente avviato, ripreso o fermato",
+  "task.blockedNeedsWord": "La ripresa richiede una tua richiesta esplicita — fai clic su Riprendi o nomina l’agente",
+  "task.blockedDuplicate": "Questo agente sta già lavorando sullo stesso compito",
+  "note.unverifiedClaim": "nessun comando eseguito conferma i test",
+  "note.failedCheck": "l’ultimo controllo di questo turno è fallito: {detail}",
+  "note.checkCycleStop": "ciclo di modifica fermato: i file sono tornati {detail} volte a una versione che aveva già fallito lo stesso controllo"
 }

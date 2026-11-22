@@ -1256,7 +1256,7 @@
   "storage.recovered": "Databasen {file} var skadad. En kopia finns i {backup}; SuperCli startade med en ny.",
   "task.blocked": "blockerad",
   "task.blockedResume": "Automatisk återupptagning blockerad — klicka på Återuppta om du vill",
-  "task.blockedTask": "Ingen ny agent startades utan din begäran",
+  "task.blockedTask": "En automatisk tur startar inga nya agenter — den rapporterar, du bestämmer",
   "task.blockedStop": "Agenten stoppades inte utan din begäran",
   "task.blockedDetails": "Detaljer",
   "task.sum.running": "arbetar",
@@ -1265,5 +1265,13 @@
   "task.sum.interrupted": "avbruten|avbrutna",
   "task.sum.stopped": "stoppad|stoppade",
   "task.sum.done": "klar|klara",
-  "task.sum.unknown": "obekräftad|obekräftade"
+  "task.sum.unknown": "obekräftad|obekräftade",
+  "task.errorHttp": "Modellen avvisade begäran (HTTP {code}): {message}",
+  "task.errorDetails": "Felinformation",
+  "task.blockedStatus": "Statusfråga: inga agenter startades, återupptogs eller stoppades",
+  "task.blockedNeedsWord": "Återupptagning kräver din uttryckliga begäran — klicka på Återuppta eller nämn agenten",
+  "task.blockedDuplicate": "Den här agenten arbetar redan med samma uppgift",
+  "note.unverifiedClaim": "inget kört kommando bekräftar testerna",
+  "note.failedCheck": "den sista kontrollen i den här turen misslyckades: {detail}",
+  "note.checkCycleStop": "redigeringsloopen stoppades: filerna gick {detail} gånger tillbaka till en version som redan misslyckats med samma kontroll"
 }

@@ -294,6 +294,15 @@ type DraftOverride struct {
 // token estimate entered the model's reserved generation space
 // ("auto") or because the provider returned a context-length
 // error ("context-limit").
+// AnswerNoteEvent is a UI-only remark about the answer just given (see
+// llm.AnswerNote): a translated badge, never part of the answer text.
+type AnswerNoteEvent struct {
+	Kind   string
+	Detail string
+}
+
+func (AnswerNoteEvent) event() {}
+
 type AutoCompactEvent struct {
 	Removed         int    // messages removed/hidden
 	Window          int    // resolved context window (tokens)

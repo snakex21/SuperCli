@@ -175,6 +175,13 @@ func (a *AgentTool) repeatedBrief(ctx context.Context, agentName, prompt string)
 	if a.ParentLoop == nil || !a.ParentLoop.wakeTurnForRun {
 		return ""
 	}
+	// Structural rule (review 3): an automatic turn starts no new workers
+	// unless the user enabled it (background_wake_delegate). Matching briefs
+	// word for word was easy to get around by rephrasing.
+	if s := a.ParentLoop.WakeScheduler(); s == nil || !s.Config().Delegate {
+		return "refused: this is an automatic turn without a user message; it does not start new workers. " +
+			"Report the outcome and propose the next step; the user decides (or enables background_wake_delegate for unattended refills)."
+	}
 	want := strings.Join(strings.Fields(prompt), " ")
 	check := func(id, agent, desc, status string) string {
 		if agent == agentName && strings.Join(strings.Fields(desc), " ") == want {

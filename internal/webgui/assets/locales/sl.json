@@ -1256,7 +1256,7 @@
   "storage.recovered": "Zbirka podatkov {file} je bila poškodovana. Njena kopija je v {backup}; SuperCli se je zagnal z novo.",
   "task.blocked": "blokirano",
   "task.blockedResume": "Samodejno nadaljevanje blokirano — kliknite Nadaljuj, če želite",
-  "task.blockedTask": "Brez vaše zahteve ni bil zagnan noben nov agent",
+  "task.blockedTask": "Samodejni krog ne zaganja novih agentov — poroča, odločite vi",
   "task.blockedStop": "Agent ni bil ustavljen brez vaše zahteve",
   "task.blockedDetails": "Podrobnosti",
   "task.sum.running": "dela",
@@ -1265,5 +1265,13 @@
   "task.sum.interrupted": "prekinjen|prekinjena|prekinjeni|prekinjenih",
   "task.sum.stopped": "ustavljen|ustavljena|ustavljeni|ustavljenih",
   "task.sum.done": "končan|končana|končani|končanih",
-  "task.sum.unknown": "nepotrjen|nepotrjena|nepotrjeni|nepotrjenih"
+  "task.sum.unknown": "nepotrjen|nepotrjena|nepotrjeni|nepotrjenih",
+  "task.errorHttp": "Model je zavrnil zahtevo (HTTP {code}): {message}",
+  "task.errorDetails": "Podrobnosti napake",
+  "task.blockedStatus": "Vprašanje o stanju: noben agent ni bil zagnan, nadaljevan ali ustavljen",
+  "task.blockedNeedsWord": "Nadaljevanje zahteva vašo izrecno prošnjo — kliknite Nadaljuj ali navedite agenta",
+  "task.blockedDuplicate": "Ta agent že dela na isti nalogi",
+  "note.unverifiedClaim": "ni najdenega izvedenega ukaza, ki bi potrdil teste",
+  "note.failedCheck": "zadnje preverjanje v tem krogu ni uspelo: {detail}",
+  "note.checkCycleStop": "zanka urejanja ustavljena: datoteke so se {detail}-krat vrnile k različici, ki je isto preverjanje že padla"
 }

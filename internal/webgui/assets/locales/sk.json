@@ -1256,7 +1256,7 @@
   "storage.recovered": "Databáza {file} bola poškodená. Jej kópia je v {backup}; SuperCli začal s novou.",
   "task.blocked": "zablokované",
   "task.blockedResume": "Automatické obnovenie zablokované — kliknite na Obnoviť, ak chcete",
-  "task.blockedTask": "Bez vašej požiadavky sa nespustil žiadny nový agent",
+  "task.blockedTask": "Automatický ťah nespúšťa nových agentov — podáva hlásenie, rozhodujete vy",
   "task.blockedStop": "Agent nebol zastavený bez vašej požiadavky",
   "task.blockedDetails": "Podrobnosti",
   "task.sum.running": "pracuje|pracujú|pracuje|pracuje",
@@ -1265,5 +1265,13 @@
   "task.sum.interrupted": "prerušený|prerušené|prerušených|prerušených",
   "task.sum.stopped": "zastavený|zastavené|zastavených|zastavených",
   "task.sum.done": "hotový|hotové|hotových|hotových",
-  "task.sum.unknown": "nepotvrdený|nepotvrdené|nepotvrdených|nepotvrdených"
+  "task.sum.unknown": "nepotvrdený|nepotvrdené|nepotvrdených|nepotvrdených",
+  "task.errorHttp": "Model odmietol požiadavku (HTTP {code}): {message}",
+  "task.errorDetails": "Podrobnosti chyby",
+  "task.blockedStatus": "Otázka na stav: žiadni agenti neboli spustení, obnovení ani zastavení",
+  "task.blockedNeedsWord": "Obnovenie vyžaduje vašu výslovnú požiadavku — kliknite na Obnoviť alebo pomenujte agenta",
+  "task.blockedDuplicate": "Tento agent už pracuje na rovnakej úlohe",
+  "note.unverifiedClaim": "nenašiel sa spustený príkaz potvrdzujúci testy",
+  "note.failedCheck": "posledná kontrola v tomto ťahu neprešla: {detail}",
+  "note.checkCycleStop": "slučka úprav zastavená: súbory sa {detail}-krát vrátili k verzii, ktorá už rovnakou kontrolou neprešla"
 }

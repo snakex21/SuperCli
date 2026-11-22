@@ -1256,7 +1256,7 @@
   "storage.recovered": "Datubāze {file} bija bojāta. Tās kopija ir {backup}; SuperCli sāka ar jaunu.",
   "task.blocked": "bloķēts",
   "task.blockedResume": "Automātiskā atsākšana bloķēta — noklikšķiniet uz Atsākt, ja vēlaties",
-  "task.blockedTask": "Bez jūsu pieprasījuma jauns aģents netika palaists",
+  "task.blockedTask": "Automātisks gājiens nepalaiž jaunus aģentus — tas ziņo, jūs izlemjat",
   "task.blockedStop": "Aģents netika apturēts bez jūsu pieprasījuma",
   "task.blockedDetails": "Sīkāka informācija",
   "task.sum.running": "strādā",
@@ -1265,5 +1265,13 @@
   "task.sum.interrupted": "pārtraukts|pārtraukti",
   "task.sum.stopped": "apturēts|apturēti",
   "task.sum.done": "gatavs|gatavi",
-  "task.sum.unknown": "neapstiprināts|neapstiprināti"
+  "task.sum.unknown": "neapstiprināts|neapstiprināti",
+  "task.errorHttp": "Modelis noraidīja pieprasījumu (HTTP {code}): {message}",
+  "task.errorDetails": "Kļūdas informācija",
+  "task.blockedStatus": "Jautājums par stāvokli: neviens aģents netika palaists, atsākts vai apturēts",
+  "task.blockedNeedsWord": "Atsākšanai vajag jūsu skaidru pieprasījumu — noklikšķiniet Atsākt vai nosauciet aģentu",
+  "task.blockedDuplicate": "Šis aģents jau strādā pie tā paša uzdevuma",
+  "note.unverifiedClaim": "netika atrasta izpildīta komanda, kas apstiprina testus",
+  "note.failedCheck": "pēdējā pārbaude šajā gājienā neizdevās: {detail}",
+  "note.checkCycleStop": "rediģēšanas cikls apturēts: faili {detail} reizes atgriezās pie versijas, kas jau neizturēja to pašu pārbaudi"
 }

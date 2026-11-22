@@ -177,7 +177,12 @@ func renderStatusWorkers(snaps []Snapshot) string {
 			fmt.Fprintf(&b, "\n- … %d older worker(s)", len(snaps)-i)
 			break
 		}
-		fmt.Fprintf(&b, "\n- %s (%s) %s, runs %d", s.ID, s.Agent, s.Status, s.Runs)
+		status := s.Status
+		if s.Review != "" && (status == "done" || status == "completed") {
+			// The same state the panel shows: done, but needs a look.
+			status = "done, needs review (" + strings.TrimPrefix(s.Review, "review: ") + ")"
+		}
+		fmt.Fprintf(&b, "\n- %s (%s) %s, runs %d", s.ID, s.Agent, status, s.Runs)
 		model := strings.TrimSpace(s.Model)
 		if model == "" {
 			model = strings.TrimSpace(s.WorkerModel)
@@ -283,58 +288,110 @@ func (l *Loop) workerStatusOf(id string) string {
 	return ""
 }
 
-var negationWords = map[string]bool{
-	"nie": true, "nigdy": true, "bez": true, "not": true, "dont": true, "never": true, "nor": true,
-	"cannot": true, "cant": true, "wont": true, "stop": true, "zatrzymaj": true, "przestań": true, "przestan": true,
+// Explicit consent (review 2): the user asks for it in the imperative, in a
+// clause that names the worker, is not a question and has no negation or
+// "leave it / skip". Mentioning a worker ("dlaczego worker-7 padł?", "pokaż
+// log workera 7", "zostaw worker-7 w spokoju") is not consent.
+var resumeVerbs = map[string]bool{
+	"wznów": true, "wznow": true, "wznawiaj": true, "kontynuuj": true, "dokończ": true, "dokoncz": true,
+	"ponów": true, "ponow": true, "resume": true, "continue": true, "retry": true, "restart": true,
 }
 
-// stopWords ask to stop; they negate a resume but are the request itself
-// for a stop.
-var stopWords = map[string]bool{"stop": true, "zatrzymaj": true, "przestań": true, "przestan": true}
+var stopVerbs = map[string]bool{
+	"zatrzymaj": true, "przerwij": true, "stop": true, "kill": true, "anuluj": true, "cancel": true, "halt": true,
+}
 
-// namesWorkerWithoutNegation: some clause of prompt names the worker ("worker-7",
-// "worker 7", "workera 7", "agent 7") and has no negation word.
+var negationWords = map[string]bool{
+	"nie": true, "nigdy": true, "bez": true, "not": true, "dont": true, "never": true, "nor": true, "no": true,
+	"cannot": true, "cant": true, "wont": true, "zostaw": true, "zostawić": true, "zostawic": true, "skip": true,
+	"pomiń": true, "pomin": true, "leave": true, "ignore": true, "ignoruj": true, "nieważne": true, "niewazne": true,
+}
+
+// questionWords open a question; a question is never consent.
+var questionWords = map[string]bool{
+	"dlaczego": true, "czemu": true, "czy": true, "co": true, "jak": true, "kiedy": true, "gdzie": true, "ile": true,
+	"why": true, "what": true, "how": true, "when": true, "where": true, "does": true, "did": true, "is": true,
+	"was": true, "can": true, "could": true, "should": true,
+}
+
+// politeWords may precede the imperative verb ("proszę wznów", "please resume").
+var politeWords = map[string]bool{"proszę": true, "prosze": true, "please": true, "pls": true, "ok": true, "okej": true, "dobra": true, "teraz": true, "now": true, "to": true, "i": true, "and": true, "a": true}
+
+// namesWorkerWithoutNegation reports explicit consent to action ("resume" or
+// "stop") on workerID in prompt.
 func namesWorkerWithoutNegation(prompt, workerID, action string) bool {
 	num := strings.TrimPrefix(workerID, "worker-")
 	if num == workerID || num == "" {
 		return false
 	}
+	verbs := resumeVerbs
+	if action == "stop" {
+		verbs = stopVerbs
+	}
 	for _, clause := range splitClauses(prompt) {
-		words := statusWords(clause)
+		if clause.question {
+			continue
+		}
+		words := statusWords(clause.text)
 		named := false
 		for i, w := range words {
-			if w == "worker"+num {
-				named = true
-			}
-			if (w == "worker" || w == "workera" || w == "workerowi" || w == "agent" || w == "agenta") && i+1 < len(words) && words[i+1] == num {
+			if w == "worker"+num || (w == "worker" || w == "workera" || w == "workerowi" || w == "agent" || w == "agenta") && i+1 < len(words) && words[i+1] == num {
 				named = true
 			}
 		}
-		if !named {
+		if !named || len(words) == 0 || questionWords[words[0]] {
 			continue
 		}
 		negated := false
 		for _, w := range words {
-			if negationWords[w] && !(action == "stop" && stopWords[w]) {
+			if negationWords[w] {
 				negated = true
 				break
 			}
 		}
-		if !negated {
+		if negated {
+			continue
+		}
+		// The imperative verb opens the clause (after polite words).
+		i := 0
+		for i < len(words) && politeWords[words[i]] {
+			i++
+		}
+		if i < len(words) && verbs[words[i]] {
 			return true
 		}
 	}
 	return false
 }
 
-// splitClauses splits at sentence punctuation and contrast words ("ale", "but").
-func splitClauses(text string) []string {
+type clause struct {
+	text     string
+	question bool
+}
+
+// splitClauses splits at sentence punctuation, colons and contrast words
+// ("ale", "but"); a clause ending in "?" is a question.
+func splitClauses(text string) []clause {
 	text = strings.NewReplacer("'", "", "’", "", "-", "").Replace(strings.ToLower(text))
-	parts := strings.FieldsFunc(text, func(r rune) bool { return strings.ContainsRune(".,;:!?\n", r) })
-	var out []string
-	for _, part := range parts {
-		for _, sub := range strings.Split(" "+part+" ", " ale ") {
-			out = append(out, strings.Split(sub, " but ")...)
+	var out []clause
+	start := 0
+	for i, r := range text {
+		if strings.ContainsRune(".,;:!?\n", r) {
+			out = append(out, splitContrast(text[start:i], r == '?')...)
+			start = i + len(string(r))
+		}
+	}
+	out = append(out, splitContrast(text[start:], false)...)
+	return out
+}
+
+func splitContrast(part string, question bool) []clause {
+	var out []clause
+	for _, sub := range strings.Split(" "+part+" ", " ale ") {
+		for _, c := range strings.Split(sub, " but ") {
+			if strings.TrimSpace(c) != "" {
+				out = append(out, clause{text: c, question: question})
+			}
 		}
 	}
 	return out

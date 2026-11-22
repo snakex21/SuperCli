@@ -55,8 +55,10 @@ type Worker struct {
 	// look (no file changes, or the project's verify command failed).
 	// Guarded by stateMu; cleared when a run starts.
 	review string
-	// reviewHook computes review after a successful run (set by AgentTool).
-	reviewHook func(context.Context, *Worker) string
+	// reviewHook computes review after a successful run from the workspace
+	// fingerprint reviewSnapshot took when it started (set by AgentTool).
+	reviewHook     func(context.Context, *Worker, string) string
+	reviewSnapshot func(context.Context, *Worker) string
 	uiActivity   json.RawMessage   // immutable latest-run UI trail; guarded by stateMu
 	live         WorkerLiveness    // current run's liveness; guarded by stateMu
 	liveUI       *workerUIActivity // current run's UI journal; guarded by stateMu

@@ -72,6 +72,9 @@ type WakeConfig struct {
 	Mode           WakeMode
 	Debounce       time.Duration
 	MaxConsecutive int
+	// Delegate lets automatic turns start new workers (config
+	// background_wake_delegate). Off: they report and propose only.
+	Delegate bool
 }
 
 func (c WakeConfig) normalized() WakeConfig {
@@ -507,8 +510,19 @@ const wakeRunPrompt = "[automatic wake-up: background agents finished]"
 
 // prepareWakeRoute replaces prompt routing for an automatic turn: the
 // coordinator handles reports with no navigator call and no one-shot addons.
+// wakeReportOnlyHint replaces wakeTurnHint when automatic turns may not
+// start workers (the default): report, propose, let the user decide.
+const wakeReportOnlyHint = "[automatic wake-up — not user input] Background agent(s) have finished; their reports are the task-notification messages above. " +
+	"Tell the user the outcome concisely: what finished, what failed or needs review, what remains. " +
+	"This turn cannot start, resume or stop workers; propose the next step and wait for the user's decision. " +
+	"A report shown only as a preview can be read in full with read_output using its handle."
+
 func (l *Loop) prepareWakeRoute() {
-	l.implementationHintForRun = wakeTurnHint + wakeUserGoal(l.Messages)
+	hint := wakeReportOnlyHint
+	if s := l.WakeScheduler(); s != nil && s.Config().Delegate {
+		hint = wakeTurnHint
+	}
+	l.implementationHintForRun = hint + wakeUserGoal(l.Messages)
 	l.statusOnlyForRun = false
 	l.wakeTurnForRun = true
 	l.userPromptForRun = ""

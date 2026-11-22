@@ -198,12 +198,16 @@ func runWorkerInvocation(ctx context.Context, w *Worker, prompt string, workers 
 // holds w.runMu (and has admitted the run); it does not unlock.
 func runWorkerInvocationHeld(ctx context.Context, w *Worker, prompt string, workers *WorkerRegistry, firstRun bool) (workerHandoff, error) {
 	w.setState(func(w *Worker) { w.review = "" })
+	before := ""
+	if w.reviewSnapshot != nil {
+		before = w.reviewSnapshot(ctx, w)
+	}
 	text, err := runWorkerLoopLocked(ctx, w, prompt, workers)
 	// A run that says "done" is checked against cheap facts (any file
 	// change? the project's verify command?) while runMu is still held, so
 	// the handoff below carries the verdict.
 	if err == nil && w.status() == "done" && w.reviewHook != nil {
-		if review := w.reviewHook(ctx, w); review != "" {
+		if review := w.reviewHook(ctx, w, before); review != "" {
 			w.setState(func(w *Worker) { w.review = review })
 		}
 	}

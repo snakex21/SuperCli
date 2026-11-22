@@ -224,6 +224,10 @@ type TomlConfig struct {
 	// update); further reports wait for the next message or the GUI's
 	// Resume button. A turn with progress restores the budget. 0 = 20.
 	BackgroundWakeMaxAuto int `toml:"background_wake_max_auto"`
+	// BackgroundWakeDelegate lets automatic turns (no user message) start new
+	// workers, e.g. to keep a pool of agents busy unattended. Off by default:
+	// an automatic turn reports and proposes; the user decides.
+	BackgroundWakeDelegate bool `toml:"background_wake_delegate"`
 	// CommandTimeoutMS is the default wall-clock limit of one ctx_execute
 	// command (a build, a test run) when the model passes no timeout_ms.
 	// The process is killed when it runs out and the model gets a clear

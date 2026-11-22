@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -33,6 +34,8 @@ const (
 
 type panelProvider struct {
 	release      chan struct{}
+	noopDone     chan struct{}
+	noopOnce     sync.Once
 	parentCalls  atomic.Int32
 	statusAsked  atomic.Int32
 	statusRefuse atomic.Int32
@@ -62,12 +65,21 @@ func (p *panelProvider) Complete(ctx context.Context, msgs []llm.Message, defs [
 			return nil, errors.New("sse: stream error: stream ID 387; INTERNAL_ERROR; received from peer (HTTP 400)")
 		case strings.Contains(firstUser, "ikony pancerza"):
 			// A real change first, then the report: the card says "done".
+			// It waits until the no-change worker has finished, so that
+			// worker's own before/after workspace check stays clean.
 			if msgs[len(msgs)-1].Role != llm.RoleTool {
+				select {
+				case <-p.noopDone:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+				time.Sleep(400 * time.Millisecond)
 				return workerSteeringWireCall("armor-write", "create_file", map[string]any{"path": "hud_armor_icons.zig", "content": "pub const armor_icons = 4;\n"})
 			}
 			return workerSteeringWireDeltas(llm.Delta{Content: "Dodałem ikony pancerza do HUD. Testy HUD pancerza: 22/22.", FinishReason: "stop"}), nil
 		case strings.Contains(firstUser, "animację chodzenia"):
 			// "Fixed" without touching a file: the card says "needs review".
+			p.noopOnce.Do(func() { close(p.noopDone) })
 			return workerSteeringWireDeltas(llm.Delta{Content: "Animacja chodzenia zombie jest poprawiona.", FinishReason: "stop"}), nil
 		default:
 			out := make(chan llm.Delta, 4)
@@ -168,7 +180,13 @@ func TestDelegationPanelStatesAndStatusQuestionBrowser(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	eng, err := NewEngine(echoConfig(), dir, dir)
+	// The project is a folder of its own, beside the app data (as in real
+	// use), so a worker's before/after workspace check sees only its work.
+	project := filepath.Join(dir, "project")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	eng, err := NewEngine(echoConfig(), project, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +194,7 @@ func TestDelegationPanelStatesAndStatusQuestionBrowser(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("orchestrator = true\npreflight_repo = false\nbackground_wake_debounce_ms = 30\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	p := &panelProvider{release: make(chan struct{})}
+	p := &panelProvider{release: make(chan struct{}), noopDone: make(chan struct{})}
 	defer close(p.release)
 	eng.mu.Lock()
 	eng.prov = p

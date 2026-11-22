@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
-	"strings"
+	"strconv"
 	"time"
 
 	"supercli/internal/llm"
@@ -229,21 +229,24 @@ func (l *Loop) runStep(
 		l.recordDraftOutcome(step, text, verifyTokens, out)
 	}
 	// A final answer that reports passing checks against the evidence of
-	// this Run gets a visible note. It is appended, never blocking, and it
-	// enters history so the next turn sees it too.
+	// this Run (or after a stopped edit loop) gets a note. The note is a
+	// translated badge under the answer (AnswerNoteEvent, and the message's
+	// Origin for the saved transcript); it is never part of the answer text
+	// and never model input.
+	var answerNotes []llm.AnswerNote
 	if len(toolCalls) == 0 && !truncatedToolCalls && hasVisibleUserReply(text) {
-		warning := ""
 		// Worker reports are evidence for the coordinator, which runs its own
 		// checks; the note is for the answer a person reads.
 		if !inWorkerRun(ctx) {
-			warning = l.verificationClaimWarning(text)
+			if note := l.verificationClaimNote(text); note != nil {
+				answerNotes = append(answerNotes, *note)
+			}
 		}
-		if stop := l.checkCycles.takeStopNote(); stop != "" && !strings.Contains(text, stop) {
-			warning += "\n\n[" + stop + "]"
+		if repeats := l.checkCycles.takeStopRepeats(); repeats > 0 {
+			answerNotes = append(answerNotes, llm.AnswerNote{Kind: llm.NoteCheckCycleStop, Detail: strconv.Itoa(repeats)})
 		}
-		if warning != "" {
-			text += warning
-			out <- MessageEvent{Text: warning}
+		for _, note := range answerNotes {
+			out <- AnswerNoteEvent{Kind: note.Kind, Detail: note.Detail}
 		}
 	}
 
@@ -256,7 +259,7 @@ func (l *Loop) runStep(
 	// text with <thinking> so the UI can replay it. Stripping here
 	// (at append time), not in-flight, keeps the cacheable prefix
 	// deterministic: the history bytes never change afterwards.
-	assistant := llm.Message{Role: llm.RoleAssistant, Origin: &llm.ContextOrigin{Source: llm.SourceModel}}
+	assistant := llm.Message{Role: llm.RoleAssistant, Origin: &llm.ContextOrigin{Source: llm.SourceModel, Notes: answerNotes}}
 	for i, block := range l.nativeReasoning {
 		copy := *block
 		if usage != nil && usage.Reasoning > 0 {

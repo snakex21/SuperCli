@@ -1256,7 +1256,7 @@
   "storage.recovered": "O banco de dados {file} estava danificado. A cópia está em {backup}; o SuperCli começou com um novo.",
   "task.blocked": "bloqueado",
   "task.blockedResume": "Retomada automática bloqueada — clique em Retomar se quiser",
-  "task.blockedTask": "Nenhum novo agente iniciado sem o seu pedido",
+  "task.blockedTask": "Um turno automático não inicia novos agentes — ele relata, você decide",
   "task.blockedStop": "Agente não parado sem o seu pedido",
   "task.blockedDetails": "Detalhes",
   "task.sum.running": "trabalhando",
@@ -1265,5 +1265,13 @@
   "task.sum.interrupted": "interrompido|interrompidos",
   "task.sum.stopped": "parado|parados",
   "task.sum.done": "pronto|prontos",
-  "task.sum.unknown": "não confirmado|não confirmados"
+  "task.sum.unknown": "não confirmado|não confirmados",
+  "task.errorHttp": "O modelo rejeitou a solicitação (HTTP {code}): {message}",
+  "task.errorDetails": "Detalhes do erro",
+  "task.blockedStatus": "Pergunta de status: nenhum agente foi iniciado, retomado ou parado",
+  "task.blockedNeedsWord": "Retomar exige seu pedido explícito — clique em Retomar ou cite o agente",
+  "task.blockedDuplicate": "Este agente já está trabalhando na mesma tarefa",
+  "note.unverifiedClaim": "nenhum comando executado confirma os testes",
+  "note.failedCheck": "a última verificação deste turno falhou: {detail}",
+  "note.checkCycleStop": "loop de edição parado: os arquivos voltaram {detail} vezes a uma versão que já falhou na mesma verificação"
 }

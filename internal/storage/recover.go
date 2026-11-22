@@ -42,8 +42,10 @@ func IsCorruptDB(err error) bool {
 	if err == nil {
 		return false
 	}
+	// Exact SQLite codes and messages only: "malformed JSON" from a
+	// migration must never move a healthy database aside.
 	msg := strings.ToLower(err.Error())
-	for _, s := range []string{"malformed", "not a database", "sqlite_corrupt", "sqlite_notadb", "file is encrypted"} {
+	for _, s := range []string{"database disk image is malformed", "file is not a database", "sqlite_corrupt", "sqlite_notadb"} {
 		if strings.Contains(msg, s) {
 			return true
 		}

@@ -1256,7 +1256,7 @@
   "storage.recovered": "Baza podataka {file} bila je oštećena. Njena kopija je u {backup}; SuperCli je pokrenut sa novom.",
   "task.blocked": "blokirano",
   "task.blockedResume": "Automatski nastavak blokiran — kliknite Nastavi ako želite",
-  "task.blockedTask": "Bez vašeg zahteva nije pokrenut novi agent",
+  "task.blockedTask": "Automatski krug ne pokreće nove agente — izveštava, vi odlučujete",
   "task.blockedStop": "Agent nije zaustavljen bez vašeg zahteva",
   "task.blockedDetails": "Detalji",
   "task.sum.running": "radi|rade|radi",
@@ -1265,5 +1265,13 @@
   "task.sum.interrupted": "prekinut|prekinuta|prekinutih",
   "task.sum.stopped": "zaustavljen|zaustavljena|zaustavljenih",
   "task.sum.done": "gotov|gotova|gotovih",
-  "task.sum.unknown": "nepotvrđen|nepotvrđena|nepotvrđenih"
+  "task.sum.unknown": "nepotvrđen|nepotvrđena|nepotvrđenih",
+  "task.errorHttp": "Model je odbio zahtev (HTTP {code}): {message}",
+  "task.errorDetails": "Detalji greške",
+  "task.blockedStatus": "Pitanje o stanju: nijedan agent nije pokrenut, nastavljen ni zaustavljen",
+  "task.blockedNeedsWord": "Nastavak traži vaš izričit zahtev — kliknite Nastavi ili navedite agenta",
+  "task.blockedDuplicate": "Ovaj agent već radi na istom zadatku",
+  "note.unverifiedClaim": "nije pronađena izvršena komanda koja potvrđuje testove",
+  "note.failedCheck": "poslednja provera u ovom krugu nije prošla: {detail}",
+  "note.checkCycleStop": "petlja izmena zaustavljena: datoteke su se {detail} puta vratile na verziju koja već nije prošla istu proveru"
 }

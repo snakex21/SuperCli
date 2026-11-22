@@ -1256,7 +1256,7 @@
   "storage.recovered": "Tietokanta {file} oli vioittunut. Sen kopio on kohteessa {backup}; SuperCli aloitti uudella.",
   "task.blocked": "estetty",
   "task.blockedResume": "Automaattinen jatkaminen estetty — napsauta Jatka, jos haluat",
-  "task.blockedTask": "Uutta agenttia ei käynnistetty ilman pyyntöäsi",
+  "task.blockedTask": "Automaattinen vuoro ei käynnistä uusia agentteja — se raportoi, sinä päätät",
   "task.blockedStop": "Agenttia ei pysäytetty ilman pyyntöäsi",
   "task.blockedDetails": "Lisätiedot",
   "task.sum.running": "työskentelee",
@@ -1265,5 +1265,13 @@
   "task.sum.interrupted": "keskeytetty|keskeytettyä",
   "task.sum.stopped": "pysäytetty|pysäytettyä",
   "task.sum.done": "valmis|valmista",
-  "task.sum.unknown": "vahvistamaton|vahvistamatonta"
+  "task.sum.unknown": "vahvistamaton|vahvistamatonta",
+  "task.errorHttp": "Malli hylkäsi pyynnön (HTTP {code}): {message}",
+  "task.errorDetails": "Virheen tiedot",
+  "task.blockedStatus": "Tilakysymys: agentteja ei käynnistetty, jatkettu eikä pysäytetty",
+  "task.blockedNeedsWord": "Jatkaminen vaatii nimenomaisen pyyntösi — napsauta Jatka tai mainitse agentti",
+  "task.blockedDuplicate": "Tämä agentti työskentelee jo saman tehtävän parissa",
+  "note.unverifiedClaim": "testejä vahvistavaa ajettua komentoa ei löytynyt",
+  "note.failedCheck": "tämän vuoron viimeinen tarkistus epäonnistui: {detail}",
+  "note.checkCycleStop": "muokkaussilmukka pysäytetty: tiedostot palasivat {detail} kertaa versioon, joka oli jo epäonnistunut samassa tarkistuksessa"
 }

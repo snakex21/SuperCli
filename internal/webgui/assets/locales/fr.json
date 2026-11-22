@@ -1256,7 +1256,7 @@
   "storage.recovered": "La base de données {file} était endommagée. Sa copie est conservée dans {backup} ; SuperCli a démarré avec une nouvelle.",
   "task.blocked": "bloqué",
   "task.blockedResume": "Reprise automatique bloquée — cliquez sur Reprendre si vous le souhaitez",
-  "task.blockedTask": "Aucun nouvel agent lancé sans votre demande",
+  "task.blockedTask": "Un tour automatique ne lance pas de nouveaux agents — il rend compte, vous décidez",
   "task.blockedStop": "Agent non arrêté sans votre demande",
   "task.blockedDetails": "Détails",
   "task.sum.running": "en cours",
@@ -1265,5 +1265,13 @@
   "task.sum.interrupted": "interrompu|interrompus",
   "task.sum.stopped": "arrêté|arrêtés",
   "task.sum.done": "terminé|terminés",
-  "task.sum.unknown": "non confirmé|non confirmés"
+  "task.sum.unknown": "non confirmé|non confirmés",
+  "task.errorHttp": "Le modèle a rejeté la requête (HTTP {code}) : {message}",
+  "task.errorDetails": "Détails de l’erreur",
+  "task.blockedStatus": "Question d’état : aucun agent n’a été lancé, repris ni arrêté",
+  "task.blockedNeedsWord": "La reprise demande votre demande explicite — cliquez sur Reprendre ou nommez l’agent",
+  "task.blockedDuplicate": "Cet agent travaille déjà sur la même tâche",
+  "note.unverifiedClaim": "aucune commande exécutée ne confirme les tests",
+  "note.failedCheck": "la dernière vérification de ce tour a échoué : {detail}",
+  "note.checkCycleStop": "boucle de modification arrêtée : les fichiers sont revenus {detail} fois à une version qui avait déjà échoué à la même vérification"
 }

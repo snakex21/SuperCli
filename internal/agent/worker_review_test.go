@@ -185,3 +185,37 @@ func TestStandingInstructionDoesNotAuthorizeAutomaticResume(t *testing.T) {
 		t.Fatalf("an automatic turn resumed the worker on a standing instruction: runs=%d", s.Runs)
 	}
 }
+
+// A worker that changes files through a command (git commit, go generate,
+// sed) has changed the workspace even without a file tool: no false
+// "needs review" (review 4). The fingerprint sees it.
+func TestWorkerChangingFilesByCommandNeedsNoReview(t *testing.T) {
+	dir := t.TempDir()
+	f, _ := reviewFixture(t, [][]llm.Delta{
+		callStep(tcall("w1", "ctx_execute", `{"command":["generate"]}`)),
+		say("Generated the code."),
+	})
+	f.parent.baseDir = dir
+	f.parent.registry.MustRegister(tools.Tool{
+		Name: "ctx_execute", Description: "run", Schema: `{"type":"object","properties":{"command":{"type":"array","items":{"type":"string"}}}}`,
+		Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
+			if err := os.WriteFile(filepath.Join(dir, "generated.go"), []byte("package x\n"), 0o600); err != nil {
+				return tools.Result{Err: err}, nil
+			}
+			return tools.Result{Text: `{"exit_code":0}`}, nil
+		},
+	})
+	runTurnText(t, f.parent, "Wygeneruj kod.")
+	if s := f.task.Workers.List()[0].Snapshot(); s.Review != "" {
+		t.Fatalf("a command that wrote files was reported as no change: %q", s.Review)
+	}
+}
+
+// The status answer and the panel agree: a done-but-needs-review worker is
+// not "done" in the status context either.
+func TestStatusContextShowsNeedsReview(t *testing.T) {
+	out := renderStatusWorkers([]Snapshot{{ID: "worker-4", Agent: "code", Status: "done", Runs: 1, Review: ReviewNoChanges}})
+	if !strings.Contains(out, "worker-4 (code) done, needs review (no file changes were recorded in this run)") {
+		t.Fatalf("status context: %s", out)
+	}
+}

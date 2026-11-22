@@ -1256,7 +1256,7 @@
   "storage.recovered": "Databasen {file} var skadet. En kopi ligger i {backup}; SuperCli startet med en ny.",
   "task.blocked": "blokkert",
   "task.blockedResume": "Automatisk gjenopptak blokkert — klikk Gjenoppta hvis du vil",
-  "task.blockedTask": "Ingen ny agent startet uten din forespørsel",
+  "task.blockedTask": "En automatisk tur starter ikke nye agenter — den rapporterer, du bestemmer",
   "task.blockedStop": "Agenten ble ikke stoppet uten din forespørsel",
   "task.blockedDetails": "Detaljer",
   "task.sum.running": "jobber",
@@ -1265,5 +1265,13 @@
   "task.sum.interrupted": "avbrutt",
   "task.sum.stopped": "stoppet",
   "task.sum.done": "ferdig|ferdige",
-  "task.sum.unknown": "ubekreftet|ubekreftede"
+  "task.sum.unknown": "ubekreftet|ubekreftede",
+  "task.errorHttp": "Modellen avviste forespørselen (HTTP {code}): {message}",
+  "task.errorDetails": "Feildetaljer",
+  "task.blockedStatus": "Statusspørsmål: ingen agenter ble startet, gjenopptatt eller stoppet",
+  "task.blockedNeedsWord": "Gjenopptak krever din uttrykkelige forespørsel — klikk Gjenoppta eller nevn agenten",
+  "task.blockedDuplicate": "Denne agenten jobber allerede med samme oppgave",
+  "note.unverifiedClaim": "ingen kjørt kommando bekrefter testene",
+  "note.failedCheck": "siste sjekk i denne turen feilet: {detail}",
+  "note.checkCycleStop": "redigeringsløkken stoppet: filene gikk {detail} ganger tilbake til en versjon som allerede feilet samme sjekk"
 }

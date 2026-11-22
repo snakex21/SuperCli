@@ -1256,7 +1256,7 @@
   "storage.recovered": "Die Datenbank {file} war beschädigt. Eine Kopie liegt unter {backup}; SuperCli startete mit einer neuen.",
   "task.blocked": "blockiert",
   "task.blockedResume": "Automatisches Fortsetzen blockiert — klicke auf Fortsetzen, wenn du willst",
-  "task.blockedTask": "Ohne deine Anfrage wurde kein neuer Agent gestartet",
+  "task.blockedTask": "Eine automatische Runde startet keine neuen Agenten — sie berichtet, du entscheidest",
   "task.blockedStop": "Agent ohne deine Anfrage nicht gestoppt",
   "task.blockedDetails": "Details",
   "task.sum.running": "arbeitet|arbeiten",
@@ -1265,5 +1265,13 @@
   "task.sum.interrupted": "unterbrochen",
   "task.sum.stopped": "gestoppt",
   "task.sum.done": "fertig",
-  "task.sum.unknown": "unbestätigt"
+  "task.sum.unknown": "unbestätigt",
+  "task.errorHttp": "Das Modell hat die Anfrage abgelehnt (HTTP {code}): {message}",
+  "task.errorDetails": "Fehlerdetails",
+  "task.blockedStatus": "Statusfrage: Es wurden keine Agenten gestartet, fortgesetzt oder gestoppt",
+  "task.blockedNeedsWord": "Fortsetzen braucht deine ausdrückliche Bitte — klicke auf Fortsetzen oder nenne den Agenten",
+  "task.blockedDuplicate": "Dieser Agent arbeitet bereits an derselben Aufgabe",
+  "note.unverifiedClaim": "kein ausgeführter Befehl bestätigt die Tests",
+  "note.failedCheck": "die letzte Prüfung in dieser Runde ist fehlgeschlagen: {detail}",
+  "note.checkCycleStop": "Bearbeitungsschleife gestoppt: die Dateien kehrten {detail}-mal zu einer Version zurück, die dieselbe Prüfung schon nicht bestand"
 }

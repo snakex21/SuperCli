@@ -1823,6 +1823,10 @@ function handleEvent(ev, current) {
       appendAssistantSource(current, ev.text);
       scheduleAssistantRender(current);
       return current;
+    case "answer_note":
+      // SuperCli's remark about the answer: a translated badge under it.
+      if (current && typeof addAnswerNote === "function") addAnswerNote(current, ev.kind, ev.text || "");
+      return current;
     case "reasoning":
       var reasoningText = ev.text || reasoningFallbackText(ev.reasoning_tok);
       if (!reasoningText) return current;

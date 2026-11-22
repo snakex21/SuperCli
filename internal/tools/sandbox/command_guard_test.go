@@ -10,20 +10,21 @@ import (
 
 func TestCheckCommandMatrix(t *testing.T) {
 	home, _ := os.UserHomeDir()
-	project := filepath.Join(t.TempDir(), "proj")
+	parent := t.TempDir()
+	project := filepath.Join(parent, "proj")
 	if err := os.MkdirAll(project, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	other := filepath.Join(home, "me-other-folder")
+	homeChild := filepath.Join(home, "Documents")
 	block := [][]string{
 		{"rm", "-rf", "/"},
 		{"rm", "-rf", "~"},
+		{"rm", "-rf", "~root"},
 		{"rm", "-rf", "*"},
 		{"rm", "-r", "-f", ".."},
 		{"rm", "-rf", "src/../.."},
 		{"rm", "-rf", ".git"},
-		{"rm", "-rf", "/home/user"},
-		{"rm", "-rf", other},
+		{"rm", "-rf", homeChild},
 		{"cmd", "/c", `rd /s /q C:\`},
 		{"cmd", "/c", `del /s /q C:\*`},
 		{"powershell", "-NoProfile", "-Command", `Remove-Item -Recurse -Force C:\`},
@@ -33,7 +34,10 @@ func TestCheckCommandMatrix(t *testing.T) {
 		{"pwsh", "-c", `Get-ChildItem; rm -r -fo C:\Windows`},
 		{"bash", "-c", "cd /tmp && rm -rf /"},
 		{"bash", "-lc", "find / -delete"},
-		{"find", ".", "-name", "*.o", "-exec", "rm", "{}", ";", "-delete"},
+		{"bash", "-c", "cd ~ && rm -rf " + filepath.Base(homeChild)},
+		{"bash", "-c", "cd .. && rm -rf proj"},
+		{"cmd", "/c", "cd /d " + home + " && rd /s /q Documents"},
+		{"busybox", "rm", "-rf", "/"},
 		{"format", "D:"},
 		{"diskpart"},
 		{"shutdown", "/s", "/t", "0"},
@@ -43,37 +47,61 @@ func TestCheckCommandMatrix(t *testing.T) {
 		{"git", "reset", "--hard", "HEAD~3"},
 		{"git", "-C", "x", "reset", "--hard"},
 		{"git", "-c", "core.x=y", "clean", "-fdx"},
-		{"sudo", "rm", "-rf", "/var/lib"},
+		{"sudo", "rm", "-rf", "/"},
 		{"env", "A=1", "rm", "-rf", "/"},
 	}
 	ask := [][]string{
 		{"rm", "-rf", "${HOME}"},
 		{"rm", "-rf", "$DIR"},
 		{"bash", "-c", "rm -rf \"$BUILD_DIR\""},
+		{"bash", "-c", "$CMD"},
+		{"bash", "-c", "eval \"$X\""},
 		{"cmd", "/c", "rd /s /q %TEMPDIR%"},
+		{"cmd", "/c", "for /d %i in (*) do rd /s /q %i"},
+		{"bash", "-c", "for d in build dist; do rm -rf \"$d\"; done"},
 		{"powershell", "-Command", "Remove-Item -Recurse $env:OUT"},
 		{"powershell", "-EncodedCommand", "SQBFAFgA"},
+		{"powershell", "-ec", "SQBFAFgA"},
+		{"powershell", "-en", "SQBFAFgA"},
+		{"powershell", "-EC", "SQBFAFgA"},
+		{"powershell", "-e", "SQBFAFgA"},
+		{"pwsh", "-c", "iex (Get-Content x.ps1 -Raw)"},
+		{"pwsh", "-c", "Invoke-Expression $s"},
+		{"pwsh", "-c", "Get-ChildItem | Remove-Item -Recurse"},
+		{"pwsh", "-c", `'C:\Users\me' | Remove-Item -Recurse -Force`},
+		{"pwsh", "-c", "Remove-Item -Recurse -Force (Resolve-Path ~)"},
+		{"pwsh", "-c", "Get-ChildItem *.log | ForEach-Object { Remove-Item $_ }"},
 		{"bash", "-c", "ls | xargs rm -rf"},
+		{"bash", "-c", "rm -rf $(cat list.txt)"},
+		{"sudo", "rm", "-rf", "build"},
+		{"rm", "-rf", filepath.Join(parent, "elsewhere")},
+		{"bash", "-c", "cd \"$X\" && rm -rf build"},
+		{"bash", "script.sh"},
 	}
 	allow := [][]string{
 		{"go", "test", "./..."},
 		{"zig", "build", "client"},
 		{"rm", "-rf", "build"},
+		{"rm", "-rf", "./build"},
 		{"rm", "-rf", "./zig-cache"},
 		{"rm", "-f", "*.o"},
 		{"rm", "-rf", "build/*"},
 		{"cmd", "/c", "rd /s /q zig-out"},
+		{"bash", "-c", "cd src && rm -rf gen"},
 		{"git", "status"},
+		{"git", "commit", "-m", "a; b"},
 		{"git", "commit", "-m", "fix bug & reboot fixture"},
 		{"git", "commit", "-m", "format code; shutdown hook | rm -rf /"},
 		{"bash", "-c", `git commit -m "fix bug & reboot fixture"`},
 		{"powershell", "-Command", `git commit -m 'a; Remove-Item -Recurse C:\'`},
+		{"powershell", "-ExecutionPolicy", "Bypass", "-Command", "go test ./..."},
 		{"git", "push", "origin", "main"},
 		{"git", "reset", "--soft", "HEAD~1"},
 		{"git", "clean", "-n"},
 		{"powershell", "-Command", `Remove-Item build\out.txt`},
 		{"echo", "rm -rf / is dangerous"},
 		{"find", ".", "-name", "*.go"},
+		{"env", "GOOS=linux", "go", "build", "./..."},
 	}
 	for _, argv := range block {
 		if got := CheckCommand(argv, project, ""); got.Verdict != CommandBlock {
@@ -109,11 +137,15 @@ func TestCheckShellTextForInteractiveSessions(t *testing.T) {
 
 func TestSplitShellKeepsQuotedSeparators(t *testing.T) {
 	segs := splitShell(`git commit -m "a & b; c | d" && echo 'x;y'`, shellPOSIX)
-	if len(segs) != 2 || strings.Join(segs[0], "|") != "git|commit|-m|a & b; c | d" || strings.Join(segs[1], "|") != "echo|x;y" {
-		t.Fatalf("segments = %q", segs)
+	if len(segs) != 2 || strings.Join(segs[0].words, "|") != "git|commit|-m|a & b; c | d" || strings.Join(segs[1].words, "|") != "echo|x;y" {
+		t.Fatalf("segments = %+v", segs)
+	}
+	segs = splitShell("Get-ChildItem | Remove-Item -Recurse", shellPwsh)
+	if len(segs) != 2 || segs[0].piped || !segs[1].piped {
+		t.Fatalf("pipe not marked: %+v", segs)
 	}
 	segs = splitShell("Remove-Item -Path 'C:\\a b' -Recurse; Write-Host `\"x`\"", shellPwsh)
-	if len(segs) != 2 || segs[0][2] != `C:\a b` {
-		t.Fatalf("pwsh segments = %q", segs)
+	if len(segs) != 2 || segs[0].words[2] != `C:\a b` {
+		t.Fatalf("pwsh segments = %+v", segs)
 	}
 }

@@ -1256,7 +1256,7 @@
   "storage.recovered": "Andmebaas {file} oli rikutud. Selle koopia on kohas {backup}; SuperCli alustas uuega.",
   "task.blocked": "blokeeritud",
   "task.blockedResume": "Automaatne jätkamine blokeeritud — klõpsa Jätka, kui soovid",
-  "task.blockedTask": "Ilma sinu soovita uut agenti ei käivitatud",
+  "task.blockedTask": "Automaatne käik ei käivita uusi agente — see annab aru, sina otsustad",
   "task.blockedStop": "Agenti ei peatatud ilma sinu soovita",
   "task.blockedDetails": "Üksikasjad",
   "task.sum.running": "töötab",
@@ -1265,5 +1265,13 @@
   "task.sum.interrupted": "katkestatud",
   "task.sum.stopped": "peatatud",
   "task.sum.done": "valmis",
-  "task.sum.unknown": "kinnitamata"
+  "task.sum.unknown": "kinnitamata",
+  "task.errorHttp": "Mudel lükkas päringu tagasi (HTTP {code}): {message}",
+  "task.errorDetails": "Vea üksikasjad",
+  "task.blockedStatus": "Olekuküsimus: agente ei käivitatud, jätkatud ega peatatud",
+  "task.blockedNeedsWord": "Jätkamine vajab sinu selget palvet — klõpsa Jätka või nimeta agent",
+  "task.blockedDuplicate": "See agent töötab juba sama ülesandega",
+  "note.unverifiedClaim": "teste kinnitavat käivitatud käsku ei leitud",
+  "note.failedCheck": "selle käigu viimane kontroll ebaõnnestus: {detail}",
+  "note.checkCycleStop": "muutmistsükkel peatati: failid läksid {detail} korda tagasi versioonile, mis sama kontrolli juba ei läbinud"
 }

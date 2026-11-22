@@ -90,3 +90,32 @@ func TestBackgroundQuestionWithoutDoneIsCleanedUp(t *testing.T) {
 		t.Fatal("the asker was never told the question expired")
 	}
 }
+
+// A question with its own Done is never cut short by the fallback lifetime
+// (only requests without Done get one); closing the engine ends the watch
+// and tells a waiting asker the question was cancelled.
+func TestBackgroundQuestionWithDoneOutlivesFallbackAndEndsOnClose(t *testing.T) {
+	oldAge, oldPoll := backgroundQuestionMaxAge, backgroundQuestionPoll
+	backgroundQuestionMaxAge, backgroundQuestionPoll = 40*time.Millisecond, 10*time.Millisecond
+	t.Cleanup(func() { backgroundQuestionMaxAge, backgroundQuestionPoll = oldAge, oldPoll })
+	srv := newTestServer(t, false)
+	bg := srv.eng.backgroundFor("sess-done", srv.eng.Home())
+	respond := make(chan tools.AskAnswer, 1)
+	done := make(chan struct{})
+	bg.askChannel() <- tools.AskRequest{ID: "q-3", Question: "Pick", Options: []tools.AskOption{{Label: "A"}, {Label: "B"}}, Respond: respond, Done: done}
+	waitUntil(t, "pending question", func() bool { return len(srv.eng.PendingQuestions("sess-done")) == 1 })
+	time.Sleep(150 * time.Millisecond) // well past the fallback lifetime
+	if n := len(srv.eng.PendingQuestions("sess-done")); n != 1 {
+		t.Fatalf("a question with Done was dropped by the fallback lifetime: pending=%d", n)
+	}
+	srv.eng.closeBackground()
+	select {
+	case ans := <-respond:
+		if !ans.Cancelled {
+			t.Fatalf("answer on close = %+v, want cancelled", ans)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("closing the engine left the question waiting")
+	}
+	close(done)
+}

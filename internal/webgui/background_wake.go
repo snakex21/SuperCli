@@ -40,6 +40,8 @@ type sessionBackground struct {
 	events chan agent.Event
 	// ask is the conversation's durable question route (background_questions.go).
 	ask chan tools.AskRequest
+	// stop ends the question goroutines when the engine closes.
+	stop chan struct{}
 
 	mu    sync.Mutex
 	loops map[*agent.Loop]struct{}
@@ -48,7 +50,9 @@ type sessionBackground struct {
 
 func (e *Engine) wakeConfig(home string) agent.WakeConfig {
 	tc := e.tomlConfigAt(home)
-	return agent.WakeConfigFrom(tc.BackgroundWakeSettings())
+	cfg := agent.WakeConfigFrom(tc.BackgroundWakeSettings())
+	cfg.Delegate = tc.BackgroundWakeDelegate
+	return cfg
 }
 
 // backgroundFor returns (creating on first use) the conversation's pump.
@@ -71,7 +75,7 @@ func (e *Engine) backgroundFor(sid, home string) *sessionBackground {
 	if e.bg == nil {
 		e.bg = make(map[string]*sessionBackground)
 	}
-	bg := &sessionBackground{e: e, sid: sid, home: home, events: make(chan agent.Event, 256), ask: make(chan tools.AskRequest, backgroundAskBuffer), loops: map[*agent.Loop]struct{}{}}
+	bg := &sessionBackground{e: e, sid: sid, home: home, events: make(chan agent.Event, 256), ask: make(chan tools.AskRequest, backgroundAskBuffer), stop: make(chan struct{}), loops: map[*agent.Loop]struct{}{}}
 	bg.sched = agent.NewWakeScheduler(e.wakeConfig(home), bg.state, bg.startWake, bg.held)
 	bg.sched.SetReleaseHook(func() { e.syncHub.backgroundWakeHeld(sid, 0, 0) })
 	e.bg[sid] = bg
@@ -238,6 +242,7 @@ func (e *Engine) closeBackground() {
 	e.bgMu.Unlock()
 	for _, bg := range list {
 		bg.sched.Stop()
+		close(bg.stop)
 	}
 }
 

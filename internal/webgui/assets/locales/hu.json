@@ -1256,7 +1256,7 @@
   "storage.recovered": "A(z) {file} adatbázis sérült volt. Másolata itt található: {backup}; a SuperCli újjal indult.",
   "task.blocked": "blokkolva",
   "task.blockedResume": "Az automatikus folytatás blokkolva — kattintson a Folytatásra, ha szeretné",
-  "task.blockedTask": "Kérése nélkül nem indult új ügynök",
+  "task.blockedTask": "Az automatikus kör nem indít új ügynököt — beszámol, ön dönt",
   "task.blockedStop": "Az ügynök nem állt le kérése nélkül",
   "task.blockedDetails": "Részletek",
   "task.sum.running": "dolgozik",
@@ -1265,5 +1265,13 @@
   "task.sum.interrupted": "megszakítva",
   "task.sum.stopped": "leállítva",
   "task.sum.done": "kész",
-  "task.sum.unknown": "megerősítetlen"
+  "task.sum.unknown": "megerősítetlen",
+  "task.errorHttp": "A modell elutasította a kérést (HTTP {code}): {message}",
+  "task.errorDetails": "Hiba részletei",
+  "task.blockedStatus": "Állapotkérdés: nem indult, folytatódott vagy állt le ügynök",
+  "task.blockedNeedsWord": "A folytatáshoz kifejezett kérése kell — kattintson a Folytatásra, vagy nevezze meg az ügynököt",
+  "task.blockedDuplicate": "Ez az ügynök már ugyanazon a feladaton dolgozik",
+  "note.unverifiedClaim": "nem található a teszteket igazoló futtatott parancs",
+  "note.failedCheck": "a kör utolsó ellenőrzése nem sikerült: {detail}",
+  "note.checkCycleStop": "a szerkesztési hurok leállt: a fájlok {detail} alkalommal tértek vissza egy már ugyanott elbukott változathoz"
 }

@@ -474,6 +474,7 @@ function buildHistoryFragment(messages, pager, prepend) {
         node._raw = m.content;
         node._history = true;
         renderAssistant(node);
+        if (Array.isArray(m.notes) && typeof addAnswerNote === "function") m.notes.forEach(function (n) { addAnswerNote(node, n.kind, n.detail || ""); });
         node.querySelectorAll("details[data-think-id]").forEach(function (d) { d.open = thinkingDisclosureOpen(true); });
         if (typeof addAssistantActions === "function") {
           addAssistantActions(node, {sessionID: transcriptSessionID || activeSessionID, seq: m.seq, messageID: m.message_id,

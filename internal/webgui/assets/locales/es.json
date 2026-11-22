@@ -1256,7 +1256,7 @@
   "storage.recovered": "La base de datos {file} estaba dañada. Su copia está en {backup}; SuperCli empezó con una nueva.",
   "task.blocked": "bloqueado",
   "task.blockedResume": "Reanudación automática bloqueada — pulsa Reanudar si quieres",
-  "task.blockedTask": "No se inició ningún agente nuevo sin tu petición",
+  "task.blockedTask": "Un turno automático no inicia agentes nuevos — informa y tú decides",
   "task.blockedStop": "No se detuvo el agente sin tu petición",
   "task.blockedDetails": "Detalles",
   "task.sum.running": "trabajando",
@@ -1265,5 +1265,13 @@
   "task.sum.interrupted": "interrumpido|interrumpidos",
   "task.sum.stopped": "detenido|detenidos",
   "task.sum.done": "listo|listos",
-  "task.sum.unknown": "sin confirmar"
+  "task.sum.unknown": "sin confirmar",
+  "task.errorHttp": "El modelo rechazó la solicitud (HTTP {code}): {message}",
+  "task.errorDetails": "Detalles del error",
+  "task.blockedStatus": "Pregunta de estado: no se inició, reanudó ni detuvo ningún agente",
+  "task.blockedNeedsWord": "Reanudar requiere tu petición explícita — pulsa Reanudar o nombra al agente",
+  "task.blockedDuplicate": "Este agente ya trabaja en la misma tarea",
+  "note.unverifiedClaim": "no se encontró ningún comando ejecutado que confirme las pruebas",
+  "note.failedCheck": "la última comprobación de este turno falló: {detail}",
+  "note.checkCycleStop": "bucle de edición detenido: los archivos volvieron {detail} veces a una versión que ya falló la misma comprobación"
 }

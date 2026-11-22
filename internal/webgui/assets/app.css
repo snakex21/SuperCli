@@ -2642,6 +2642,18 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
   border-color: color-mix(in srgb, var(--status-running) 60%, transparent);
 }
 .composer.bg-working .box { border-color: color-mix(in srgb, var(--status-running) 45%, var(--line)); }
+.task-row .thint > .marquee-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-row.refused .thint { color: var(--muted); white-space: normal; overflow: visible; }
+.event-line.info-note { color: var(--status-running); }
+.task-row .task-outcome-raw { margin-top: 6px; }
+.task-row .task-outcome-raw > summary { cursor: pointer; color: var(--muted); font-size: var(--fs-xs); }
+.task-row .task-outcome-raw > pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-xs); color: var(--muted); margin: 4px 0 0; }
+.answer-notes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.answer-note {
+  display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-size: var(--fs-xs);
+  color: var(--status-pending); border: 1px solid color-mix(in srgb, var(--status-pending) 40%, transparent);
+  background: color-mix(in srgb, var(--status-pending) 8%, transparent);
+}
 .side-item .side-q {
   display: inline-flex; align-items: center; justify-content: center; margin-left: 7px; width: 15px; height: 15px;
   border-radius: 50%; font-size: 11px; font-weight: 700; color: var(--on-accent); background: var(--accent);

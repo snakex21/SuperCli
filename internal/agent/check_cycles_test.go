@@ -58,12 +58,17 @@ func TestFlipFloppingEditsAreNamedAndStopped(t *testing.T) {
 		t.Fatal(err)
 	}
 	var notices, streamed strings.Builder
+	stopNoted := false
 	for _, event := range drainEvents(t, mustRun(t, loop, "Make the tests pass.")) {
 		switch e := event.(type) {
 		case NoticeEvent:
 			notices.WriteString(e.Text + "\n")
 		case MessageEvent:
 			streamed.WriteString(e.Text)
+		case AnswerNoteEvent:
+			if e.Kind == llm.NoteCheckCycleStop {
+				stopNoted = true
+			}
 		case ErrorEvent:
 			t.Fatalf("run aborted before the cycle cap: %v", e.Err)
 		}
@@ -96,8 +101,9 @@ func TestFlipFloppingEditsAreNamedAndStopped(t *testing.T) {
 	if last := provider.toolReqs[len(provider.toolReqs)-1]; last != 0 {
 		t.Fatalf("tools still offered after the cap: %d", last)
 	}
-	if !strings.Contains(streamed.String(), "SuperCli stopped the edit loop") {
-		t.Fatalf("final answer lacks the stop note: %s", streamed.String())
+	// The stop is a UI note under the answer, never text appended to it.
+	if !stopNoted || strings.Contains(streamed.String(), "SuperCli stopped the edit loop") {
+		t.Fatalf("stop note: badge=%v, answer text=%s", stopNoted, streamed.String())
 	}
 }
 

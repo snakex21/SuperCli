@@ -87,3 +87,21 @@ func TestOpenRecoveringPassesOtherErrors(t *testing.T) {
 
 // sqliteHeader makes a fixture look like SQLite to the pre-open check.
 const sqliteHeader = "SQLite format 3\x00"
+
+// Only SQLite's own corruption codes and messages count: a migration error
+// such as "malformed JSON" must never move a healthy database aside.
+func TestIsCorruptDBMatchesSQLiteOnly(t *testing.T) {
+	for msg, want := range map[string]bool{
+		"database disk image is malformed (11)":             true,
+		"file is not a database (26)":                       true,
+		"migrate: SQLITE_CORRUPT: index broken":             true,
+		"exec: SQLITE_NOTADB":                               true,
+		"migrate: malformed JSON in settings column":        false,
+		"decode config: invalid character, malformed input": false,
+		"database is locked (5) (SQLITE_BUSY)":              false,
+	} {
+		if got := IsCorruptDB(errors.New(msg)); got != want {
+			t.Errorf("IsCorruptDB(%q) = %v, want %v", msg, got, want)
+		}
+	}
+}

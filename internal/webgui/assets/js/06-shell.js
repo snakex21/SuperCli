@@ -43,8 +43,9 @@ function reportStorageRecoveries(list) {
     if (!r || !r.backup || reportedStorageRecoveries[r.backup]) return;
     reportedStorageRecoveries[r.backup] = true;
     var text = t("storage.recovered").replace("{file}", r.file || "").replace("{backup}", r.backup);
-    if (typeof addEventLine === "function") addEventLine(text, "error", "error");
-    if (typeof toast === "function") toast(text);
+    // A successful recovery is information, not an error: one calm line,
+    // nothing over the composer.
+    if (typeof addEventLine === "function") addEventLine(text, "info-note", "info");
   });
 }
 async function checkHealth() {

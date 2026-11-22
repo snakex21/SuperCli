@@ -1097,6 +1097,26 @@ function addEventLine(text, cls, tag) {
   return line;
 }
 
+// SuperCli's remarks about an answer (llm.AnswerNote): a quiet, translated
+// badge under the message, never text inside it.
+var ANSWER_NOTE_KINDS = { unverified_claim: "note.unverifiedClaim", failed_check: "note.failedCheck", check_cycle_stop: "note.checkCycleStop" };
+function addAnswerNote(node, kind, detail) {
+  var key = ANSWER_NOTE_KINDS[kind];
+  if (!node || !key) return;
+  var box = node._answerNotes;
+  if (!box || !box.isConnected) {
+    box = node._answerNotes = el("div", "answer-notes");
+    node.appendChild(box);
+  }
+  if (box.querySelector('[data-kind="' + kind + '"]')) return;
+  var chip = el("span", "answer-note");
+  chip.dataset.kind = kind;
+  var refresh = function () { chip.textContent = "\u2139 " + t(key).replace("{detail}", String(detail || "")); };
+  refresh();
+  if (typeof registerLanguageRefresh === "function") registerLanguageRefresh(chip, refresh);
+  box.appendChild(chip);
+}
+
 // Event tags render as a small translated chip (icon + word), never as a raw
 // "[tag]" marker. Internal tag names stay on data-tag for styling and tests.
 var EVENT_TAG_KIND = { stop: "stop", error: "error", auto: "auto" };
@@ -1617,6 +1637,9 @@ function setTaskHint(row, text) {
   var shown = clip(row && row.classList && row.classList.contains("task-row") ? humanTaskText(text) : full, 240), changed = inner.textContent !== shown;
   setNodeText(inner, shown);
   if (hint.title !== full) hint.title = full;
+  // Delegation cards cut their goal on the right ("…"); a scrolling marquee
+  // showed the text cut on the left in a still view.
+  if (row && row.classList && row.classList.contains("task-row")) return;
   if (changed || hint._marqueeText !== inner) watchMarquee(hint, inner);
 }
 
@@ -2678,19 +2701,34 @@ function renderTaskResult(row, note, elapsed, prompt, err, history) {
 // A delegation call the system declined (an automatic turn, a status
 // question, a repeated task, a resume without the user's word): shown as a
 // quiet note with what the user can do, the exact reason inside.
+// refusedKey names what was declined, from the system's own reason text.
+function refusedKey(toolName, reason) {
+  var r = String(reason || "");
+  if (/only asked for a status update/.test(r)) return "task.blockedStatus";
+  if (/already working on this exact task/.test(r)) return "task.blockedDuplicate";
+  if (/must ask for it explicitly/.test(r)) return toolName === "task_stop" ? "task.blockedStop" : "task.blockedNeedsWord";
+  if (/automatic turn/.test(r)) return toolName === "task" ? "task.blockedTask" : toolName === "task_stop" ? "task.blockedStop" : "task.blockedResume";
+  return toolName === "send_message" ? "task.blockedResume" : toolName === "task_stop" ? "task.blockedStop" : "task.blockedTask";
+}
 function applyRefusedDelegation(row, toolName, reason) {
   row.classList.remove("running", "failed", "done", "task-row");
   row.classList.add("refused");
-  var key = toolName === "send_message" ? "task.blockedResume" : toolName === "task_stop" ? "task.blockedStop" : "task.blockedTask";
+  var key = refusedKey(toolName, reason);
+  // A short label; the full sentence in the wide column (and its tooltip),
+  // never cut to the label's width.
   if (row._tname) {
     row._tname.textContent = "";
-    row._tname.appendChild(i18nEl("span", "tname-text", key));
+    row._tname.appendChild(i18nEl("span", "tname-text", "task.blocked"));
   }
-  if (row._thint) { row._thint.textContent = ""; row._thint.title = reason; }
+  if (row._thint) {
+    row._thint.textContent = "";
+    var sentence = i18nEl("span", "refused-text", key);
+    row._thint.appendChild(sentence);
+    row._thint.title = t(key);
+  }
   if (row._stat) {
     row._stat.classList.remove("err");
     row._stat.textContent = "";
-    row._stat.appendChild(i18nEl("span", "", "task.blocked"));
   }
   if (row._body) {
     row._body.textContent = "";
@@ -2712,9 +2750,41 @@ function renderTaskOutcome(row, note, err) {
   if (old) old.remove();
   var box = el("div", "task-outcome" + (failed ? " failed" : review ? " review" : ""));
   box.appendChild(i18nEl("span", "task-outcome-label", failed ? "common.error" : review ? "task.needsReview" : "task.report"));
-  box.appendChild(el("span", "task-outcome-text", failed ? clip(text, 4000) : clip(text, 320)));
+  if (failed) {
+    // A readable line first; the raw error (JSON from the provider, stack
+    // text) only when expanded.
+    var human = humanWorkerError(text);
+    var body = el("span", "task-outcome-text");
+    body.appendChild(document.createTextNode(clip(human, 300)));
+    if (human !== text) {
+      var more = el("details", "task-outcome-raw");
+      more.appendChild(i18nEl("summary", "", "task.errorDetails"));
+      more.appendChild(el("pre", "", clip(text, 4000)));
+      body.appendChild(more);
+    }
+    box.appendChild(body);
+  } else {
+    box.appendChild(el("span", "task-outcome-text", clip(text, 320)));
+  }
   box.title = clip(text, 2000);
   row._body.insertBefore(box, row._body.firstChild);
+}
+
+// humanWorkerError turns a provider error ("http 400: {\"error\":{...}}",
+// "agent: provider.Complete: sse: stream error: ...") into one readable line.
+function humanWorkerError(text) {
+  var s = String(text || "");
+  var m = s.match(/http (\d{3}):\s*(\{[\s\S]*\})/i);
+  if (m) {
+    var message = "";
+    try {
+      var data = JSON.parse(m[2]);
+      message = (data && data.error && (data.error.message || data.error.type)) || data.message || "";
+    } catch (e) {}
+    return t("task.errorHttp").replace("{code}", m[1]).replace("{message}", String(message || "").trim() || m[1]);
+  }
+  s = s.replace(/^(agent: )?(provider\.Complete: )?/i, "").replace(/^error: /i, "");
+  return s.split(/\n/)[0].trim();
 }
 // Stop belongs to one worker: it never stops the conversation's turn.
 function addWorkerStopAction(row, id) {

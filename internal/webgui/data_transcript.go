@@ -139,6 +139,9 @@ func (e *Engine) buildTranscript(ctx context.Context, store *session.Store, id s
 			item.Role, item.Name = string(llm.RoleTool), "task"
 		}
 		item.ToolPreviews = transcriptToolPreviews(id, msg)
+		if msg.Origin != nil && msg.Role == llm.RoleAssistant {
+			item.Notes = msg.Origin.Notes
+		}
 		item.ToolImages = transcriptToolImagePreviews(id, presentation, len(item.Attachments) != 0)
 		item.ToolImageCarrier = isTranscriptToolImageCarrier(presentation, len(item.Attachments) != 0)
 		if item.Role == string(llm.RoleUser) && m.MessageID > 0 && !item.ToolImageCarrier {

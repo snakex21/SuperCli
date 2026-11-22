@@ -46,7 +46,13 @@ func (bg *sessionBackground) askChannel() chan<- tools.AskRequest {
 }
 
 func (bg *sessionBackground) askPump() {
-	for req := range bg.ask {
+	for {
+		var req tools.AskRequest
+		select {
+		case req = <-bg.ask:
+		case <-bg.stop:
+			return
+		}
 		if req.Done != nil {
 			select {
 			case <-req.Done:
@@ -61,16 +67,26 @@ func (bg *sessionBackground) askPump() {
 	}
 }
 
-// watchQuestion removes the question when it is answered, expires or ages out.
+// watchQuestion removes the question when it is answered or expires. A
+// request with its own Done ends with it (the asking tool owns its timeout);
+// only a request without Done gets a bounded lifetime here. Engine shutdown
+// ends the watch.
 func (bg *sessionBackground) watchQuestion(req tools.AskRequest) {
-	deadline := time.NewTimer(backgroundQuestionMaxAge)
-	defer deadline.Stop()
+	var deadlineC <-chan time.Time
+	if req.Done == nil {
+		deadline := time.NewTimer(backgroundQuestionMaxAge)
+		defer deadline.Stop()
+		deadlineC = deadline.C
+	}
 	poll := time.NewTicker(backgroundQuestionPoll)
 	defer poll.Stop()
 	for {
 		select {
+		case <-bg.stop:
+			bg.e.cancelQuestion(req.ID)
+			return
 		case <-req.Done:
-		case <-deadline.C:
+		case <-deadlineC:
 			bg.e.cancelQuestion(req.ID) // answers "cancelled" to a waiting asker
 		case <-poll.C:
 			bg.e.questionMu.Lock()

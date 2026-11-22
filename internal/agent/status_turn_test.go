@@ -215,6 +215,21 @@ func TestNamesWorkerWithoutNegation(t *testing.T) {
 		{"zatrzymaj worker-7", "resume", false},
 		{"nie zatrzymuj worker-7", "stop", false},
 		{"co robi worker-70?", "resume", false},
+		// Review 2: mentioning a worker is not consent.
+		{"dlaczego worker-7 padł?", "resume", false},
+		{"pokaż log workera 7", "resume", false},
+		{"zostaw worker-7 w spokoju", "resume", false},
+		{"zostaw worker-7 w spokoju", "stop", false},
+		{"skip worker-7", "resume", false},
+		{"worker-7: nie, zostaw", "resume", false},
+		{"worker-7: nie, zostaw", "stop", false},
+		{"czy wznowić worker-7?", "resume", false},
+		{"why did worker-7 stop?", "stop", false},
+		{"proszę, wznów worker-7", "resume", true},
+		{"please retry worker-7", "resume", true},
+		{"przerwij worker-7", "stop", true},
+		{"kill worker 7", "stop", true},
+		{"worker-7 wznów", "resume", false},
 	} {
 		if got := namesWorkerWithoutNegation(tc.prompt, "worker-7", tc.action); got != tc.want {
 			t.Errorf("%s %q = %v, want %v", tc.action, tc.prompt, got, tc.want)

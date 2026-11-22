@@ -163,6 +163,21 @@ func (c *checkCycles) stopDue() (int, bool) {
 	return c.repeats, true
 }
 
+// takeStopRepeats returns, once, how many times the stopped loop repeated
+// (0 when no loop was stopped); the UI shows a translated note.
+func (c *checkCycles) takeStopRepeats() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.stopNote == "" {
+		return 0
+	}
+	c.stopNote = ""
+	if c.repeats > 0 {
+		return c.repeats
+	}
+	return 1
+}
+
 // takeStopNote returns the stop message once, for the final answer.
 func (c *checkCycles) takeStopNote() string {
 	c.mu.Lock()
