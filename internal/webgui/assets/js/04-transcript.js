@@ -1099,7 +1099,7 @@ function addEventLine(text, cls, tag) {
 
 // SuperCli's remarks about an answer (llm.AnswerNote): a quiet, translated
 // badge under the message, never text inside it.
-var ANSWER_NOTE_KINDS = { unverified_claim: "note.unverifiedClaim", failed_check: "note.failedCheck", check_cycle_stop: "note.checkCycleStop" };
+var ANSWER_NOTE_KINDS = { unverified_claim: "note.unverifiedClaim", failed_check: "note.failedCheck", check_cycle_stop: "note.checkCycleStop", cut_off: "note.cutOff" };
 function addAnswerNote(node, kind, detail) {
   var key = ANSWER_NOTE_KINDS[kind];
   if (!node || !key) return;
@@ -1370,6 +1370,26 @@ function addWorkerResumeAction(row, id) {
   });
   row._resumeButton = button;
   row._body.appendChild(button);
+}
+// A turn that stopped on an error has no answer: the error line offers one
+// "Continue" that sends a short continue message through the normal chat path.
+function addContinueButton(line) {
+  if (!line || line._continueButton) return;
+  var button = el("button", "event-continue");
+  button.type = "button";
+  var refresh = function () { button.textContent = t("chat.continue"); };
+  refresh();
+  if (typeof registerLanguageRefresh === "function") registerLanguageRefresh(button, refresh);
+  button.addEventListener("click", function (event) {
+    if (event && event.preventDefault) event.preventDefault();
+    if (button.disabled) return;
+    button.disabled = true;
+    var text = t("chat.continue");
+    if (typeof streaming === "boolean" && streaming && typeof enqueuePrompt === "function") return enqueuePrompt(text, []);
+    if (typeof sendPrompt === "function") return sendPrompt(text, []);
+  });
+  line._continueButton = button;
+  line.appendChild(button);
 }
 // The coordinator resumes the worker with send_message; its saved
 // transcript is restored, so no context is lost.

@@ -475,6 +475,11 @@ type Loop struct {
 	// A small bounded retry handles providers that need one extra turn without
 	// ever allowing an empty post-tool response to masquerade as Done.
 	emptyReplyNudges int
+	// lastReplyCutOff: the latest reply ended at the output limit without
+	// tool calls; cutOffContinues counts the automatic "continue" requests
+	// that followed (per Run).
+	lastReplyCutOff bool
+	cutOffContinues int
 	// runawayRetries counts per-Run re-requests after a tool call whose
 	// arguments degenerated (whitespace, repeating block, size or time cap;
 	// loop_runaway_retry.go).
@@ -1136,6 +1141,7 @@ func (l *Loop) run(ctx context.Context, prompt string, out chan<- Event) {
 	l.verifyTrail.reset()
 	l.checkCycles.reset()
 	l.emptyReplyNudges = 0
+	l.lastReplyCutOff, l.cutOffContinues = false, 0
 	l.runawayRetries = 0
 	if wake {
 		l.resetPostReview("")

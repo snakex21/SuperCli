@@ -88,7 +88,7 @@ func (l *Loop) runStep(
 		// summarized). When nothing older exists the window guard in
 		// completeOnce stops the run instead of sending prompts the server
 		// will keep cutting.
-		compactReason = "context-limit"
+		compactReason = serverTruncatedReason
 	}
 	if !l.maybeModelHandoff(ctx, out) {
 		if err := l.maybeAutoCompact(ctx, out, compactReason); err != nil {
@@ -235,6 +235,11 @@ func (l *Loop) runStep(
 	// and never model input.
 	var answerNotes []llm.AnswerNote
 	if len(toolCalls) == 0 && !truncatedToolCalls && hasVisibleUserReply(text) {
+		// An answer cut by the output limit after the automatic continuations
+		// is shown as possibly incomplete.
+		if l.lastReplyCutOff && l.cutOffContinues >= maxCutOffContinues && !inWorkerRun(ctx) {
+			answerNotes = append(answerNotes, llm.AnswerNote{Kind: llm.NoteCutOff})
+		}
 		// Worker reports are evidence for the coordinator, which runs its own
 		// checks; the note is for the answer a person reads.
 		if !inWorkerRun(ctx) {
@@ -369,6 +374,37 @@ func (l *Loop) runStep(
 		// them wait/re-submit. Draining here is a safe history boundary: the
 		// assistant message above is already complete and persisted.
 		if l.drainInterjections(ctx, out, step+1 < stepLimit, false) > 0 {
+			l.statsEndStep(stepStart)
+			return stepContinue
+		}
+		// A reply cut by the output limit is not an answer: ask the model to
+		// continue where it stopped (bounded per Run), never end the turn on it.
+		if l.lastReplyCutOff && l.cutOffContinues < maxCutOffContinues && step+1 < stepLimit {
+			l.cutOffContinues++
+			sys := llm.Message{
+				Role: llm.RoleSystem,
+				Content: "[continue] Your previous reply was cut off by the output limit. Continue exactly where it stopped, " +
+					"without repeating what you already wrote. If work remains, keep working with tools.",
+			}
+			l.Messages = append(l.Messages, sys)
+			l.persist(ctx, sys)
+			out <- NoticeEvent{Text: fmt.Sprintf("reply cut off by the output limit: continuing automatically (%d/%d)", l.cutOffContinues, maxCutOffContinues)}
+			l.statsEndStep(stepStart)
+			return stepContinue
+		}
+		// A reply with nothing for the user (no text: only reasoning, or
+		// nothing at all) and no tool results to summarize gets one more
+		// request before the turn may end with a notice.
+		if !hasVisibleUserReply(text) && !messagesHaveRecentToolResult(l.Messages) && l.emptyReplyNudges == 0 && step+1 < stepLimit {
+			l.emptyReplyNudges++
+			sys := llm.Message{
+				Role: llm.RoleSystem,
+				Content: "[reply required] Your last reply contained no answer (only reasoning or nothing). " +
+					"Continue the task: call the tools you need, or answer the user now in their language. Never end with an empty reply.",
+			}
+			l.Messages = append(l.Messages, sys)
+			l.persist(ctx, sys)
+			out <- NoticeEvent{Text: "empty reply: asking the model to continue (1/1)"}
 			l.statsEndStep(stepStart)
 			return stepContinue
 		}

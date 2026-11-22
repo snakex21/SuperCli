@@ -96,7 +96,8 @@ func TestModelHandoffNoExtraCallsForShortOrSameModel(t *testing.T) {
 		{"warm-long", handoffHistory(), "new"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &stubProvider{name: "new"}
+			// A real answer: an empty reply is now asked to continue once.
+			p := &stubProvider{name: "new", scripts: [][]llm.Delta{{{Content: "ok", FinishReason: "stop"}}}}
 			l, err := NewLoop(LoopConfig{Provider: p, Registry: tools.NewRegistry(), InitialMessages: tt.history, WindowFor: func(string) int { return 200_000 },
 				Summarizer: func(context.Context, llm.Provider, []llm.Message) (string, error) {
 					t.Fatal("unexpected summary")

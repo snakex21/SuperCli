@@ -75,6 +75,7 @@ const (
 	NoteUnverifiedClaim = "unverified_claim" // "tests pass" but no command ran (coordinator or workers)
 	NoteFailedCheck     = "failed_check"     // "tests pass" but the last check failed
 	NoteCheckCycleStop  = "check_cycle_stop" // the edit loop was stopped
+	NoteCutOff          = "cut_off"          // the answer hit the output limit and may be incomplete
 )
 
 // WithoutWorkerActivity drops only transcript display data. Provenance and

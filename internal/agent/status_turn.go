@@ -397,6 +397,10 @@ func splitContrast(part string, question bool) []clause {
 	return out
 }
 
+// maxCutOffContinues bounds the automatic continuations of a reply cut by the
+// output limit in one Run.
+const maxCutOffContinues = 2
+
 // EmptyReplyNotice is shown when the model ended a turn without any text for
 // the user (empty, or reasoning only). Hosts localize it by this exact text.
 const EmptyReplyNotice = "empty reply: the model returned no answer; ask again or choose another model"

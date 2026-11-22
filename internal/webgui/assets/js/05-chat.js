@@ -1921,7 +1921,10 @@ function handleEvent(ev, current) {
       flushAssistantRender(current);
       releaseAssistantParagraphCaches(current);
       addFileChanges(ev.file_changes);
-      addEventLine(chatErrorText(ev), "error", "error");
+      var errorLine = addEventLine(chatErrorText(ev), "error", "error");
+      // A cancelled run was the user's choice; any other error ended the turn
+      // without an answer, so offer to continue it.
+      if (!/cancel/i.test(String(ev.err || "")) && typeof addContinueButton === "function") addContinueButton(errorLine);
       setRunState("idle", t("common.error"));
       return null;
     default:
