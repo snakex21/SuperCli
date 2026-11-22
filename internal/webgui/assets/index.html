@@ -131,6 +131,7 @@
           <span class="wake-held-text"></span>
           <button type="button" class="wake-held-resume" data-i18n="background.resume">Resume</button>
         </div>
+        <div class="run-activity-steps" id="run-activity-steps" hidden></div>
         <form class="composer" id="composer">
           <div class="box">
             <div class="attachment-list" id="attachment-list" hidden></div>
@@ -139,6 +140,14 @@
               <button type="button" class="attach-btn" id="attach-btn"
                       data-i18n-title="composer.attach" data-i18n-aria="composer.attach"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M13.5 6.5 7.6 12.4a1.6 1.6 0 0 0 2.3 2.3l6-6a3.2 3.2 0 0 0-4.5-4.5l-6 6a4.8 4.8 0 0 0 6.8 6.8l5.3-5.3"/></svg></button>
               <span class="hint" id="run-status" role="status" aria-live="polite" data-run-key="composer.ready">Ready</span>
+              <span class="run-activity" id="run-activity" hidden>
+                <button type="button" class="run-activity-line" aria-expanded="false" aria-controls="run-activity-steps">
+                  <span class="run-activity-icon" aria-hidden="true"></span>
+                  <span class="run-activity-label" role="status" aria-live="polite"></span>
+                  <span class="run-activity-time" aria-hidden="true"></span>
+                </button>
+                <button type="button" class="run-activity-continue" data-i18n="activity.continue" hidden>Continue</button>
+              </span>
               <span class="bg-agents-badge" id="background-agents" role="status" aria-live="polite" hidden></span>
               <button type="button" class="stop-run-btn" id="stop-run-btn" data-i18n="composer.stop" hidden>Stop</button>
               <button type="button" class="interrupt-btn" id="interrupt-btn" data-i18n="composer.interrupt" hidden>Interrupt &amp; send</button>
@@ -281,6 +290,7 @@
   <script src="js/05b-sync.js"></script>
   <script src="js/05c-host-power.js"></script>
   <script src="js/05e-approval-card.js"></script>
+  <script src="js/05f-activity.js"></script>
   <script src="js/06-shell.js"></script>
   <script src="js/site-preview.js"></script>
   <script src="js/06-preview.js"></script>

@@ -31,6 +31,7 @@ func (s *Server) handleRuntime(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().UTC()
 	appName := s.runtimeAppName()
+	tc := s.eng.tomlConfig()
 	writeJSON(w, map[string]any{
 		"app":                    appName,
 		"engine":                 "SuperCli",
@@ -41,6 +42,9 @@ func (s *Server) handleRuntime(w http.ResponseWriter, r *http.Request) {
 		"status":                 "running",
 		"full_filesystem_access": sandbox.IsUnsandboxed(),
 		"update_supported":       appName == "SuperCli",
+		// The activity line lets a running command stay quiet until its
+		// own timeout before it says "no activity" (0 = no limit).
+		"command_timeout_ms": tc.CommandTimeout(),
 	})
 }
 

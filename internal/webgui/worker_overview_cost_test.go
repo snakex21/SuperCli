@@ -115,6 +115,9 @@ function legacyUpdate(id, agentName, status, activity, row) {
   item.state.textContent = taskStatusLabel(item.status);
   item.button.title = clip([id, item.row && item.row._workerModelInfo, item.activity].filter(Boolean).join(" · "), 400);
   renderWorkerOverview();
+  // Shared liveness painter, as in production: a (re)bound item shows its
+  // worker's current step at once (the step label is debounced from then on).
+  if (item.row && item.row._liveness) renderWorkerLiveness(item.row);
 }
 function legacyRender() {
   var panel = $("#worker-overview");
@@ -136,12 +139,9 @@ function legacyRender() {
   });
   var counts = {};
   items.forEach(function (w) { counts[w.status] = (counts[w.status] || 0) + 1; });
-  // 1.0.39: "Helper agents · 3 working · 1 failed" with plural forms.
-  var parts = [t("task.workers")];
-  ["running", "failed", "review", "interrupted", "stopped", "done", "unknown"].forEach(function (status) {
-    if (counts[status]) parts.push(pluralCount("task.sum." + status, counts[status]));
-  });
-  $("#worker-overview-summary").textContent = parts.join(" · ");
+  // 1.0.39: "Helper agents · 3 working · 1 failed" with plural forms; the
+  // shared summary painter (outside both renderers) adds the state dots.
+  renderWorkerOverviewSummary($("#worker-overview-summary"), counts);
   panel.hidden = !items.length;
   if (items.length && !workerOverviewUserToggled) {
     workerOverviewAutoOpen = !!counts.running;
@@ -153,6 +153,9 @@ function legacyRender() {
 const workerOverviewCostFixture = `(()=>{try {
 if(!window.fixtureReady)throw Error('scripts not ready');
 function check(ok,msg){if(!ok)throw Error(msg);}
+// One frozen clock: the liveness line (shared by both renderers) shows step
+// times and debounces step changes by 1 s, so a slower run must not differ.
+workerNow=function(){return 1700000000000;};
 const productionUpdate=updateWorkerOverview, productionRender=renderWorkerOverview;
 let renders=0, legacyOverviewBound=false;
 ` + workerOverviewLegacyFixture + `

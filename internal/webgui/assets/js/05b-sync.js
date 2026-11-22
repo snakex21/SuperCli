@@ -144,6 +144,7 @@ function syncRunElapsed(run, at) {
 }
 function syncStartRunTimer(run) {
   clearInterval(runTimer);
+  if (typeof runActivityStart === "function" && activeRun === run && !runFinishing) runActivityStart(run.start);
   function update() {
     if (activeRun !== run || runFinishing) return;
     runStatus.textContent = pendingImmediate ? t("composer.sendingQueued") :

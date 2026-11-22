@@ -1240,6 +1240,8 @@ function interruptAndSend(text, item, attachments, draft) {
 // Release presentation now; keep the serialization fence until HTTP EOF/receipt.
 function finishRunPresentation() {
   runFinishing = true;
+  // The activity line ends with the turn: nothing "working" stays behind.
+  if (typeof runActivityStop === "function") runActivityStop();
   clearInterval(runTimer);
   runTimer = null;
   if (!pendingImmediate) {
@@ -1510,6 +1512,7 @@ async function sendPrompt(text, attachments, draft, queuedItem, dispatchScope) {
   runStart = Date.now();
   run.start = runStart;
   setRunState("running", t("composer.working"));
+  if (typeof runActivityStart === "function") runActivityStart(runStart);
   function startRunTimer() {
     clearInterval(runTimer);
     runTimer = setInterval(function () {
@@ -1554,6 +1557,7 @@ async function sendPrompt(text, attachments, draft, queuedItem, dispatchScope) {
     $("#interrupt-btn").hidden = false;
     $("#interrupt-btn").disabled = false;
     setRunState("running", t("composer.working"));
+    if (typeof runActivityStart === "function") runActivityStart(run.start);
     liveUserNode = addUserMsg(text, 0, attachments);
     if (run.activity) bindLiveMessageReceipt(liveUserNode, run.activity);
     current = null;
@@ -1806,6 +1810,7 @@ function handleEvent(ev, current) {
   if (typeof refreshHostPower === "function" && /^(tool_result|done|error)$/.test(ev.type)) refreshHostPower();
   var remoteRun = typeof activeRun !== "undefined" && activeRun && activeRun.remote ? activeRun : null;
   var eventAt = remoteRun ? ev.at : 0;
+  if (typeof runActivityEvent === "function") runActivityEvent(ev);
   switch (ev.type) {
     case "session":
       if (ev.session_id) {

@@ -496,7 +496,7 @@ func TestFix1037BackgroundWorkerLivenessEndToEnd(t *testing.T) {
 	p.step <- struct{}{}
 	app.waitJS("live tool call on rebuilt card", `[...document.querySelectorAll('#stream .task-row')].pop().querySelectorAll('.task-activity-item').length>=1`, 10*time.Second)
 	app.eval(`(()=>{const c=[...document.querySelectorAll('#stream .task-row')].pop();c.open=true;c._body.hidden=false;return true;})()`, nil)
-	app.waitJS("liveness line", `(document.querySelector('#stream .task-row .task-liveness:not([hidden])')||{}).textContent.includes('ostatnia aktywność')`, 10*time.Second)
+	app.waitJS("liveness line", `/ · \d+:\d\d/.test((document.querySelector('#stream .task-row .task-liveness:not([hidden])')||{}).textContent||'')`, 10*time.Second)
 	app.eval(fix1037WorkerState, &v)
 	t.Logf("after first tool: %+v", v)
 	if strings.Contains(v.Card, "sprzed odświeżenia") {
@@ -520,7 +520,7 @@ func TestFix1037BackgroundWorkerLivenessEndToEnd(t *testing.T) {
 	if strings.Contains(v.Card, "sprzed odświeżenia") || len(v.Items) < 2 {
 		t.Fatalf("refresh did not rebuild the run's tool calls: %+v", v)
 	}
-	app.waitJS("panel liveness after refresh", `(document.querySelector('#worker-overview .worker-overview-live:not([hidden])')||{}).textContent.includes('ostatnia aktywność')`, 5*time.Second)
+	app.waitJS("panel liveness after refresh", `/ · \d+:\d\d$/.test((document.querySelector('#worker-overview .worker-overview-live:not([hidden])')||{}).textContent||'')`, 5*time.Second)
 	app.cleanShot("1037_worker_after_refresh", false)
 
 	// Stall warning with Stop/Restart (threshold shortened for the test).
@@ -528,7 +528,7 @@ func TestFix1037BackgroundWorkerLivenessEndToEnd(t *testing.T) {
 	app.waitJS("stall warning", `[...document.querySelectorAll('#stream .task-row')].pop().classList.contains('stalled')`, 10*time.Second)
 	app.eval(fix1037WorkerState, &v)
 	t.Logf("stalled: %+v", v)
-	if !strings.Contains(v.Liveness, "brak postępu") || v.StallBtns != 2 {
+	if !strings.Contains(v.Liveness, "Brak aktywności") || v.StallBtns != 2 {
 		t.Fatalf("stall warning/actions missing: %+v", v)
 	}
 	app.cleanShot("1037_worker_stalled", false)

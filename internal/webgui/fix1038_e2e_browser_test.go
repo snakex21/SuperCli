@@ -131,7 +131,7 @@ func TestFix1038WorkerPhaseBadgeHeldBannerAndResume(t *testing.T) {
 	app.waitJS("second spawn done", `!streaming&&document.querySelector('#stream').textContent.includes('Spawned SPAWN second')`, 15*time.Second)
 
 	// (a) The phase says the model is still writing the call, with its size.
-	app.waitJS("args phase", `[...document.querySelectorAll('#worker-overview .worker-overview-live:not([hidden])')].some(n=>n.textContent.includes('model pisze: Tworzenie pliku (7.2 KB)'))`, 15*time.Second)
+	app.waitJS("args phase", `[...document.querySelectorAll('#worker-overview .worker-overview-live:not([hidden])')].some(n=>n.textContent.startsWith('Przygotowuje: Tworzenie pliku · ')&&n.title.includes('7.2 KB'))`, 15*time.Second)
 	// (c) Coordinator idle, two workers running: the badge says so.
 	app.waitJS("badge", `document.querySelector('#background-agents').textContent.includes('Pracuje w tle (2)')`, 10*time.Second)
 	var v fix1038View
