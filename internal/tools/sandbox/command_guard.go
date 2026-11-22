@@ -25,16 +25,20 @@ import (
 //     resolving cd, pushd, Set-Location, "..", "~") - not the project itself,
 //     not .git.
 //   - Block: unambiguous disasters - deleting a drive or filesystem root, a
-//     home folder or its parents, a user's home, a system folder, the
-//     project or its .git; disk/partition/power commands, raw device writes;
-//     git force push.
+//     home folder, its parents or a folder directly in it (except cache and
+//     tool folders such as ~/.cache, which are asked), a user's home, a
+//     system folder, the project or its .git folder; disk/partition/power
+//     commands, cipher /w, raw device writes; git push --force/-f/+ref.
+//     Lock files inside .git (.git/index.lock) may be deleted; other
+//     deletes inside .git are asked.
 //   - Ask (the user approves or denies): the other recognised deletes -
 //     targets outside the project, targets from a pipe or a substitution
 //     ($(...), (...), backticks), variables, loops, encoded or dynamic
 //     commands (-EncodedCommand, iex, Invoke-Expression, eval), deletes
 //     behind wrappers (sudo, busybox, env, nohup, xargs), an unknown working
 //     directory - and git reset --hard, checkout/restore of the whole tree
-//     and clean -f, which discard uncommitted work.
+//     and clean -f, which discard uncommitted work; git push
+//     --force-with-lease and remote branch deletes.
 //
 // Commands are parsed with their quoting (POSIX sh, PowerShell, cmd), so a
 // separator inside a quoted argument ("fix bug & reboot fixture") is text.
@@ -141,8 +145,13 @@ func cleanBase(base string) string {
 }
 
 var (
-	destructiveProgram = regexp.MustCompile(`^(format|format\.com|diskpart|mkfs(\.\w+)?|shutdown|reboot|halt|poweroff|stop-computer|restart-computer|clear-disk|initialize-disk|remove-partition|format-volume|fdisk|wipefs|cipher)$`)
-	deviceTarget       = regexp.MustCompile(`(?i)^of=(/dev/|\\\\\.\\)`)
+	destructiveProgram = regexp.MustCompile(`^(format|format\.com|diskpart|mkfs(\.\w+)?|shutdown|reboot|halt|poweroff|stop-computer|restart-computer|clear-disk|initialize-disk|remove-partition|format-volume|fdisk|wipefs)$`)
+	// homeCacheDirs are cache and tool folders directly in the home folder:
+	// deleting one is asked, not blocked (tools rebuild them).
+	homeCacheDirs = map[string]bool{".cache": true, ".npm": true, ".gradle": true, ".m2": true, ".cargo": true, ".rustup": true,
+		".nuget": true, ".yarn": true, ".pnpm-store": true, ".bun": true, ".deno": true, ".gem": true, ".pyenv": true,
+		".nvm": true, ".conda": true, ".ivy2": true, ".sbt": true, ".pub-cache": true, ".dotnet": true, ".expo": true}
+	deviceTarget = regexp.MustCompile(`(?i)^of=(/dev/|\\\\\.\\)`)
 	// A value only known when the command runs.
 	dynamicValue = regexp.MustCompile(`\$|` + "`" + `|%[A-Za-z_][A-Za-z0-9_]*%|%%?[A-Za-z]\b|^\(|^\{`)
 )
@@ -251,6 +260,20 @@ func (g *guard) segment(sg shellSeg, kind shellKind, depth int) {
 			if deviceTarget.MatchString(a) {
 				g.raise(CommandBlock, "raw write to a device")
 			}
+		}
+	case name == "cipher":
+		// cipher /w overwrites a volume's free space; other uses (encrypt,
+		// decrypt, list) only change files.
+		wipe := false
+		for _, a := range args {
+			if strings.HasPrefix(strings.ToLower(a), "/w") {
+				wipe = true
+			}
+		}
+		if wipe {
+			g.raise(CommandBlock, "cipher /w wipes a volume's free space")
+		} else {
+			g.raise(CommandAsk, "cipher encrypts or decrypts files")
 		}
 	case name == "git":
 		g.git(args)
@@ -532,6 +555,9 @@ func (g *guard) judge(abs string, container bool) (CommandVerdict, string) {
 		return CommandBlock, "a drive or filesystem root"
 	}
 	if home != "" && (samePath(abs, home) || within(home, abs) || samePath(filepath.Dir(abs), home)) {
+		if samePath(filepath.Dir(abs), home) && homeCacheDirs[strings.ToLower(filepath.Base(abs))] {
+			return CommandAsk, "a cache or tool folder in the home folder"
+		}
 		return CommandBlock, "the home folder, its parents or a folder directly in it"
 	}
 	for _, sys := range systemDirs() {
@@ -554,10 +580,18 @@ func (g *guard) judge(abs string, container bool) (CommandVerdict, string) {
 		return CommandAsk, "a path outside the project"
 	}
 	if rel, err := filepath.Rel(g.base, abs); err == nil {
-		for _, part := range strings.Split(filepath.ToSlash(rel), "/") {
-			if strings.EqualFold(part, ".git") {
-				return CommandBlock, "the project's git history (.git)"
+		parts := strings.Split(filepath.ToSlash(rel), "/")
+		for i, part := range parts {
+			if !strings.EqualFold(part, ".git") {
+				continue
 			}
+			switch {
+			case i == len(parts)-1 && !container:
+				return CommandBlock, "the project's git history (.git)"
+			case i < len(parts)-1 && !container && strings.HasSuffix(strings.ToLower(parts[len(parts)-1]), ".lock"):
+				return CommandAllow, "" // a stale git lock file (.git/index.lock, .git/refs/heads/main.lock)
+			}
+			return CommandAsk, "a file or folder inside the project's .git"
 		}
 	}
 	return CommandAllow, ""
@@ -635,8 +669,15 @@ func (g *guard) git(args []string) {
 	case "push":
 		for _, o := range opts {
 			l := strings.ToLower(o)
-			if l == "-f" || l == "--force" || strings.HasPrefix(l, "--force-with-lease") || l == "--mirror" || l == "--delete" || l == "-d" || strings.HasPrefix(o, "+") || strings.HasPrefix(o, ":") {
-				g.raise(CommandBlock, "git force push or remote delete")
+			switch {
+			case l == "-f" || l == "--force" || l == "--mirror" || strings.HasPrefix(o, "+"):
+				g.raise(CommandBlock, "git force push")
+			case strings.HasPrefix(l, "--force-with-lease") || l == "--force-if-includes":
+				g.ask("git push "+o+" overwrites the remote branch",
+					"This force-pushes (git push "+o+") and replaces the remote branch history. Run it?")
+			case l == "--delete" || l == "-d" || strings.HasPrefix(o, ":"):
+				g.ask("git push "+o+" deletes a remote branch",
+					"This deletes a branch on the remote (git push "+o+"). Run it?")
 			}
 		}
 	case "reset":

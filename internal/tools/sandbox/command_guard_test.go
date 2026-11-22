@@ -134,6 +134,66 @@ func TestCheckCommandMatrix(t *testing.T) {
 	}
 }
 
+// Ordinary maintenance is not blocked; the real disasters still are.
+func TestCheckCommandOrdinaryMaintenance(t *testing.T) {
+	project := filepath.Join(t.TempDir(), "proj")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		argv []string
+		want CommandVerdict
+	}{
+		// .git: lock files allowed, other contents asked, .git itself blocked.
+		{[]string{"rm", "-f", ".git/index.lock"}, CommandAllow},
+		{[]string{"cmd", "/c", `del .git\index.lock`}, CommandAllow},
+		{[]string{"rm", "-f", ".git/refs/heads/main.lock"}, CommandAllow},
+		{[]string{"rm", ".git/hooks/pre-commit"}, CommandAsk},
+		{[]string{"rm", "-rf", ".git/hooks"}, CommandAsk},
+		{[]string{"rm", "-f", ".git/*.lock"}, CommandAsk},
+		{[]string{"rm", "-rf", ".git"}, CommandBlock},
+		{[]string{"rm", "-rf", ".git/"}, CommandBlock},
+		{[]string{"pwsh", "-c", "Remove-Item -Recurse -Force .git"}, CommandBlock},
+		// git push.
+		{[]string{"git", "push", "--force-with-lease"}, CommandAsk},
+		{[]string{"git", "push", "--force-with-lease=main:abc123", "origin", "main"}, CommandAsk},
+		{[]string{"git", "push", "--force-if-includes", "origin", "main"}, CommandAsk},
+		{[]string{"git", "push", "origin", "--delete", "old-branch"}, CommandAsk},
+		{[]string{"git", "push", "origin", "-d", "old-branch"}, CommandAsk},
+		{[]string{"git", "push", "origin", ":old-branch"}, CommandAsk},
+		{[]string{"git", "push", "--force", "origin", "main"}, CommandBlock},
+		{[]string{"git", "push", "-f"}, CommandBlock},
+		{[]string{"git", "push", "origin", "+main"}, CommandBlock},
+		{[]string{"git", "push", "--force-with-lease", "--force"}, CommandBlock},
+		{[]string{"git", "push", "origin", "main"}, CommandAllow},
+		// Cache and tool folders in home: asked; home and other folders in it: blocked.
+		{[]string{"rm", "-rf", "~/.cache"}, CommandAsk},
+		{[]string{"rm", "-rf", "~/.npm"}, CommandAsk},
+		{[]string{"rm", "-rf", "~/.gradle"}, CommandAsk},
+		{[]string{"rm", "-rf", "~/.cache/*"}, CommandAsk},
+		{[]string{"rm", "-rf", "~/.cache/go-build"}, CommandAsk},
+		{[]string{"rm", "-rf", "~"}, CommandBlock},
+		{[]string{"rm", "-rf", "~/Documents"}, CommandBlock},
+		{[]string{"rm", "-rf", "~/.ssh"}, CommandBlock},
+		{[]string{"rm", "-rf", "~/*"}, CommandBlock},
+		// cipher: /w wipes, the rest is asked.
+		{[]string{"cipher", "/w:C:"}, CommandBlock},
+		{[]string{"cipher", "/W:C:\\"}, CommandBlock},
+		{[]string{"cipher", "/e", "secret.txt"}, CommandAsk},
+		{[]string{"cipher"}, CommandAsk},
+		// Unchanged.
+		{[]string{"rm", "-rf", "*"}, CommandBlock},
+	}
+	for _, c := range cases {
+		if got := CheckCommand(c.argv, project, ""); got.Verdict != c.want {
+			t.Errorf("%q -> %+v, want verdict %d", c.argv, got, c.want)
+		}
+	}
+	if got := CheckCommand([]string{"git", "push", "--force-with-lease"}, project, ""); !strings.HasSuffix(got.Question, "Run it?") {
+		t.Errorf("force-with-lease question = %q", got.Question)
+	}
+}
+
 func TestCheckShellTextForInteractiveSessions(t *testing.T) {
 	project := t.TempDir()
 	if got := CheckShellText("cd src && rm -rf /\n", project, ""); got.Verdict != CommandBlock {
