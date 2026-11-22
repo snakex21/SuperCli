@@ -2787,16 +2787,6 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
 .run-activity-step-detail { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--faint); font-family: var(--mono); }
 .run-activity-step-time { font-variant-numeric: tabular-nums; color: var(--faint); }
 
-/* Reasoning: one small folded chip per turn instead of a bar per segment.
-   Later segments of the same turn show theirs only once it is opened. */
-.think-block:not([open]) { margin-bottom: 6px; }
-.think-block:not([open]) summary {
-  display: inline-flex; letter-spacing: 0; text-transform: none;
-  padding: 1px 8px 1px 6px; border-radius: 999px; background: var(--line-soft);
-}
-.think-block:not([open]) .think-line { display: none; }
-.msg-assistant.turn-cont > .think-block:not([open]) { display: none; }
-
 /* This message's own numbers: one compact grey line. */
 .turn-meta { font-family: var(--sans); font-variant-numeric: tabular-nums; }
 

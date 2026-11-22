@@ -261,13 +261,6 @@ function checkMessageStatsAndReasoning(){return run(function(){
   // Decimal comma in Polish; a delegation turn that took no time shows no "0,0 s".
   check(fmtDuration(16200)==='16,2 s','decimal separator: '+fmtDuration(16200));
   check(turnMetaParts({tok_out:12},0,1).join(' | ')==='wyjście 12 | 1 narzędzie','zero time shown: '+turnMetaParts({tok_out:12},0,1).join(' | '));
-  // One reasoning chip per turn: later segments are marked.
-  stream.replaceChildren();
-  addUserMsg('pytanie');
-  var a=addAssistantMsg(),b=addAssistantMsg();
-  addUserMsg('drugie');
-  var c=addAssistantMsg();
-  check(!a.classList.contains('turn-cont')&&b.classList.contains('turn-cont')&&!c.classList.contains('turn-cont'),'turn segments not marked');
 });}
 function checkWorkerActivityLine(){return run(function(){
   var now=Date.now();workerNow=function(){return now;};

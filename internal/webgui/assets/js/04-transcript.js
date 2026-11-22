@@ -139,11 +139,7 @@ stream.addEventListener("click", function (event) {
   // delegation panel; the panel entry opens the full card here.
   if (row.classList.contains("task-row") && !row.open && focusWorkerInOverview(row)) { event.preventDefault(); return; }
   if (row.classList.contains("tool-row")) saveDisclosurePreference("tools", !row.open);
-  else if (row.classList.contains("think-block")) {
-    saveDisclosurePreference("thinking", !row.open);
-    var owner = row.parentNode;
-    if (owner && owner.classList && owner.classList.contains("msg-assistant") && !owner.classList.contains("turn-cont")) setTurnReasoningOpen(owner, !row.open);
-  }
+  else if (row.classList.contains("think-block")) saveDisclosurePreference("thinking", !row.open);
 });
 
 function appendStream(node) {
@@ -383,22 +379,7 @@ function addAssistantMsg() {
   m._renderTimer = null;
   m._reasoningOpen = false;
   appendStream(m);
-  markReasoningTurn(m);
   return m;
-}
-// One small reasoning element per turn: a later answer segment of the same
-// turn shows its folded reasoning only when the turn's first one is opened.
-function markReasoningTurn(m) {
-  for (var prev = m.previousElementSibling, n = 0; prev && n < 400; prev = prev.previousElementSibling, n++) {
-    if (prev.classList.contains("msg-user")) return;
-    if (prev.classList.contains("msg-assistant")) { m.classList.add("turn-cont"); return; }
-  }
-}
-function setTurnReasoningOpen(first, open) {
-  for (var next = first.nextElementSibling, n = 0; next && n < 400; next = next.nextElementSibling, n++) {
-    if (next.classList.contains("msg-user")) return;
-    if (next.classList.contains("msg-assistant")) next.querySelectorAll(":scope > .think-block").forEach(function (d) { d.open = open; });
-  }
 }
 
 // Copy/edit act on the visible answer; a leading reasoning block is kept as
