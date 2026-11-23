@@ -171,12 +171,20 @@ function renderTable(lines) {
 // Thinking is OPEN by default (it has value — project principle);
 // the user can fold a block and the fold survives re-renders.
 var _thinkId = 0;
+// A reasoning block is folded unless the user chose to keep them open; the
+// folded line shows the label and the start of the thought as a preview.
 function renderThinkBlock(text) {
   var id = "think-" + (++_thinkId);
-  var open = typeof ui === "undefined" || ui.thinkingExpanded !== false;
+  var open = typeof ui !== "undefined" && ui.thinkingExpanded === true;
   return '<details class="think-block"' + (open ? " open" : "") + ' data-think-id="' + id + '">' +
-    '<summary><span>' + escHtml(t("role.thinking")) + '</span><span class="think-line"></span></summary>' +
+    '<summary><span class="think-label">' + escHtml(t("role.thinking")) + '</span><span class="think-time"></span>' +
+    '<span class="think-preview">' + escHtml(thinkPreview(text)) + '</span></summary>' +
     '<div class="think-content">' + renderMarkdownish(String(text).trim()) + "</div></details>";
+}
+// thinkPreview is the first words of a thought as plain text (CSS clips it).
+function thinkPreview(text) {
+  return String(text || "").replace(/```[\s\S]*?(```|$)/g, " ").replace(/[`*_#>|]+/g, "")
+    .replace(/\s+/g, " ").trim().slice(0, 240);
 }
 function assistantTextParts(text, checkpoint) {
   var src = String(text || "");

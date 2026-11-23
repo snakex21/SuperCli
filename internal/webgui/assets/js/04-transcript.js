@@ -113,8 +113,10 @@ function cancelTranscriptResumeScroll() {
   }
 }
 
+// Reasoning stays folded (label + preview) unless the user opened one, which
+// is remembered; it never unfolds by itself in the middle of an answer.
 function thinkingDisclosureOpen(history) {
-  return typeof ui !== "undefined" && typeof ui.thinkingExpanded === "boolean" ? ui.thinkingExpanded : !history;
+  return typeof ui !== "undefined" && ui.thinkingExpanded === true;
 }
 function toolDisclosureOpen() { return typeof ui !== "undefined" && ui.toolsExpanded === true; }
 function saveDisclosurePreference(kind, open) {
@@ -799,13 +801,27 @@ function assistantPart(part, history) {
     template.innerHTML = renderThinkBlock("");
     container = template.content.firstElementChild;
     target = container.querySelector(".think-content");
+    var preview = container.querySelector(".think-preview"), timeNode = container.querySelector(".think-time");
+    // How long a live thought has been streaming ("Rozumowanie · 12 s");
+    // saved history has no timing and shows the preview only.
+    var thinkStarted = history ? 0 : Date.now(), thinkSeen = -1;
     container.open = thinkingDisclosureOpen(history);
   } else {
     container = target = document.createDocumentFragment();
   }
   var state = {kind: part.kind, node: container, text: part.text, markdown: null, complete: !!history};
   function paint() {
-    if (state.kind === "thinking" && !container.open) return;
+    if (state.kind === "thinking") {
+      var start = preview ? thinkPreview(state.text.slice(0, 600)) : "";
+      if (preview && preview.textContent !== start) preview.textContent = start;
+      if (timeNode && thinkStarted && state.text.length !== thinkSeen) {
+        thinkSeen = state.text.length;
+        var secs = Math.round((Date.now() - thinkStarted) / 1000);
+        var took = secs < 1 ? "" : secs < 60 ? secs + " s" : fmtDuration(secs * 1000);
+        if (timeNode.textContent !== took) timeNode.textContent = took;
+      }
+      if (!container.open) return;
+    }
     if (!state.markdown) state.markdown = markdownStream(target);
     updateMarkdownStream(state.markdown, state.text);
     if (state.complete) state.markdown.paragraph = null;
@@ -874,8 +890,9 @@ function renderAssistant(node) {
         node.appendChild(state.node);
       } else {
         state.text = part.text;
-        // Unopened thoughts keep their latest text without materializing DOM.
-        if (state.markdown) state.paint();
+        // Unopened thoughts keep their latest text without materializing DOM;
+        // only their one-line preview follows the stream.
+        if (state.markdown || state.kind === "thinking") state.paint();
       }
     }
     while (states.length > parts.length) states.pop().remove();

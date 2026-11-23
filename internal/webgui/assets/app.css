@@ -745,22 +745,32 @@ button.side-cost:focus-visible { outline: 2px solid var(--accent); outline-offse
 }
 .msg-assistant th { color: var(--muted); font-weight: 600; }
 
-/* Thinking — open by default (thinking has value), visually quiet */
-.think-block { margin: 0 0 10px; }
+/* Thinking — one quiet folded line ("› Rozumowanie · first words…") between
+   the answer's parts; opened, the thought sits under a thin left rule. */
+.think-block { margin: 4px 0 10px; min-width: 0; }
 .think-block summary {
   list-style: none; cursor: pointer;
-  display: flex; align-items: center; gap: 8px;
-  font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--faint);
+  display: flex; align-items: baseline; gap: 6px; min-width: 0; padding: 1px 0;
+  font-size: var(--fs-xs); line-height: 1.5; color: var(--faint);
 }
 .think-block summary::-webkit-details-marker { display: none; }
-.think-block summary::before { content: "›"; text-transform: none; }
-.think-block[open] summary::before { content: "⌄"; }
+.think-block summary::before {
+  content: "›"; flex: none; display: inline-block; width: 0.7em; text-align: center;
+  transition: transform 120ms ease;
+}
+.think-block[open] summary::before { transform: rotate(90deg); }
 .think-block summary:hover { color: var(--muted); }
-.think-block .think-line { flex: 1; border-top: 1px solid var(--line-soft); }
+.think-label { flex: none; font-weight: 500; }
+.think-preview {
+  flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  font-style: italic; opacity: 0.85;
+}
+.think-time { flex: none; font-variant-numeric: tabular-nums; }
+.think-time:not(:empty)::before, .think-preview:not(:empty)::before { content: "· "; font-style: normal; }
+.think-block[open] .think-preview { display: none; }
 .think-content {
-  margin-top: 6px; padding-left: 14px;
-  border-left: 1px solid var(--line);
+  margin: 4px 0 2px 0.3em; padding-left: 12px;
+  border-left: 2px solid var(--line-soft);
   color: var(--faint); font-size: var(--fs-sm); line-height: 1.55;
   min-width: 0; overflow-wrap: anywhere;
 }

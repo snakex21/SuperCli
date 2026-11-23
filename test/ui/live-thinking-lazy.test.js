@@ -92,6 +92,9 @@ test('history restoration honors default and explicit disclosure preferences, in
     h.c.renderAssistant(node); assert.equal(body.textContent, before); assert.equal(h.metrics.markdownUpdates, count + 1, 'only answer is updated');
     h.toggle(card, true); assert.equal(body.textContent, 'Saved thought.'); assert.equal(node._raw, raw);
   }
-  const defaultLive = fixture(null), node = defaultLive.event({type: 'reasoning', text: 'Default visible reasoning.'});
-  assert.equal(node.querySelector('.think-block').open, true); assert.equal(defaultLive.thought(node).textContent, 'Default visible reasoning.');
+  // Unset preference: live reasoning is folded too and reveals on opening.
+  const defaultLive = fixture(null), node = defaultLive.event({type: 'reasoning', text: 'Default folded reasoning.'});
+  const liveCard = node.querySelector('.think-block');
+  assert.equal(liveCard.open, false); assert.equal(defaultLive.thought(node).textContent, '');
+  defaultLive.toggle(liveCard, true); assert.equal(defaultLive.thought(node).textContent, 'Default folded reasoning.');
 });

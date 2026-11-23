@@ -49,7 +49,8 @@ function harness() {
     return node;
   }
   const $ = selector => { if (!roots.has(selector)) roots.set(selector, element('div')); return roots.get(selector); };
-  const c = {$, $$: () => [], el: element, ui: {thinkingExpanded: null}, window: new EventTarget(), localStorage: {getItem: () => null},
+  // Order checks read the thought text, so thoughts start open here.
+  const c = {$, $$: () => [], el: element, ui: {thinkingExpanded: true}, window: new EventTarget(), localStorage: {getItem: () => null},
     document: Object.assign(new EventTarget(), {hidden: false, hasFocus: () => true, createElement: element,
       createDocumentFragment: () => element('#fragment', '', undefined, 11),
       createComment: () => element('#comment', '', undefined, 8),

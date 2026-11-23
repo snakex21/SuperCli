@@ -163,7 +163,7 @@ test('portable disclosure preferences normalize and reload without writes or cha
     assert.equal(h.c.ui.toolsExpanded,settings['ui.toolsExpanded']===true);
     assert.equal(h.c.ui.thinkingExpanded,typeof settings['ui.thinkingExpanded']==='boolean'?settings['ui.thinkingExpanded']:null);
     assert.equal(h.posts.length,0);assert.equal(h.timers.size,0);
-    if (h.c.ui.thinkingExpanded===null) {assert.equal(h.c.thinkingDisclosureOpen(false),true);assert.equal(h.c.thinkingDisclosureOpen(true),false);}
+    if (h.c.ui.thinkingExpanded===null) {assert.equal(h.c.thinkingDisclosureOpen(false),false);assert.equal(h.c.thinkingDisclosureOpen(true),false);}
   }
   const h=preferenceHarness();await h.c.loadUI();const row=summaryCard(h);h.activate(row.children[0]);h.flush();
   assert.equal(h.posts.length,1);assert.equal(h.posts[0].url,'/api/settings');
@@ -203,9 +203,10 @@ test('expanded preference applies to future live/history rows while retaining ex
 test('thought preference covers inline and native segments, restored lazy materialization, and within-block choice', async () => {
   for (const expanded of [null,false,true]) {
     const h=preferenceHarness({'ui.thinkingExpanded':expanded});await h.c.loadUI();
-    const inline=h.c.renderThinkBlock('thought');assert.equal(/class="think-block" open/.test(inline),expanded!==false);
+    // Reasoning is folded unless the user chose to keep it open.
+    const inline=h.c.renderThinkBlock('thought');assert.equal(/class="think-block" open/.test(inline),expanded===true);
     const live=h.c.assistantPart({kind:'thinking',text:'live thought'},false);
-    assert.equal(live.node.open,expanded===null?true:expanded);assert.equal(live.node.querySelector('.think-content').textContent,expanded===false?'':'live thought');
+    assert.equal(live.node.open,expanded===true);assert.equal(live.node.querySelector('.think-content').textContent,expanded===true?'live thought':'');
     if (!live.node.open) {live.node.open=true;live.node.dispatch('toggle');}
     assert.equal(live.node.querySelector('.think-content').textContent,'live thought');
     const old=h.c.assistantPart({kind:'thinking',text:'saved thought'},true);
