@@ -120,15 +120,21 @@ var providerHostIcons = []struct{ match, icon string }{
 // providerPortIcons are local servers recognised by their default port.
 var providerPortIcons = map[string]string{"1234": "lmstudio", "11434": "ollama"}
 
-// ProviderIconKey picks the built-in logo for a provider from its protocol
-// type and base URL; "" when nothing matches (the GUI then shows a letter).
+// ProviderIconKey picks the built-in logo for a provider from its base URL:
+// a brand's logo only when the address is that brand's known host. The type
+// alone never picks one, so an Anthropic- or OpenAI-compatible gateway at
+// another address gets "" (the GUI then shows a letter). The type only
+// refines an official host: a Claude account on api.anthropic.com shows the
+// Claude logo.
 func ProviderIconKey(typ, baseURL string) string {
-	switch strings.ToLower(strings.TrimSpace(typ)) {
-	case config.ProviderClaude:
+	icon := providerHostIcon(baseURL)
+	if icon == "anthropic" && strings.EqualFold(strings.TrimSpace(typ), config.ProviderClaude) {
 		return "claude"
-	case config.ProviderCodex:
-		return "codex"
 	}
+	return icon
+}
+
+func providerHostIcon(baseURL string) string {
 	raw := strings.TrimSpace(baseURL)
 	if raw != "" && !strings.Contains(raw, "://") {
 		raw = "http://" + raw
@@ -152,12 +158,6 @@ func ProviderIconKey(typ, baseURL string) string {
 				return icon
 			}
 		}
-	}
-	switch strings.ToLower(strings.TrimSpace(typ)) {
-	case config.ProviderAnthropic:
-		return "anthropic"
-	case config.ProviderOpencode:
-		return "opencode"
 	}
 	return ""
 }

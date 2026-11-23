@@ -28,8 +28,13 @@ func TestProviderIconKeyFromTypeAndAddress(t *testing.T) {
 		{"openai", "https://token-plan-sgp.xiaomimimo.com/v1", "xiaomi"},
 		{"openai", "https://api.x.ai/v1", "xai"},
 		{"openai", "https://ark.cn-beijing.volces.com/api/v3", "doubao"},
-		// Unknown gateways: the protocol decides, else no logo (letter).
-		{"anthropic", "https://anyrouter.top/v1", "anthropic"},
+		// The type alone never picks a brand: gateways get a letter.
+		{"anthropic", "https://anyrouter.top/v1", ""},
+		{"anthropic", "https://llm.onerouter.pro/v1", ""},
+		{"openai", "https://api.orionetics.com/v1", ""},
+		{"opencode", "https://gateway.example/v1", ""},
+		{"claude", "https://proxy.example/v1", ""},
+		{"codex", "https://proxy.example/codex", ""},
 		{"openai", "https://logfare.ai/v1", ""},
 		{"openai", "http://192.168.0.150:8094/v1", ""},
 		{"openai", "https://http--nine-router--8pmb4wzm7yyc.code.run/v1", ""},
@@ -158,8 +163,8 @@ func TestProviderLogoLifecycleAndEditKeepsFields(t *testing.T) {
 	if rec := call(http.MethodPost, "/api/provider/logo", `{"name":"ja","builtin":"anthropic"}`); rec.Code != http.StatusOK {
 		t.Fatalf("builtin: %d %s", rec.Code, rec.Body.String())
 	}
-	if p := list(); p.Logo["builtin"] != "anthropic" {
-		t.Fatalf("builtin logo not listed: %+v", p.Logo)
+	if p := list(); p.Logo["builtin"] != "anthropic" || p.Icon != "" {
+		t.Fatalf("custom logo must win over (no) matched icon: %+v", p)
 	}
 	if rec := call(http.MethodPost, "/api/provider/logo", `{"name":"ja","builtin":"../../etc"}`); rec.Code != http.StatusBadRequest {
 		t.Fatalf("unknown builtin accepted: %d", rec.Code)
