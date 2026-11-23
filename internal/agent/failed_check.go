@@ -26,7 +26,11 @@ type failedChecks struct {
 	known           map[[sha256.Size]byte]verificationObservation
 	revision        uint64
 	changedSequence uint64
-	scopeID         string
+	// changedFiles are the source files edited since the checks went stale
+	// (newest last, bounded), named in the blocker so the model and the user
+	// know what changed. Empty when the edit's paths are unknown.
+	changedFiles []string
+	scopeID      string
 	goalState       core.VerificationState
 }
 
@@ -41,6 +45,7 @@ type verificationObservation struct {
 	started         time.Time
 	startedSequence uint64
 	runID           string
+	command         []string // as run; named in the blocker
 	scope           verificationScope
 	coverage        bool
 	stale           bool
@@ -57,6 +62,7 @@ func (f *failedChecks) resetLocked() {
 	f.revision++
 	f.pending, f.latest, f.known = nil, nil, nil
 	f.changedSequence = 0
+	f.changedFiles = nil
 }
 
 func (f *failedChecks) unresolved() bool { f.mu.Lock(); defer f.mu.Unlock(); return len(f.pending) > 0 }
@@ -92,13 +98,33 @@ func (l *Loop) bindVerificationGoalScope() {
 // Rewording a claim or polling the same terminal execution is not new evidence.
 func (f *failedChecks) goalChanged() { f.mu.Lock(); f.revision++; f.mu.Unlock() }
 
-func (f *failedChecks) workspaceChanged() {
+// workspaceChanged expires earlier checks after a source edit; files names
+// the edited files when known.
+func (f *failedChecks) workspaceChanged(files ...string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.workspaceChangedLocked()
+	f.workspaceChangedLocked(files...)
 }
 
-func (f *failedChecks) workspaceChangedLocked() {
+const maxChangedFiles = 8
+
+func (f *failedChecks) workspaceChangedLocked(files ...string) {
+	for _, file := range files {
+		file = filepath.ToSlash(strings.TrimSpace(file))
+		if file == "" {
+			continue
+		}
+		for i, seen := range f.changedFiles {
+			if seen == file {
+				f.changedFiles = append(f.changedFiles[:i], f.changedFiles[i+1:]...)
+				break
+			}
+		}
+		f.changedFiles = append(f.changedFiles, file)
+	}
+	if len(f.changedFiles) > maxChangedFiles {
+		f.changedFiles = append([]string(nil), f.changedFiles[len(f.changedFiles)-maxChangedFiles:]...)
+	}
 	f.changedSequence = core.NextExecutionSequence()
 	f.revision++
 	for key, observation := range f.known {
@@ -142,11 +168,37 @@ func (f *failedChecks) blocker() string {
 			first = observation
 		}
 	}
-	state := "failed or not run"
-	if first.stale {
-		state = "code changed since verification"
+	ref := fmt.Sprintf("(check %x, goal %q, run %q, state %d)", first.key[:4], f.scopeID, first.runID, f.revision)
+	command := first.scope.label()
+	if len(first.command) > 0 && !first.scope.goTest {
+		command = commandLine(first.command)
 	}
-	return fmt.Sprintf("goal: %s: %s (check %x, goal %q, run %q, state %d); execute a passing rerun or a proven covering suite in the same mode/environment on current code before marking the work complete", state, first.scope.label(), first.key[:4], f.scopeID, first.runID, f.revision)
+	if first.stale {
+		// Name what changed and what to run: the model must rerun this exact
+		// check (or a proven covering suite), not guess which one is meant.
+		files := "files not known"
+		if len(f.changedFiles) > 0 {
+			files = strings.Join(f.changedFiles, ", ")
+		}
+		return fmt.Sprintf("goal: code changed since verification: files changed after the last passing `%s`: %s. Run that check again on the current code (the same command, or a proven covering suite in the same mode/environment), then mark the work complete %s", command, files, ref)
+	}
+	return fmt.Sprintf("goal: failed or not run: `%s` %s; execute a passing rerun or a proven covering suite in the same mode/environment on current code before marking the work complete", command, ref)
+}
+
+// commandLine is a readable, bounded one-line form of an argv.
+func commandLine(argv []string) string {
+	parts := make([]string, 0, len(argv))
+	for _, a := range argv {
+		if strings.ContainsAny(a, " \t") {
+			a = `"` + strings.ReplaceAll(a, `"`, `\"`) + `"`
+		}
+		parts = append(parts, a)
+	}
+	line := strings.Join(parts, " ")
+	if r := []rune(line); len(r) > 240 {
+		line = string(r[:239]) + "…"
+	}
+	return line
 }
 
 // Bind the observer at delegation dispatch, not when a background goroutine
@@ -191,6 +243,11 @@ func (f *failedChecks) recordLocked(observation verificationObservation) {
 	}
 	f.known[observation.key] = observation
 	f.revision++
+	defer func() {
+		if len(f.pending) == 0 {
+			f.changedFiles = nil // everything is verified again
+		}
+	}()
 	if observation.failed {
 		if f.pending == nil {
 			f.pending = make(map[[sha256.Size]byte]verificationObservation)
@@ -323,7 +380,7 @@ func (l *Loop) recordCheckResult(tc llm.ToolCall, result tools.Result) {
 		failed = decodeErr != nil || exit.Code == nil || *exit.Code != 0 || verificationSkipped(exit.Stdout, exit.Stderr)
 	}
 	observation := verificationObservation{key: key, failed: failed, sequence: verificationSequence.Add(1), started: started,
-		runID: l.runID, scope: describeVerification(args.Command, args.Workdir, environment), coverage: coverage}
+		runID: l.runID, command: append([]string(nil), args.Command...), scope: describeVerification(args.Command, args.Workdir, environment), coverage: coverage}
 	if result.Execution != nil {
 		observation.startedSequence = result.Execution.StartedSequence
 		observation.scope.observeGoOutput(result.Execution.Stdout)

@@ -712,7 +712,11 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) (r
 		// Successful no-ops preserve verification. An attempted non-inert edit
 		// (even a failed/cancelled partial write) invalidates earlier checks.
 		// Checks started while it was in flight must be rerun after this fence.
-		l.failedChecks.workspaceChanged()
+		// Generated and git-ignored files are not source: editing only those
+		// keeps earlier checks valid (verification_source_paths.go).
+		if source, known := sourceMutationPaths(l.baseDir, mutationPaths(tc.Name, tc.Arguments, res)); !known || len(source) > 0 {
+			l.failedChecks.workspaceChanged(source...)
+		}
 	}
 
 	// Cancellation after dispatch cannot prove that a mutation did not happen.
