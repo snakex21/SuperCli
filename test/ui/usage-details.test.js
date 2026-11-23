@@ -218,19 +218,19 @@ test('timing charts use matched phase measurements, show coverage and preserve p
   }]}));
   assert.ok(body.textContent.includes(catalog['usage.timingNote']));
   const modelTiming = body.querySelector('.usage-purpose-row > td > .usage-timing');
-  assert.match(modelTiming.querySelector('.usage-timing-total').textContent, /9\.0s/);
+  assert.match(modelTiming.querySelector('.usage-timing-total').textContent, /9[.,]0 ?s/);
   assert.match(modelTiming.textContent, /2 of 3 calls/);
   assert.match(modelTiming.textContent, /1 of 3 calls/);
   const bar = modelTiming.querySelector('.usage-time-bar');
   assert.equal(bar.querySelector('.usage-chart-thinking').style.width, '25%');
   assert.equal(bar.querySelector('.usage-chart-remaining').style.width, '75%');
-  assert.match(bar.getAttribute('aria-label'), /Waiting for first output: 1\.0s; Response stream: 3\.0s;.*1 of 3/);
+  assert.match(bar.getAttribute('aria-label'), /Waiting for first output: 1\.0 s; Response stream: 3\.0 s;.*1 of 3/);
   assert.match(modelTiming.querySelector('.usage-stream-speed').textContent, /10\.0 tok\/s/,
     'speed uses only output from calls matched to stream timing, not all model output');
   const purposeTiming = body.querySelector('.usage-purpose-table .usage-timing-compact');
-  assert.match(purposeTiming.querySelector('.usage-timing-total').textContent, /4\.0s/);
+  assert.match(purposeTiming.querySelector('.usage-timing-total').textContent, /4\.0 s/);
   assert.equal(purposeTiming.querySelector('.usage-time-bar'), null, 'purpose details keep a compact numeric breakdown');
-  assert.match(purposeTiming.textContent, /1\.0s.*3\.0s.*10\.0 tok\/s/);
+  assert.match(purposeTiming.textContent, /1\.0 s.*3\.0 s.*10\.0 tok\/s/);
 });
 
 test('old or incomplete timing data never manufactures call duration, stream phases or speed', () => {
@@ -240,12 +240,12 @@ test('old or incomplete timing data never manufactures call duration, stream pha
   assert.equal(unknown.querySelector('.usage-timing'), null);
   assert.equal(unknown.textContent.includes(catalog['usage.timingNote']), false);
   const duration = h.w.renderUsageDetails(report({rows: [{...row, has_timing: true, timing_reported_calls: 1, duration_ms: 1500}]}));
-  assert.match(duration.querySelector('.usage-timing-total').textContent, /1\.5s/);
+  assert.match(duration.querySelector('.usage-timing-total').textContent, /1[.,]5 ?s/);
   assert.equal(duration.querySelector('.usage-time-bar'), null);
   assert.equal(duration.querySelector('.usage-stream-speed'), null);
   const zero = h.w.renderUsageDetails(report({rows: [{...row, has_timing: true, timing_reported_calls: 2, duration_ms: 0,
     ttft_ms: 0, ttft_reported_calls: 2, stream_ms: 0, stream_reported_calls: 2, stream_output_tokens: 30}]}));
-  assert.match(zero.querySelector('.usage-timing-total').textContent, /0\.0s/);
+  assert.match(zero.querySelector('.usage-timing-total').textContent, /0\.0 s/);
   assert.equal(zero.querySelector('.usage-stream-speed'), null);
   assert.equal(zero.querySelector('.usage-time-bar .usage-chart-thinking').style.width, '0%');
   assert.equal(zero.querySelector('.usage-time-bar .usage-chart-remaining').style.width, '0%');

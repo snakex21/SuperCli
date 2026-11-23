@@ -592,7 +592,10 @@ test('task and continuation release unused JSON while retaining full canonical b
     assert.equal(row._clock, null); assert.equal(row._activity, activity);
     assert.equal(row._taskPrompt, brief); assert.equal(row.querySelector('.task-brief').textContent, brief);
     const report = row.querySelector('.task-report'); assert.equal(report.innerHTML, '');
-    assert.deepEqual(row._body.children.map(node => node.className).filter(name => name !== 'lbl'),
+    // The finished worker's outcome line leads the card (worker cards in the
+    // chat show their result first); the rest keeps its order.
+    assert.equal(row._body.children.some(node => node.className === 'task-outcome'), true, 'finished card shows its outcome');
+    assert.deepEqual(row._body.children.map(node => node.className).filter(name => name !== 'lbl' && name !== 'task-outcome'),
       i ? ['task-backlink', 'task-brief', 'task-activity', 'task-report msg-assistant'] :
         ['task-brief', 'task-activity', 'task-report msg-assistant']);
     row.open = true; row.dispatch('toggle');

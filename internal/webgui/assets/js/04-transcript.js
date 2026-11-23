@@ -1687,7 +1687,7 @@ function renderWorkerOverviewSummary(node, counts) {
   node.appendChild(el("span", "wo-sum-title", t("task.workers")));
   ["running", "failed", "review", "interrupted", "stopped", "done", "unknown"].forEach(function (status) {
     if (!counts[status]) return;
-    node.appendChild(document.createTextNode(" · "));
+    node.appendChild(el("span", "wo-sum-sep", " · "));
     var part = el("span", "wo-sum-count", pluralCount("task.sum." + status, counts[status]));
     part.dataset.state = status;
     node.appendChild(part);
@@ -1789,12 +1789,12 @@ function setTaskHint(row, text) {
   }
   // Delegation cards show the goal in human words (from the raw brief, whose
   // line structure marks the goal); the whole brief stays in the tooltip.
-  var shown = clip(row && row.classList && row.classList.contains("task-row") ? humanTaskText(text) : full, 240), changed = inner.textContent !== shown;
+  var shown = clip(row && row.classList && typeof row.classList.contains === "function" && row.classList.contains("task-row") ? humanTaskText(text) : full, 240), changed = inner.textContent !== shown;
   setNodeText(inner, shown);
   if (hint.title !== full) hint.title = full;
   // Delegation cards cut their goal on the right ("…"); a scrolling marquee
   // showed the text cut on the left in a still view.
-  if (row && row.classList && row.classList.contains("task-row")) return;
+  if (row && row.classList && typeof row.classList.contains === "function" && row.classList.contains("task-row")) return;
   if (changed || hint._marqueeText !== inner) watchMarquee(hint, inner);
 }
 
@@ -3892,7 +3892,7 @@ function addWorkerProgress(ev) {
 
 function generationSpeedText(ev) {
   var rate = ev && ev.generation_tps;
-  return typeof rate === "number" && Number.isFinite(rate) && rate > 0 ? fmtDecimal1(rate) + " tok/s" : "";
+  return typeof rate === "number" && Number.isFinite(rate) && rate > 0 ? (typeof fmtDecimal1 === "function" ? fmtDecimal1(rate) : rate.toFixed(1)) + " tok/s" : "";
 }
 
 // This message's own numbers in human words, the same order and number

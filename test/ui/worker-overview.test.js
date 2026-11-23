@@ -77,7 +77,7 @@ test('worker overview keeps numeric order and moves existing buttons only when t
   }
   assert.equal(h.moves.length, 0, 'unchanged order must not move or re-append focused buttons');
   h.$('#worker-overview-list').children.forEach((button, index) => assert.equal(button, buttons[index]));
-  assert.equal(h.$('#worker-overview-summary').textContent, h.context.t('task.workers') + ' · ' + h.context.t('task.active') + ': 3');
+  assert.equal(h.$('#worker-overview-summary').textContent, h.context.workerOverviewSummary({running: 3}));
 });
 
 test('worker overview refreshes status and language, opens the current row and releases buttons on reset', () => {
@@ -87,11 +87,12 @@ test('worker overview refreshes status and language, opens the current row and r
   h.setLanguage('pl');
   h.context.updateWorkerOverview('worker-1', 'code', 'done', 'Wynik', first);
   h.context.updateWorkerOverview('worker-2', 'code', 'running', undefined, second);
-  assert.equal(buttons[0].querySelector('.worker-overview-name').textContent, 'Worker 1 · code');
-  assert.equal(buttons[0].querySelector('.worker-overview-activity').textContent, 'Wynik');
+  // The line names the worker (its kind is in the tooltip) and its task.
+  assert.equal(buttons[0].querySelector('.worker-overview-name').textContent, 'Worker 1');
+  assert.equal(buttons[0].querySelector('.worker-overview-activity').textContent, 'Brief worker-1');
   assert.equal(buttons[0].querySelector('.worker-overview-status').textContent, h.context.t('task.done'));
   assert.equal(buttons[0].dataset.state, 'done');
-  assert.equal(h.$('#worker-overview-summary').textContent, h.context.t('task.workers') + ' · ' + h.context.t('task.active') + ': 1 · ' + h.context.t('task.done') + ': 1');
+  assert.equal(h.$('#worker-overview-summary').textContent, h.context.workerOverviewSummary({running: 1, done: 1}));
   const list = h.$('#worker-overview-list').children;
   assert.equal(list[0], buttons[1], 'running workers stay ahead of finished ones');
   assert.equal(list[1], buttons[0]);
