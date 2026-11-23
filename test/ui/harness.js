@@ -543,6 +543,7 @@ for (const kind of ['skip', 'todo', 'only']) {
   };
 }
 const turn = () => new Promise(resolve => setTimeout(resolve, 0));
+const defaultTestTimeoutMS = 30000;
 function errorDetails(name, error) {
   return {name, error: String(error?.message ?? error), stack: String(error?.stack ?? '')};
 }
@@ -621,11 +622,12 @@ export async function run(files) {
     activeCase = state;
     try {
       const operation = body();
-      if (Number.isFinite(item.options.timeout) && item.options.timeout > 0) {
-        await Promise.race([operation, new Promise((_resolve, reject) => {
-          timer = setTimeout(() => reject(new Error(`Test timed out after ${item.options.timeout} ms`)), item.options.timeout);
-        })]);
-      } else await operation;
+      // A test that never settles fails by name instead of stalling the
+      // whole suite until the Go-side deadline.
+      const limit = Number.isFinite(item.options.timeout) && item.options.timeout > 0 ? item.options.timeout : defaultTestTimeoutMS;
+      await Promise.race([operation, new Promise((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`Test timed out after ${limit} ms`)), limit);
+      })]);
     } catch (error) { state.errors.push(error); }
     finally {
       clearTimeout(timer);

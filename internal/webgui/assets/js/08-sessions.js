@@ -725,14 +725,14 @@ async function resumeSession(id, session, fromQueue, fromSync) {
     // A sync refresh of the conversation already on screen rebuilds it (each
     // event of a run started elsewhere, e.g. busy workers). Cards the user
     // opened stay open across the rebuild.
-    var openBefore = fromSync && transcriptSessionID === id ? snapshotOpenDisclosures() : null;
+    var openBefore = fromSync && transcriptSessionID === id && typeof snapshotOpenDisclosures === "function" ? snapshotOpenDisclosures() : null;
     loadedTranscriptMessages = msgs;
     transcriptHasMore = !!page.has_more;
     transcriptBeforeSeq = page.before_seq || 0;
     renderLoadedTranscript(false);
     if (liveRun) reattachDetachedRun(id);
     else showFailedRun(id);
-    if (openBefore) restoreOpenDisclosures(openBefore);
+    if (openBefore && typeof restoreOpenDisclosures === "function") restoreOpenDisclosures(openBefore);
     // A run that started elsewhere and is not shown yet keeps its message.
     if (typeof syncAfterHistoryRender === "function") syncAfterHistoryRender(id, fetchStartedAt);
     loadSessions();

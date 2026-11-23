@@ -1,6 +1,6 @@
 import {assert, test, readSource, sourcePath, testDir, createSandbox, runScript} from './harness.js';
 const source=readSource(sourcePath(testDir,'../../internal/webgui/assets/js/12-keyboard-init.js'),'utf8');
-test('startup reuses settings for drafts and skips reasoning for the no-model sentinel',async()=>{
+test('startup reuses settings for drafts and skips reasoning for the no-model sentinel',{timeout:10000},async()=>{
  for(const model of ['no model','','qwen']){
   const snapshot={'drafts':{}};const calls=[];let complete;
   const ready=new Promise(resolve=>complete=resolve);
@@ -12,7 +12,7 @@ test('startup reuses settings for drafts and skips reasoning for the no-model se
  }
 });
 
-test('startup overlaps health with drafts but waits for both before restoring model and session state',async()=>{
+test('startup asks for the session list at once, overlaps health with drafts and waits for both before restoring model and stats',{timeout:10000},async()=>{
  const deferred=()=>{let resolve;const promise=new Promise(done=>resolve=done);return {promise,resolve};};
  for(const healthFirst of [false,true]){
   for(const healthValue of [{model:'qwen'},null]){
@@ -42,8 +42,11 @@ test('startup overlaps health with drafts but waits for both before restoring mo
     selectedModelID:value=>value,
     loadReasoning(){afterDependencies('reasoning');},
     loadModels(){afterDependencies('models');},
-    loadSessions(){afterDependencies('sessions');return sessions.promise;},
-    resumeLastSessionOnStart(value){afterDependencies('resume');assert.equal(value,'saved sessions');resumed.resolve();},
+    loadSessions(){calls.push('sessions');return sessions.promise;},
+    resumeLastSessionOnStart(value){
+     assert.ok(draftsDone,'reopening the last session waits for saved drafts');
+     calls.push('resume');assert.equal(value,'saved sessions');resumed.resolve();
+    },
     loadProjects(){},loadPromptQueue(){},loadWorkers(){},
     renderStats(){afterDependencies('stats');},
     promptEl:{focus(){afterDependencies('focus');finished.resolve();}}
@@ -51,10 +54,10 @@ test('startup overlaps health with drafts but waits for both before restoring mo
    createSandbox(c);runScript(source,c);
    assert.deepEqual(calls,['settings'],'no startup reads or restoration before settings');
    settings.resolve(snapshot);await draftsStarted.promise;
-   assert.deepEqual(calls,['settings','i18n','health','drafts']);
+   assert.deepEqual(calls,['settings','i18n','health','sessions','drafts']);
    if(healthFirst){health.resolve();await healthObserved.promise;}
    else{drafts.resolve();await draftsObserved.promise;}
-   assert.deepEqual(calls,['settings','i18n','health','drafts'],'one pending dependency still gates model/session/stats restoration');
+   assert.deepEqual(calls,['settings','i18n','health','sessions','drafts'],'one pending dependency still gates model and stats restoration');
    if(healthFirst)drafts.resolve();else health.resolve();
    await finished.promise;
    assert.equal(calls.includes('reasoning'),!!healthValue);
@@ -68,12 +71,12 @@ test('startup overlaps health with drafts but waits for both before restoring mo
  }
 });
 
-test('initial health and model discovery keep the empty-model label localized',async()=>{
+test('initial health and model discovery keep the empty-model label localized',{timeout:10000},async()=>{
  const assets=sourcePath(testDir,'../../internal/webgui/assets');
  const i18n=readSource(sourcePath(assets,'js/01-i18n.js'),'utf8');
  const shell=readSource(sourcePath(assets,'js/06-shell.js'),'utf8');
  const models=readSource(sourcePath(assets,'js/10-models.js'),'utf8');
- const health=shell.slice(shell.indexOf('async function checkHealth()'),shell.indexOf('/* ═══ side panel: tabs'));
+ const health=shell.slice(shell.indexOf('var reportedStorageRecoveries'),shell.indexOf('/* ═══ side panel: tabs'));
  const discovery=models.slice(models.indexOf('async function loadModels()'),models.indexOf('function contextBudgetText('))+
   models.slice(models.indexOf('function activeModelEntry()'),models.indexOf('function renderActiveContextControl()'));
  const english=JSON.parse(readSource(sourcePath(assets,'locales/en.json'),'utf8'));
