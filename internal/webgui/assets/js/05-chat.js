@@ -1128,6 +1128,7 @@ function renderSideGoal(got) {
   var host = $("#side-goal");
   if (!host) return;
   sideGoalSignature = JSON.stringify(got || null);
+  if (typeof rememberGoalTasks === "function") rememberGoalTasks(got);
   host.innerHTML = "";
   host.removeAttribute("aria-busy");
   if (!got) {

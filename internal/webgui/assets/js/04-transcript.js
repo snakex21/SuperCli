@@ -1974,15 +1974,20 @@ function toolHint(name, args) {
         hint: clip(a.message || "", 90), agent: "", prompt: a.message || "", workerID: a.to || "" };
     }
     var display = toolDisplayName(name);
+    if (name === "goal") return { name: display, hint: clip(goalToolHint(a), 150) };
     if (a.command) {
       var action = name === "process_session" && a.action ? String(a.action) + " · " : "";
       return { name: display, hint: clip(action + commandPreview(a.command), 150) };
     }
     if (a.cmd) return { name: display, hint: clip(commandPreview(a.cmd), 150) };
+    if (a.reads || a.files || a.paths) return { name: display, hint: clip(fileListHint(a.reads || a.files || a.paths), 150) };
     if ((name === "move" || name === "copy") && a.src) {
       return { name: display, hint: clip(String(a.src) + " → " + String(a.dest || ""), 150) };
     }
-    var keys = ["path", "file", "dir", "query", "pattern", "prompt", "text"];
+    if (name === "hide_messages" && (a.from || a.to)) {
+      return { name: display, hint: t("toolHint.range").replace("{from}", String(a.from || "")).replace("{to}", String(a.to || "")) };
+    }
+    var keys = ["path", "file", "dir", "url", "query", "pattern", "question", "prompt", "text", "name"];
     for (var i = 0; i < keys.length; i++) {
       if (a[keys[i]]) {
         var detail = String(a[keys[i]]);
@@ -1991,11 +1996,87 @@ function toolHint(name, args) {
         return { name: display, hint: clip(detail, 150) };
       }
     }
-    var flat = Object.keys(a).map(function (k) { return k + "=" + clip(JSON.stringify(a[k]), 30); }).join(" ");
-    return { name: display, hint: clip(flat, 150) };
+    return { name: display, hint: clip(plainArgsHint(a), 150) };
   } catch (e) {
-    return { name: toolDisplayName(name), hint: clip(args || "", 150) };
+    return { name: toolDisplayName(name), hint: clip(partialArgsHint(args), 150) };
   }
+}
+
+// "AGENTS.md, build-standalone.ps1" from a list of reads: an array of paths
+// or {path} objects, or one "a | b" string.
+function fileListHint(list) {
+  if (typeof list === "string") list = list.split("|");
+  if (!Array.isArray(list)) return "";
+  return list.map(function (item) {
+    var path = item && typeof item === "object" ? item.path || item.file || "" : item;
+    return String(path || "").trim();
+  }).filter(Boolean).join(", ");
+}
+// Arguments still being written (or cut) are not JSON yet: show the command
+// or the first known value as text, never the raw JSON.
+function partialArgsHint(args) {
+  var raw = String(args || "");
+  if (!/^\s*\{/.test(raw)) return raw;
+  // JSON strings from the start of text up to the end of the list they are
+  // in (a "]" after a string), the last one possibly unfinished.
+  var strings = function (text) {
+    var out = [], re = /"((?:[^"\\]|\\.)*)("|$)/g, m;
+    while ((m = re.exec(text))) {
+      try { out.push(JSON.parse('"' + m[1].replace(/\\$/, "") + '"')); } catch (e) { out.push(m[1]); }
+      if (/^\s*\]/.test(text.slice(re.lastIndex))) break;
+    }
+    return out;
+  };
+  var command = /"(?:command|cmd)"\s*:\s*(\[[\s\S]*|"[\s\S]*)/.exec(raw);
+  if (command) return commandPreview(command[1].charAt(0) === "[" ? strings(command[1]) : strings(command[1]).slice(0, 1));
+  var value = /"(?:path|file|dir|url|query|pattern|reads|prompt|text)"\s*:\s*("[\s\S]*)/.exec(raw);
+  if (value) return strings(value[1])[0] || "";
+  return "";
+}
+// The values of simple arguments, never raw key="value" pairs: "start ·
+// dev-server" rather than action="start" id="dev-server".
+function plainArgsHint(a) {
+  return Object.keys(a).map(function (k) {
+    var v = a[k];
+    if (typeof v === "string") return clip(v.replace(/\s+/g, " ").trim(), 60);
+    if (typeof v === "number") return String(v);
+    return "";
+  }).filter(Boolean).join(" · ");
+}
+// Task titles of the active goal by number, kept by the side goal panel, so
+// "start task 4" can name the task.
+var goalTaskTitles = Object.create(null);
+function rememberGoalTasks(goal) {
+  goalTaskTitles = Object.create(null);
+  ((goal && goal.tasks) || []).forEach(function (task) {
+    if (task && task.seq != null && task.title) goalTaskTitles[task.seq] = String(task.title);
+  });
+}
+// One human line for a goal tool call: "Added task: …", "Started task 4: …".
+function goalToolHint(a) {
+  var title = typeof a.title === "string" ? a.title.trim() : "";
+  if (!title && Array.isArray(a.titles)) title = a.titles.filter(Boolean).join(" · ");
+  var n = a.task_seq != null ? String(a.task_seq) : "";
+  function task(key) {
+    var line = t(key).replace("{n}", n), known = goalTaskTitles[n];
+    return known ? line + ": " + known : line;
+  }
+  switch (a.action) {
+    case "set": return t("goalTool.set").replace("{title}", title);
+    case "show": return t("goalTool.show");
+    case "list": return t("goalTool.list");
+    case "tasks": return t("goalTool.tasks");
+    case "add_task": return t("goalTool.addTask").replace("{title}", title);
+    case "start_task": return task("goalTool.startTask");
+    case "complete_task": return task("goalTool.completeTask");
+    case "skip_task": return task("goalTool.skipTask");
+    case "add_note": return t("goalTool.addNote").replace("{text}", String(a.text || "").replace(/\s+/g, " ").trim());
+    case "verify": return t(a.passed === true ? "goalTool.verifyPassed" : "goalTool.verifyFailed");
+    case "mark_done": return t("goalTool.markDone");
+    case "abandon": return t("goalTool.abandon");
+    case "decompose": return t("goalTool.decompose") + (title ? ": " + title : "");
+  }
+  return plainArgsHint(a);
 }
 
 var DIFF_TOOLS = {
@@ -2502,6 +2583,8 @@ function activityLabel(step) {
     }
     case "worker": return t("activity.waitWorker").replace("{worker}", workerLabel(step.worker || "worker"));
     case "user": return t("activity.waitUser");
+    case "checking": return t("activity.checking");
+    case "finishing": return t("activity.finishing");
     case "retry": return t(step.reason === "rate" ? "activity.retryRateLimit" : step.reason === "provider" ? "activity.retryProvider" : "activity.retryConnection")
       .replace("{attempt}", String(step.attempt || "?")).replace("{max}", String(step.max || "?"));
     default: return t("activity.tool").replace("{tool}", toolDisplayName(step.tool || "tool"));
@@ -3222,6 +3305,13 @@ function addToolResult(id, output, err, at) {
   if (changes.diff || mutationLabel) row.classList.add("has-changes");
   if (err) row._stat.classList.add("err");
   setToolResultStatus(row, ms, err, changes);
+  // A command refused by the guard: one short translated line; the model's
+  // full message stays in the details.
+  if (err && /^blocked: destructive command \(/.test(String(err)) && row._thint) {
+    row.classList.add("guard-blocked");
+    setNodeText(row._thint, t("tool.blockedDanger"));
+    row._thint.title = String(err);
+  }
   appendToolMediaPreview(row, payload, row._toolName, !!err);
   // Live results start folded too. Large read/diff viewers should not occupy
   // the WebView DOM until the user actually expands this result.

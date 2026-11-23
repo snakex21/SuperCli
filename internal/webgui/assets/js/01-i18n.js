@@ -106,6 +106,33 @@ var SYSTEM_TEXTS = [
   { key: "notice.connectionWait", re: /^Model connection unavailable — waiting (\S+) before retry (\d+)\/(\d+|∞)\.$/, args: ["wait", "attempt", "max"] },
   { key: "notice.requestLimit", re: /^(.+): request limit (\d+)\/min reached — waiting (\S+)$/, args: ["host", "n", "wait"] },
   { key: "notice.toolsUnsupported", re: /^model "(.+)" does not support tool calling on this endpoint; continuing without tools \(answers only\) — pick a function-calling model for agent work$/, args: ["model"] },
+  // Context housekeeping and run status (agent loop, webgui stream.go). The
+  // numbers and settings behind them are under the line's details (detail: 0
+  // is the whole original text).
+  { key: "notice.pruned", re: /^pruned (\d+) old tool result\(s\), reclaimed ~(\d+) tokens \(trigger=[^)]*\)$/, args: ["n", "tokens"], detail: 0, format: { tokens: "compact" } },
+  { key: "notice.shorterContext", re: /^Preparing a shorter context for this model…$/, args: [] },
+  { key: "notice.compacted", re: /^context compacted \([^)]*\): removed \d+, [\s\S]*$/, args: [], detail: 0 },
+  { key: "notice.messagesHidden", re: /^hid (\d+) old message\(s\) from the model's view \([\s\S]*\)$/, args: ["n"], detail: 0 },
+  { key: "notice.draftVerify", re: /^draft-verify: [\s\S]*$/, args: [], detail: 0 },
+  { key: "notice.consultFailed", re: /^consult: all candidates failed$/, args: [] },
+  { key: "notice.consult", re: /^consult: \d+ candidate\(s\), winner (.+)$/, args: ["winner"], detail: 0 },
+  { key: "notice.serverTruncated", re: /^The server reported \d+ prompt tokens for a longer request than the previous one: [\s\S]*$/, args: [], detail: 0 },
+  { key: "notice.workersRunning", re: /^(\d+) background agent\(s\) still running; their results will start an automatic turn\.$/, args: ["n"] },
+  { key: "notice.waitingWorkers", re: /^Waiting for delegated tasks to finish; their results will be handled automatically\.$/, args: [] },
+  { key: "notice.forceAnswer", re: /^empty reply after tools: forcing a user-facing answer \((\d+)\/(\d+)\)$/, args: ["attempt", "max"] },
+  { key: "notice.runawayRetry", re: /^runaway \S+ call stopped \([\s\S]*\); asking the model to send it again \((\d+)\/(\d+)\)$/, args: ["attempt", "max"], detail: 0 },
+  { key: "notice.reviewAccepted", re: /^review \((.+?)\): accepted$/, args: ["model"] },
+  { key: "notice.reviewNoVerdict", re: /^review \((.+?)\): no readable verdict — finished without review$/, args: ["model"] },
+  { key: "notice.reviewLimit", re: /^review \((.+?)\): .+ — round limit reached \((\d+)\), finishing$/, args: ["model", "n"], detail: 0 },
+  { key: "notice.reviewNotes", re: /^review \((.+?)\): .+ — notes sent back to the main model \((\d+)\/(\d+)\)$/, args: ["model", "round", "max"], detail: 0 },
+  { key: "notice.completionCheck", re: /^completion check: the reply admits unfinished work; asking to finish the possible parts$/, args: [] },
+  { key: "notice.streamIdle", re: /^(?:.+) for (\S+); retrying in (\S+) \(retry (\d+)\/(\d+|∞)\)$/, args: ["idle", "wait", "attempt", "max"] },
+  { key: "notice.workerFallback", re: /^task: worker model "(.+?)" unreachable \([\s\S]*\) — falling back to "(.+)"$/, args: ["model", "fallback"], detail: 0 },
+  { key: "notice.parallelLocal", re: /^running (\d+) task workers in parallel on a local backend[\s\S]*$/, args: ["n"], detail: 0 },
+  { key: "notice.persistFailed", re: /^session persistence failed \([\s\S]*$/, args: [], detail: 0 },
+  { key: "notice.persistRecovered", re: /^session persistence recovered after \d+ failed write\(s\)[\s\S]*$/, args: [], detail: 0 },
+  { key: "notice.checkCycleStop", re: /^SuperCli stopped the edit loop: the edited files went back (\d+) times to a version that had already failed the same check with the same output\.$/, args: ["n"] },
+  { key: "notice.steeringRejected", re: /^\[Steering \S* rejected: [^\]]*\]\nUndelivered instruction: "([\s\S]*)"$/, args: ["text"], detail: 0 },
   { key: "error.loopUnchanged", re: /^agent: stopped — the last (\d+) consecutive tool rounds returned only previously observed successful results/, args: ["n"] },
   { key: "error.loopSource", re: /^agent: stopped — the last (\d+) source-reading rounds only revisited unchanged lines/, args: ["n"] },
   { key: "error.loopFailure", re: /^agent: stopped — the same tool call failed (\d+) consecutive times/, args: ["n"] },
@@ -115,12 +142,17 @@ var SYSTEM_TEXTS = [
 function systemTextDetail(text) {
   text = String(text || "");
   for (var i = 0; i < SYSTEM_TEXTS.length; i++) {
-    var entry = SYSTEM_TEXTS[i];
-    if (!entry.detail) continue;
-    var m = entry.re.exec(text);
-    if (m) return m[entry.detail] || "";
+    var entry = SYSTEM_TEXTS[i], m = entry.re.exec(text);
+    if (!m) continue;
+    return typeof entry.detail === "number" ? m[entry.detail] || "" : "";
   }
   return "";
+}
+// Arguments shown in human form: "compact" makes 757123 read "757 tys.".
+function systemTextArg(entry, name, value) {
+  var kind = entry.format && entry.format[name];
+  if (kind === "compact" && typeof fmtCompactNumber === "function") return fmtCompactNumber(Number(value));
+  return value;
 }
 function localizeSystemText(text) {
   text = String(text || "");
@@ -130,7 +162,7 @@ function localizeSystemText(text) {
     var message = t(entry.key);
     if (message === entry.key) return text;
     var args = {};
-    entry.args.forEach(function (name, index) { args[name] = m[index + 1]; });
+    entry.args.forEach(function (name, index) { args[name] = systemTextArg(entry, name, m[index + 1]); });
     return message.replace(/\{([a-z_]+)\}/g, function (all, name) {
       return Object.prototype.hasOwnProperty.call(args, name) ? args[name] : all;
     });
