@@ -1373,5 +1373,7 @@
   "prov.removeYes": "Ukloni",
   "prov.removed": "Uklonjeno: {n}",
   "task.runStart": "Početak {time}",
-  "task.totalTitle": "Ukupno vrijeme rada"
+  "task.totalTitle": "Ukupno vrijeme rada",
+  "task.maxSteps": "Zaustavljeno nakon {n} koraka (zaštita od beskonačnih petlji). Rad je sačuvan; ograničenje mijenjate u config.toml (max_steps).",
+  "task.deadEnd": "SuperCli je zaustavio workera: {n} izmjena datoteka zaredom nije uspjelo s istom pogreškom, pa novi pokušaji ne bi pomogli."
 }

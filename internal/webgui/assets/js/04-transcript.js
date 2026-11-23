@@ -3197,6 +3197,12 @@ function renderTaskOutcome(row, note, err) {
 // "agent: provider.Complete: sse: stream error: ...") into one readable line.
 function humanWorkerError(text) {
   var s = String(text || "");
+  // SuperCli's own stops read in the UI language; the raw text stays under
+  // "Szczegóły błędu".
+  var stop = /max steps safety net \((\d+)\) tripped/.exec(s);
+  if (stop) return t("task.maxSteps").replace("{n}", stop[1]);
+  stop = /SuperCli stopped this worker: (\d+) file changes in a row failed/.exec(s);
+  if (stop) return t("task.deadEnd").replace("{n}", stop[1]);
   var m = s.match(/http (\d{3}):\s*(\{[\s\S]*\})/i);
   if (m) {
     var message = "";

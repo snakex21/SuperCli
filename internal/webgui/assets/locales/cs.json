@@ -1373,5 +1373,7 @@
   "prov.removeYes": "Odebrat",
   "prov.removed": "Odebráno: {n}",
   "task.runStart": "Start {time}",
-  "task.totalTitle": "Celková doba práce"
+  "task.totalTitle": "Celková doba práce",
+  "task.maxSteps": "Zastaveno po {n} krocích (ochrana proti zacyklení). Práce je zachována; limit změníte v config.toml (max_steps).",
+  "task.deadEnd": "SuperCli zastavil workera: {n} změn souborů za sebou selhalo se stejnou chybou, další pokusy by nepomohly."
 }

@@ -1373,5 +1373,7 @@
   "prov.removeYes": "Fjern",
   "prov.removed": "Fjernet {n}",
   "task.runStart": "Startet {time}",
-  "task.totalTitle": "Total arbeidstid"
+  "task.totalTitle": "Total arbeidstid",
+  "task.maxSteps": "Stoppet etter {n} steg (vern mot endeløse løkker). Arbeidet er tatt vare på; grensen endres i config.toml (max_steps).",
+  "task.deadEnd": "SuperCli stoppet workeren: {n} filendringer på rad feilet med samme feil, så flere forsøk ville ikke hjelpe."
 }

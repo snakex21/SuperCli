@@ -1373,5 +1373,7 @@
   "prov.removeYes": "Poista",
   "prov.removed": "Poistettu: {n}",
   "task.runStart": "Aloitettu {time}",
-  "task.totalTitle": "Työaika yhteensä"
+  "task.totalTitle": "Työaika yhteensä",
+  "task.maxSteps": "Pysäytetty {n} vaiheen jälkeen (suoja loputtomia silmukoita vastaan). Työ on tallessa; rajan voit muuttaa config.toml-tiedostossa (max_steps).",
+  "task.deadEnd": "SuperCli pysäytti workerin: {n} tiedostomuutosta peräkkäin epäonnistui samalla virheellä, joten uudet yritykset eivät auttaisi."
 }

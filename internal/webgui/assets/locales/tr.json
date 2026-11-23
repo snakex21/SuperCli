@@ -1373,5 +1373,7 @@
   "prov.removeYes": "Kaldır",
   "prov.removed": "{n} kaldırıldı",
   "task.runStart": "Başlangıç {time}",
-  "task.totalTitle": "Toplam çalışma süresi"
+  "task.totalTitle": "Toplam çalışma süresi",
+  "task.maxSteps": "{n} adımdan sonra durduruldu (sonsuz döngüye karşı koruma). Çalışma korunuyor; sınırı config.toml dosyasında (max_steps) değiştirebilirsiniz.",
+  "task.deadEnd": "SuperCli worker'ı durdurdu: art arda {n} dosya değişikliği aynı hatayla başarısız oldu, daha fazla deneme işe yaramazdı."
 }

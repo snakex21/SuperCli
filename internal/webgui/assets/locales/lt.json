@@ -1373,5 +1373,7 @@
   "prov.removeYes": "Pašalinti",
   "prov.removed": "Pašalinta: {n}",
   "task.runStart": "Pradžia {time}",
-  "task.totalTitle": "Bendras darbo laikas"
+  "task.totalTitle": "Bendras darbo laikas",
+  "task.maxSteps": "Sustabdyta po {n} žingsnių (apsauga nuo begalinių ciklų). Darbas išsaugotas; ribą pakeisite config.toml (max_steps).",
+  "task.deadEnd": "SuperCli sustabdė workerį: {n} failų pakeitimai iš eilės nepavyko su ta pačia klaida, todėl nauji bandymai nepadėtų."
 }

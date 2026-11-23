@@ -1373,5 +1373,7 @@
   "prov.removeYes": "Elimină",
   "prov.removed": "Eliminat: {n}",
   "task.runStart": "Pornit {time}",
-  "task.totalTitle": "Timp total de lucru"
+  "task.totalTitle": "Timp total de lucru",
+  "task.maxSteps": "Oprit după {n} pași (protecție împotriva buclelor infinite). Munca este păstrată; limita se schimbă în config.toml (max_steps).",
+  "task.deadEnd": "SuperCli a oprit workerul: {n} modificări de fișiere la rând au eșuat cu aceeași eroare, așa că alte încercări nu ar ajuta."
 }

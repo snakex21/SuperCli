@@ -1373,5 +1373,7 @@
   "prov.removeYes": "Odstrani",
   "prov.removed": "Odstranjeno: {n}",
   "task.runStart": "Začetek {time}",
-  "task.totalTitle": "Skupni čas dela"
+  "task.totalTitle": "Skupni čas dela",
+  "task.maxSteps": "Ustavljeno po {n} korakih (zaščita pred neskončnimi zankami). Delo je ohranjeno; omejitev spremenite v config.toml (max_steps).",
+  "task.deadEnd": "SuperCli je ustavil workerja: {n} sprememb datotek zapored ni uspelo z isto napako, zato novi poskusi ne bi pomagali."
 }

@@ -1373,5 +1373,7 @@
   "prov.removeYes": "Remover",
   "prov.removed": "{n} removido",
   "task.runStart": "Início {time}",
-  "task.totalTitle": "Tempo total de trabalho"
+  "task.totalTitle": "Tempo total de trabalho",
+  "task.maxSteps": "Interrompido após {n} passos (proteção contra loops infinitos). O trabalho foi mantido; o limite é alterado em config.toml (max_steps).",
+  "task.deadEnd": "O SuperCli parou o worker: {n} alterações de arquivos seguidas falharam com o mesmo erro, então mais tentativas não ajudariam."
 }

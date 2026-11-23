@@ -1373,5 +1373,7 @@
   "prov.removeYes": "Verwijderen",
   "prov.removed": "{n} verwijderd",
   "task.runStart": "Gestart {time}",
-  "task.totalTitle": "Totale werktijd"
+  "task.totalTitle": "Totale werktijd",
+  "task.maxSteps": "Gestopt na {n} stappen (bescherming tegen eindeloze lussen). Het werk is bewaard; de limiet wijzig je in config.toml (max_steps).",
+  "task.deadEnd": "SuperCli heeft de worker gestopt: {n} bestandswijzigingen op rij mislukten met dezelfde fout, dus meer pogingen zouden niet helpen."
 }

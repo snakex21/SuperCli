@@ -1373,5 +1373,7 @@
   "prov.removeYes": "Remove",
   "prov.removed": "Removed {n}",
   "task.runStart": "Started {time}",
-  "task.totalTitle": "Total working time"
+  "task.totalTitle": "Total working time",
+  "task.maxSteps": "Stopped after {n} steps (a guard against endless loops). The work is kept; you can change the limit in config.toml (max_steps).",
+  "task.deadEnd": "SuperCli stopped the worker: {n} file changes in a row failed with the same error, so more attempts would not help."
 }

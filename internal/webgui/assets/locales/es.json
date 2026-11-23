@@ -1373,5 +1373,7 @@
   "prov.removeYes": "Quitar",
   "prov.removed": "Se quitó {n}",
   "task.runStart": "Inicio {time}",
-  "task.totalTitle": "Tiempo total de trabajo"
+  "task.totalTitle": "Tiempo total de trabajo",
+  "task.maxSteps": "Detenido tras {n} pasos (protección contra bucles infinitos). El trabajo se conserva; el límite se cambia en config.toml (max_steps).",
+  "task.deadEnd": "SuperCli detuvo al worker: {n} cambios de archivos seguidos fallaron con el mismo error, así que más intentos no ayudarían."
 }

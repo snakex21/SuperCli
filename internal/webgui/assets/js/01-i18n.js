@@ -132,6 +132,9 @@ var SYSTEM_TEXTS = [
   { key: "notice.persistFailed", re: /^session persistence failed \([\s\S]*$/, args: [], detail: 0 },
   { key: "notice.persistRecovered", re: /^session persistence recovered after \d+ failed write\(s\)[\s\S]*$/, args: [], detail: 0 },
   { key: "notice.checkCycleStop", re: /^SuperCli stopped the edit loop: the edited files went back (\d+) times to a version that had already failed the same check with the same output\.$/, args: ["n"] },
+  // Keep in sync with agent.deadEndStopText and the max-steps error in loop.go.
+  { key: "task.deadEnd", re: /^SuperCli stopped this worker: (\d+) file changes in a row failed with the same error[\s\S]*$/, args: ["n"], detail: 0 },
+  { key: "task.maxSteps", re: /^agent: max steps safety net \((\d+)\) tripped[\s\S]*$/, args: ["n"], detail: 0 },
   { key: "notice.steeringRejected", re: /^\[Steering \S* rejected: [^\]]*\]\nUndelivered instruction: "([\s\S]*)"$/, args: ["text"], detail: 0 },
   { key: "error.loopUnchanged", re: /^agent: stopped — the last (\d+) consecutive tool rounds returned only previously observed successful results/, args: ["n"] },
   { key: "error.loopSource", re: /^agent: stopped — the last (\d+) source-reading rounds only revisited unchanged lines/, args: ["n"] },
