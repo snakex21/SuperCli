@@ -2865,3 +2865,12 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
 .worker-overview .wo-sum-count[data-state="done"]::before { background: var(--ok); }
 @media (prefers-reduced-motion: reduce) { .worker-overview > summary::before { transition: none; } }
 .task-row:not([open]) > summary > button { flex: none; white-space: nowrap; align-self: center; }
+
+/* Several workers stopped by a limit or a lost connection: one button. */
+.worker-resume-all {
+  display: block; margin: 0 auto 6px; padding: 3px 12px; border-radius: 999px; font: inherit; font-size: var(--fs-xs);
+  color: var(--text); background: transparent; border: 1px solid var(--line); cursor: pointer;
+}
+.worker-resume-all[hidden] { display: none; }
+.worker-resume-all:hover { border-color: var(--status-running); color: var(--status-running); }
+.worker-resume-all:disabled { opacity: .55; cursor: default; }

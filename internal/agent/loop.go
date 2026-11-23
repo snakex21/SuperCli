@@ -399,7 +399,8 @@ type Loop struct {
 	workerStatusSource func() []Snapshot
 	// workerStatusLookup finds a worker the live registry does not hold
 	// (saved before a restart). Bound by NewAgentTool.
-	workerStatusLookup func(context.Context, string) string
+	// Returns the status and the last error ("" when unknown).
+	workerStatusLookup func(context.Context, string) (string, string)
 	// navAuto (only meaningful with navigate) makes routing keyword-first:
 	// a confident RouteMap hit skips the extra navigator model round-trip;
 	// only ambiguous prompts fall back to the model navigator.

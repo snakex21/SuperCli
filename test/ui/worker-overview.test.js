@@ -108,3 +108,42 @@ test('worker overview refreshes status and language, opens the current row and r
   assert.equal(Object.keys(h.context.workerOverview).length, 0);
   h.start('worker-1'); assert.notEqual(h.$('#worker-overview-list').children[0], buttons[0]);
 });
+
+test('several workers stopped by a limit or a lost connection get one Resume all button', () => {
+  const h = harness(), sent = [];
+  h.context.sendPrompt = text => { sent.push(text); };
+  const wrap = h.context.el('div');
+  wrap.appendChild(h.$('#worker-overview'));
+  const rows = Object.fromEntries(['worker-3', 'worker-1', 'worker-2', 'worker-4'].map(id => [id, h.start(id)]));
+  const stop = (id, status) => {
+    h.context.addWorkerResumeAction(rows[id], id);
+    h.context.updateWorkerOverview(id, 'code', status, '', rows[id]);
+  };
+  stop('worker-1', 'failed');
+  const button = () => wrap.children.find(child => child.className === 'worker-resume-all');
+  assert.ok(!button() || button().hidden, 'one waiting worker keeps only its card button');
+  stop('worker-2', 'interrupted');
+  stop('worker-3', 'failed');
+  stop('worker-4', 'stopped'); // stopped by the user: not part of "resume all"
+  h.context.renderWorkerOverview();
+  assert.equal(button().hidden, false);
+  assert.equal(button().textContent, 'Resume all (3)');
+  button().click();
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /^Resume worker-1, worker-2, worker-3 with send_message/);
+  for (const id of ['worker-1', 'worker-2', 'worker-3']) assert.equal(rows[id]._resumeButton.disabled, true, id + ' card button');
+  assert.ok(!rows['worker-4']._resumeButton.disabled, 'the user-stopped worker keeps its own button');
+  assert.equal(button().hidden, true);
+  button().click();
+  assert.equal(sent.length, 1, 'a second click resumes nothing more');
+});
+
+test('declined resume reasons read as short notes in the UI language', () => {
+  const h = harness();
+  const key = reason => h.context.refusedKey('send_message', reason);
+  assert.equal(key('refused: worker-4 was stopped on request, so a general resume does not include it. Resume the others'), 'task.blockedStoppedByYou');
+  assert.equal(key('refused: worker-5 failed on its task (tests fail), so a general resume does not repeat it.'), 'task.blockedTaskFailed');
+  assert.equal(key('refused: the user said not to resume workers now. Do not resume worker-1.'), 'task.blockedSaidNo');
+  assert.equal(key('refused: the user asked to resume only the workers they named, not worker-2.'), 'task.blockedNotNamed');
+  assert.equal(key('refused: to resume worker-1 the user must ask for it explicitly (ask to resume'), 'task.blockedNeedsWord');
+});

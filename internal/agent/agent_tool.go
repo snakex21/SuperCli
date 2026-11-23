@@ -242,26 +242,28 @@ func (a *AgentTool) runningDuplicate(agentName, prompt string) string {
 	return ""
 }
 
-// savedWorkerStatus returns the status of a worker of this conversation that
-// is not in the live registry: one saved by an earlier process (restored from
-// the database after a restart). "" when unknown.
-func (a *AgentTool) savedWorkerStatus(ctx context.Context, id string) string {
+// savedWorkerStatus returns the status and last error of a worker of this
+// conversation, also one the live registry does not hold: saved by an
+// earlier process (restored from the database after a restart). "" when
+// unknown.
+func (a *AgentTool) savedWorkerStatus(ctx context.Context, id string) (string, string) {
 	if a == nil || a.Workers == nil {
-		return ""
+		return "", ""
 	}
 	if w, ok := a.Workers.Get(id); ok {
-		return w.status()
+		s := w.Snapshot()
+		return s.Status, s.LastError
 	}
 	store := a.Workers.Store()
 	sid := sessionIDOf(a.ParentLoop)
 	if store == nil || sid == "" {
-		return ""
+		return "", ""
 	}
 	rec, ok, err := store.LoadWorker(ctx, sid, id)
 	if err != nil || !ok {
-		return ""
+		return "", ""
 	}
-	return rec.Status
+	return rec.Status, rec.LastError
 }
 
 // conversationWorkersWithSaved adds this conversation's workers that exist

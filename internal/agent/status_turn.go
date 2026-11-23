@@ -219,11 +219,14 @@ func statusClip(s string, max int) string {
 //   - in an automatic turn (structural: no user message at all) it is always
 //     refused, and so is a new task that repeats a worker of this
 //     conversation (see AgentTool.repeatedBrief);
-//   - in a user turn it needs an unambiguous signal: the Resume/Stop button
-//     (whose message names the worker) or a message that names the worker
-//     ("worker-7", "worker 7") in a clause without a negation. No keyword
-//     guessing: "nie wznawiaj go", "tak, ale co to za plik?" or "ile to 7
-//     plików?" are not a go-ahead.
+//   - stopping in a user turn needs a message that names the worker
+//     ("worker-7", "worker 7") in a clause without a negation, or the Stop
+//     button;
+//   - resuming in a user turn follows what the user plainly asked (see
+//     resumeRefusal): "wznów je", "możesz wznowić te modele", "resume them"
+//     cover every worker that stopped on a limit, a connection error or a
+//     restart; named workers narrow it; "nie wznawiaj" stops it. Workers the
+//     user stopped and genuine task failures run again only when named.
 //
 // Deliberate decision: SuperCli keeps no record of an approved plan (plan
 // mode is a prompt-only instruction; the goal tool tracks progress, not
@@ -257,8 +260,10 @@ func (l *Loop) wakeResumeRefusal(tc llm.ToolCall) string {
 	if target == "" {
 		return ""
 	}
+	var status, lastError string
 	if action == "resume" {
-		switch l.workerStatusOf(target) {
+		status, lastError = l.workerStatusOf(target)
+		switch status {
 		case "failed", "stopped", WorkerStatusInterrupted:
 		default:
 			return "" // continuing a finished worker is ordinary delegation
@@ -269,27 +274,55 @@ func (l *Loop) wakeResumeRefusal(tc llm.ToolCall) string {
 			"Report what happened and offer it; the user uses the %s button or names the worker in a message.", action, target, map[string]string{"resume": "Resume", "stop": "Stop"}[action])
 	}
 	// No turn context (direct dispatch outside a run): nothing to judge by.
-	if strings.TrimSpace(l.userPromptForRun) == "" || namesWorkerWithoutNegation(l.userPromptForRun, target, action) {
+	if strings.TrimSpace(l.userPromptForRun) == "" {
+		return ""
+	}
+	if action == "resume" {
+		return resumeRefusal(l.userPromptForRun, target, status, lastError, l.conversationWorkerNumbers())
+	}
+	if namesWorkerWithoutNegation(l.userPromptForRun, target, action) {
 		return ""
 	}
 	return fmt.Sprintf("refused: to %s %s the user must ask for it explicitly (name the worker, or use the %s button); "+
 		"the current message does not. Answer the user and offer it.", action, target, map[string]string{"resume": "Resume", "stop": "Stop"}[action])
 }
 
-// workerStatusOf finds a worker's state in the live registry, then in the
-// database (a worker saved before a restart is not in memory).
-func (l *Loop) workerStatusOf(id string) string {
+// workerStatusOf finds a worker's state and last error in the live registry,
+// then in the database (a worker saved before a restart is not in memory).
+func (l *Loop) workerStatusOf(id string) (string, string) {
 	if l.workerStatusSource != nil {
 		for _, s := range l.workerStatusSource() {
-			if s.ID == id {
-				return s.Status
+			if s.ID != id {
+				continue
 			}
+			if s.LastError == "" && s.Status == "failed" && l.workerStatusLookup != nil {
+				// Saved-only workers are listed without their error.
+				if _, lastError := l.workerStatusLookup(context.Background(), id); lastError != "" {
+					return s.Status, lastError
+				}
+			}
+			return s.Status, s.LastError
 		}
 	}
 	if l.workerStatusLookup != nil {
 		return l.workerStatusLookup(context.Background(), id)
 	}
-	return ""
+	return "", ""
+}
+
+// conversationWorkerNumbers lists the numbers of this conversation's workers
+// ("worker-363" -> "363"), so a bare number in a message can name one.
+func (l *Loop) conversationWorkerNumbers() map[string]bool {
+	out := map[string]bool{}
+	if l.workerStatusSource == nil {
+		return out
+	}
+	for _, s := range l.workerStatusSource() {
+		if num := strings.TrimPrefix(s.ID, "worker-"); num != s.ID && num != "" {
+			out[num] = true
+		}
+	}
+	return out
 }
 
 // Explicit consent (review 2): the user asks for it in the imperative, in a

@@ -1485,9 +1485,62 @@ function addWorkerResumeAction(row, id) {
     if (button.disabled) return; // a double click resumes once
     button.disabled = true;
     resumeWorkerFromCard(id);
+    refreshWorkerResumeAll();
   });
   row._resumeButton = button;
   row._body.appendChild(button);
+  refreshWorkerResumeAll();
+}
+// Several workers stopped by a limit, a lost connection or a restart: one
+// "Resume all (N)" button under the worker panel resumes them together.
+// Workers the user stopped keep only their own card button.
+function workerResumeAllIDs() {
+  var ids = [];
+  Object.keys(typeof workerOverview === "object" && workerOverview || {}).forEach(function (id) {
+    var w = workerOverview[id], row = w && w.row, button = row && row._resumeButton;
+    if (!w || (w.status !== "failed" && w.status !== "interrupted")) return;
+    if (!button || button.disabled || workerRows[id] !== row) return;
+    ids.push(id);
+  });
+  return ids.sort(function (a, b) { return a.localeCompare(b, undefined, { numeric: true }); });
+}
+function refreshWorkerResumeAll() {
+  if (typeof $ !== "function") return;
+  var panel = $("#worker-overview");
+  if (!panel || !panel.parentNode || typeof panel.parentNode.insertBefore !== "function") return;
+  var ids = workerResumeAllIDs();
+  var button = panel._resumeAll;
+  if (ids.length < 2) {
+    if (button) button.hidden = true;
+    return;
+  }
+  if (!button) {
+    button = panel._resumeAll = el("button", "worker-resume-all");
+    button.type = "button";
+    button.title = t("task.resumeHint");
+    button.addEventListener("click", function (event) {
+      if (event && event.preventDefault) event.preventDefault();
+      var list = button._ids || [];
+      if (button.disabled || !list.length) return; // a double click resumes once
+      button.disabled = true;
+      list.forEach(function (id) {
+        var row = workerRows[id];
+        if (row && row._resumeButton) row._resumeButton.disabled = true;
+      });
+      resumeWorkersFromPanel(list);
+      button.hidden = true;
+    });
+  }
+  if (button.parentNode !== panel.parentNode || button.previousSibling !== panel) panel.parentNode.insertBefore(button, panel.nextSibling);
+  button._ids = ids;
+  setNodeText(button, t("task.resumeAll").replace("{n}", String(ids.length)));
+  button.disabled = false;
+  button.hidden = false;
+}
+function resumeWorkersFromPanel(ids) {
+  var text = t("task.resumeAllPrompt").replace("{ids}", ids.join(", "));
+  if (typeof streaming === "boolean" && streaming && typeof enqueuePrompt === "function") return enqueuePrompt(text, []);
+  if (typeof sendPrompt === "function") return sendPrompt(text, []);
 }
 // A turn that stopped on an error has no answer: the error line offers one
 // "Continue" that sends a short continue message through the normal chat path.
@@ -1727,6 +1780,7 @@ function renderWorkerOverview() {
   workerOverviewView = { panel: panel, list: list, items: items, counts: counts };
   if (typeof renderBackgroundAgents === "function") renderBackgroundAgents();
   panel.hidden = !items.length;
+  refreshWorkerResumeAll();
   // Collapse once nothing is working so the panel does not cover the chat,
   // unless the user already chose otherwise during this run.
   if (items.length && !workerOverviewUserToggled) {
@@ -3130,6 +3184,10 @@ function refusedKey(toolName, reason) {
   if (/only asked for a status update/.test(r)) return "task.blockedStatus";
   if (/already working on this exact task/.test(r)) return "task.blockedDuplicate";
   if (/must ask for it explicitly/.test(r)) return toolName === "task_stop" ? "task.blockedStop" : "task.blockedNeedsWord";
+  if (/stopped on request, so a general resume/.test(r)) return "task.blockedStoppedByYou";
+  if (/failed on its task/.test(r)) return "task.blockedTaskFailed";
+  if (/said not to resume/.test(r)) return "task.blockedSaidNo";
+  if (/only the workers they named/.test(r)) return "task.blockedNotNamed";
   if (/automatic turn/.test(r)) return toolName === "task" ? "task.blockedTask" : toolName === "task_stop" ? "task.blockedStop" : "task.blockedResume";
   return toolName === "send_message" ? "task.blockedResume" : toolName === "task_stop" ? "task.blockedStop" : "task.blockedTask";
 }
