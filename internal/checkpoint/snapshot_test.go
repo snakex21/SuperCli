@@ -332,14 +332,15 @@ func TestFullCaptureOverLimitRunsCommandWithWarningAndNoBlobWrites(t *testing.T)
 	if !strings.Contains(result.Text, "bez checkpointu: przekroczony limit") || !strings.Contains(result.Text, "checkpoint snapshot limit exceeded") {
 		t.Fatalf("missing visible warning: %q", result.Text)
 	}
-	// Tools other than ctx_execute keep the strict refusal.
-	// read_zip without an explicit target also needs a whole-workspace baseline.
+	// Other tools run too, without a restore point (a checkpoint is never a
+	// gate); still nothing is written to the store.
+	otherCalled := false
 	other := turn.Wrap(tools.Tool{UncheckedArgs: true, Name: "read_zip", Fn: func(context.Context, json.RawMessage) (tools.Result, error) {
-		t.Fatal("whole-workspace tool ran without a baseline")
+		otherCalled = true
 		return tools.Result{}, nil
 	}})
-	if result, _ := other.Fn(context.Background(), json.RawMessage(`{"action":"extract"}`)); !errors.Is(result.Err, ErrSnapshotLimit) {
-		t.Fatalf("unknown tool limit lost: %v", result.Err)
+	if result, _ := other.Fn(context.Background(), json.RawMessage(`{"action":"extract"}`)); result.Err != nil || !otherCalled || !strings.Contains(result.Text, NoRestorePointNotice) {
+		t.Fatalf("whole-workspace tool over the limit: called=%v result=%+v", otherCalled, result)
 	}
 	entries, err := os.ReadDir(filepath.Join(m.repo, "objects"))
 	if err != nil {

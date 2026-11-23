@@ -239,10 +239,11 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	lateChanges := &deferredCheckpointChanges{store: usageStore, sessionID: sid}
 	var checkpointTurn *checkpoint.Turn
 	if manager, openErr := e.checkpointManager(home); openErr == nil {
-		if !wake {
-			// An automatic turn has no user message to bind a rewind point to.
-			checkpointTurn = manager.NewTurn(sid, prompt)
-		}
+		// Automatic turns get a checkpoint turn too: a worker they start or
+		// continue borrows it, so its file changes have a restore point
+		// (without one they used to be refused). Such a record has no user
+		// message to rewind to; it is undone by its id.
+		checkpointTurn = manager.NewTurn(sid, prompt)
 		lateChanges.manager = manager
 	} else if !errors.Is(openErr, checkpoint.ErrUnavailable) {
 		log.Printf("checkpoint open: %v", openErr)

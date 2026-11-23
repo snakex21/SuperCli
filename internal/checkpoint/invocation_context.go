@@ -88,6 +88,14 @@ func (borrow *InvocationBorrow) Close() {
 	}
 }
 
+type noTurnFallbackKey struct{}
+
+// WithoutTurnFallback marks a detached worker run: its file changes use only
+// the checkpoint turn bound to it, never the controller's newest turn.
+func WithoutTurnFallback(ctx context.Context) context.Context {
+	return context.WithValue(ctx, noTurnFallbackKey{}, true)
+}
+
 // EnterBoundMutation selects the current invocation's Turn, not a retained
 // registry's lexical Turn or Controller's newest Turn. The original tool still
 // closes over its own home, so rebinding across workspaces must fail closed.
@@ -95,6 +103,12 @@ func (borrow *InvocationBorrow) Close() {
 func EnterBoundMutation(ctx context.Context, expected *Manager, fallback *Turn, fallbackBarrier *TurnBarrier) (*Turn, func(), error) {
 	binding, ok := ctx.Value(turnBindingKey{}).(turnBinding)
 	if !ok {
+		if ctx.Value(noTurnFallbackKey{}) != nil {
+			// A detached worker run never borrows whichever turn happens to be
+			// newest: its changes would land in (or be refused by) an unrelated
+			// turn. Without its own binding it runs without a restore point.
+			return nil, nil, ErrMissingTurnBinding
+		}
 		binding = turnBinding{turn: fallback, barrier: fallbackBarrier}
 	}
 	if expected == nil || binding.turn == nil || binding.turn.manager == nil || binding.barrier == nil {

@@ -321,7 +321,7 @@ func (a *AgentTool) startBackgroundRun(parentCtx context.Context, w *Worker, pro
 		// coordinator's turn ends (1.0.37: such calls were not recorded).
 		ctx = llm.CarryDurableCallSinks(ctx, parentCtx)
 		defer borrow.Close()
-		ctx = borrow.Bind(ctx)
+		ctx = checkpoint.WithoutTurnFallback(borrow.Bind(ctx))
 		if invocation.callID != "" || invocation.checks != nil {
 			ctx = context.WithValue(ctx, workerInvocationKey{}, workerInvocation{callID: invocation.callID, checks: invocation.checks})
 		}

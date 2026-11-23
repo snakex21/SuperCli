@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	tools "supercli/internal/tools/core"
+	"supercli/internal/tools/sandbox"
 )
 
 var ErrUnavailable = errors.New("checkpoint unavailable (git executable is required)")
@@ -223,30 +225,12 @@ func (c *Controller) Wrap(spec tools.Tool) tools.Tool {
 		if readOnlyCtx, readOnly := checkpointReadOnlyContext(ctx, spec.Name, args); readOnly {
 			return original(readOnlyCtx, args)
 		}
-		ctx, err = c.manager.pinDownloadToolContext(ctx, spec.Name, args)
-		if err != nil {
-			return tools.Result{Err: fmt.Errorf("checkpoint before %s (tool did not run): %w", spec.Name, err)}, nil
-		}
 		fallback := c.currentTurn()
 		var barrier *TurnBarrier
 		if fallback != nil {
 			barrier = &fallback.barrier
 		}
-		turn, leave, err := EnterBoundMutation(ctx, c.manager, fallback, barrier)
-		if err != nil {
-			return tools.Result{Err: fmt.Errorf("checkpoint before %s (tool did not run): %w", spec.Name, err)}, nil
-		}
-		defer leave()
-		notice, err := turn.ensureBeforeForToolNotice(ctx, spec.Name, args)
-		if err != nil {
-			return tools.Result{Err: fmt.Errorf("checkpoint before %s (tool did not run): %w", spec.Name, err)}, nil
-		}
-		result, err := original(ctx, args)
-		if err == nil {
-			turn.describeExternalCapture(spec.Name, &result)
-		}
-		appendCheckpointNotice(&result, notice)
-		return result, err
+		return c.manager.runCheckpointed(ctx, spec.Name, args, original, fallback, barrier)
 	}
 	return spec
 }
@@ -334,27 +318,55 @@ func (t *Turn) Wrap(spec tools.Tool) tools.Tool {
 		if readOnlyCtx, readOnly := checkpointReadOnlyContext(ctx, spec.Name, args); readOnly {
 			return original(readOnlyCtx, args)
 		}
-		ctx, err = t.manager.pinDownloadToolContext(ctx, spec.Name, args)
-		if err != nil {
-			return tools.Result{Err: fmt.Errorf("checkpoint before %s (tool did not run): %w", spec.Name, err)}, nil
-		}
-		turn, leave, err := EnterBoundMutation(ctx, t.manager, t, &t.barrier)
-		if err != nil {
-			return tools.Result{Err: fmt.Errorf("checkpoint before %s (tool did not run): %w", spec.Name, err)}, nil
-		}
-		defer leave()
-		notice, err := turn.ensureBeforeForToolNotice(ctx, spec.Name, args)
-		if err != nil {
-			return tools.Result{Err: fmt.Errorf("checkpoint before %s (tool did not run): %w", spec.Name, err)}, nil
-		}
-		result, err := original(ctx, args)
-		if err == nil {
-			turn.describeExternalCapture(spec.Name, &result)
-		}
-		appendCheckpointNotice(&result, notice)
-		return result, err
+		return t.manager.runCheckpointed(ctx, spec.Name, args, original, t, &t.barrier)
 	}
 	return spec
+}
+
+// runCheckpointed takes the restore point before a file-changing tool and
+// runs it. A checkpoint is a convenience, never a gate: when the restore
+// point cannot be taken (closed turn, no binding, capture error) the tool
+// still runs; the step is logged and its result says it has no restore point.
+func (m *Manager) runCheckpointed(ctx context.Context, name string, args json.RawMessage, original func(context.Context, json.RawMessage) (tools.Result, error), fallback *Turn, barrier *TurnBarrier) (tools.Result, error) {
+	pinned, err := m.pinDownloadToolContext(ctx, name, args)
+	if err != nil {
+		return runWithoutRestorePoint(ctx, name, args, original, err)
+	}
+	turn, leave, err := EnterBoundMutation(pinned, m, fallback, barrier)
+	if err != nil {
+		return runWithoutRestorePoint(pinned, name, args, original, err)
+	}
+	defer leave()
+	notice, err := turn.ensureBeforeForToolNotice(pinned, name, args)
+	if err != nil {
+		return runWithoutRestorePoint(pinned, name, args, original, err)
+	}
+	result, err := original(pinned, args)
+	if err == nil {
+		turn.describeExternalCapture(name, &result)
+	}
+	appendCheckpointNotice(&result, notice)
+	return result, err
+}
+
+// NoRestorePointNotice ends the result of a tool that ran without a restore
+// point (the GUI translates it).
+const NoRestorePointNotice = "[checkpoint] No restore point was taken for this step; the change was made."
+
+func runWithoutRestorePoint(ctx context.Context, name string, args json.RawMessage, original func(context.Context, json.RawMessage) (tools.Result, error), cause error) (tools.Result, error) {
+	// Two refusals are not about the restore point and stay: the user
+	// stopped the call (its context ended), and a path outside the workspace
+	// that the sandbox does not allow.
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return tools.Result{Err: fmt.Errorf("%s did not run: %w", name, errors.Join(ctxErr, cause))}, nil
+	}
+	if errors.Is(cause, sandbox.ErrEscape) {
+		return tools.Result{Err: fmt.Errorf("%s did not run: %w", name, cause)}, nil
+	}
+	log.Printf("checkpoint: %s ran without a restore point: %v", name, cause)
+	result, err := original(ctx, args)
+	appendCheckpointNotice(&result, NoRestorePointNotice)
+	return result, err
 }
 
 func mutatingTool(name string) bool {

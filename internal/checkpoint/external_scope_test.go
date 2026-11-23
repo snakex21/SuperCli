@@ -131,8 +131,9 @@ func TestExternalCaptureFailureStopsActualTool(t *testing.T) {
 		return tools.Result{}, nil
 	}})
 	raw, _ := json.Marshal(map[string]string{"path": path})
+	// The change is made without a restore point rather than refused.
 	r, _ := wrapped.Fn(context.Background(), raw)
-	if r.Err == nil || called {
-		t.Fatal("mutation ran without a successful external capture")
+	if r.Err != nil || !called || !strings.Contains(r.Text, NoRestorePointNotice) {
+		t.Fatalf("external capture failure: called=%v result=%+v", called, r)
 	}
 }

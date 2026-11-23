@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"supercli/internal/tools"
@@ -168,9 +169,11 @@ func TestBeforePinRetryKeepsOriginalBytesForCoveredAndWholeTurns(t *testing.T) {
 				called = true
 				return tools.Result{}, nil
 			}})
+			// A checkpoint is never a gate: the tool runs without a restore
+			// point for this step, and the original pin is still repaired later.
 			res, err := spec.Fn(ctx, json.RawMessage(`{"path":"original.txt"}`))
-			if err != nil || res.Err == nil || called || turn.beforePinned {
-				t.Fatalf("unrepaired pin permitted mutation: called=%v res=%v err=%v", called, res.Err, err)
+			if err != nil || res.Err != nil || !called || turn.beforePinned || !strings.Contains(res.Text, NoRestorePointNotice) {
+				t.Fatalf("unrepaired pin: called=%v res=%+v err=%v", called, res, err)
 			}
 			t.Setenv("PATH", originalPath)
 			if whole {
@@ -210,9 +213,10 @@ func TestBeforePinRetryMissingObjectBlocksMutation(t *testing.T) {
 		called = true
 		return tools.Result{}, nil
 	}})
+	// The tool runs without a restore point instead of being refused.
 	res, err := spec.Fn(ctx, json.RawMessage(`{"path":"first.txt"}`))
-	if err != nil || res.Err == nil || called || turn.beforePinned {
-		t.Fatalf("missing before object permitted mutation: called=%v res=%v err=%v", called, res.Err, err)
+	if err != nil || res.Err != nil || !called || turn.beforePinned || !strings.Contains(res.Text, NoRestorePointNotice) {
+		t.Fatalf("missing before object: called=%v res=%+v err=%v", called, res, err)
 	}
 	// The synthetic failure changed no files. Restore the real OID so cleanup
 	// can release the fixture's admitted lifetime lease through normal Complete.
