@@ -54,6 +54,7 @@
   "composer.sendTogether": "Samen verzenden",
   "composer.messageNumber": "Bericht {index}/{count}",
   "task.modelThinking": "{model} · denkniveau: {effort}",
+  "task.modelChanged": "Model: {old} → {new}",
   "setting.queue_merge.label": "Wachtrij samenvoegen",
   "setting.queue_merge.desc": "Berichten na een antwoord samenvoegen; bijlagen in veilige groepen splitsen.",
   "modes.desc.queue_merge": "Berichten na een antwoord samenvoegen; bijlagen in veilige groepen splitsen.",

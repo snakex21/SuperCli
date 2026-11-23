@@ -54,6 +54,7 @@
   "composer.sendTogether": "Envoyer ensemble",
   "composer.messageNumber": "Message {index}/{count}",
   "task.modelThinking": "{model} · réflexion : {effort}",
+  "task.modelChanged": "Modèle: {old} → {new}",
   "setting.queue_merge.label": "Fusionner la file",
   "setting.queue_merge.desc": "Regrouper les messages après une réponse ; répartir les pièces jointes en lots sûrs.",
   "modes.desc.queue_merge": "Regrouper les messages après une réponse ; répartir les pièces jointes en lots sûrs.",

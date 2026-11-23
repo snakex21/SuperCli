@@ -54,6 +54,7 @@
   "composer.sendTogether": "Надіслати разом",
   "composer.messageNumber": "Повідомлення {index}/{count}",
   "task.modelThinking": "{model} · міркування: {effort}",
+  "task.modelChanged": "Модель: {old} → {new}",
   "setting.queue_merge.label": "Об’єднати чергу",
   "setting.queue_merge.desc": "Об’єднувати повідомлення після відповіді; ділити вкладення на безпечні пакети.",
   "modes.desc.queue_merge": "Об’єднувати повідомлення після відповіді; ділити вкладення на безпечні пакети.",

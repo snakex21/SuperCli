@@ -54,6 +54,7 @@
   "composer.sendTogether": "Trimite împreună",
   "composer.messageNumber": "Mesaj {index}/{count}",
   "task.modelThinking": "{model} · raționament: {effort}",
+  "task.modelChanged": "Model: {old} → {new}",
   "setting.queue_merge.label": "Combină coada",
   "setting.queue_merge.desc": "Combină mesajele după un răspuns; împarte atașamentele în loturi sigure.",
   "modes.desc.queue_merge": "Combină mesajele după un răspuns; împarte atașamentele în loturi sigure.",

@@ -147,3 +147,30 @@ test('declined resume reasons read as short notes in the UI language', () => {
   assert.equal(key('refused: the user asked to resume only the workers they named, not worker-2.'), 'task.blockedNotNamed');
   assert.equal(key('refused: to resume worker-1 the user must ask for it explicitly (ask to resume'), 'task.blockedNeedsWord');
 });
+
+test('a resumed run on another model shows one Model: old → new line on its card', () => {
+  const h = harness(), c = h.context;
+  const card = (callID) => {
+    const row = c.el('details');
+    row._body = c.el('div'); row._stat = c.el('span'); row._tname = c.el('span'); row._thint = c.el('span');
+    row._activity = c.el('div', 'task-activity'); row._taskPrompt = 'Brief worker-5';
+    Object.defineProperty(row._thint, 'childNodes', {get() { return this.children; }});
+    h.$('#stream').appendChild(row); c.toolRows[callID] = row;
+    return row;
+  };
+  const first = card('task-1');
+  c.addWorkerProgress({id: 'worker-5', name: 'code', parent_call_id: 'task-1', kind: 'started', run: 1, model: 'gpt-a', reasoning_effort: 'high'});
+  assert.equal(first._activity.children.length, 0, 'the first run has nothing to compare with');
+  c.addWorkerProgress({id: 'worker-5', name: 'code', parent_call_id: 'task-1', kind: 'finished', run: 1, status: 'failed', model: 'gpt-a', reasoning_effort: 'high'});
+  const resumed = card('send-1');
+  const start2 = {id: 'worker-5', name: 'code', parent_call_id: 'send-1', kind: 'started', run: 2, model: 'gpt-b', reasoning_effort: 'low'};
+  c.addWorkerProgress(start2);
+  c.addWorkerProgress({...start2}); // a replayed start of the same run
+  const notes = resumed._activity.children.filter(child => child.className.includes('model-change'));
+  assert.equal(notes.length, 1);
+  assert.match(notes[0].textContent, /^Model: gpt-a.* → gpt-b/);
+  assert.match(resumed._modelLabel.textContent, /^gpt-b/, 'the card shows the model of the current run');
+  const third = card('send-2');
+  c.addWorkerProgress({...start2, parent_call_id: 'send-2', run: 3});
+  assert.equal(third._activity.children.length, 0, 'same model and reasoning: no line');
+});

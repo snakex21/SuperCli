@@ -54,6 +54,7 @@
   "composer.sendTogether": "Pošlji skupaj",
   "composer.messageNumber": "Sporočilo {index}/{count}",
   "task.modelThinking": "{model} · razmišljanje modela: {effort}",
+  "task.modelChanged": "Model: {old} → {new}",
   "setting.queue_merge.label": "Združi čakalno vrsto",
   "setting.queue_merge.desc": "Po odgovoru združi sporočila; razdeli priloge v varne pakete.",
   "modes.desc.queue_merge": "Po odgovoru združi sporočila; razdeli priloge v varne pakete.",

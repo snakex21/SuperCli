@@ -54,6 +54,7 @@
   "composer.sendTogether": "Send together",
   "composer.messageNumber": "Message {index}/{count}",
   "task.modelThinking": "{model} · thinking: {effort}",
+  "task.modelChanged": "Model: {old} → {new}",
   "setting.queue_merge.label": "Merge queue",
   "setting.queue_merge.desc": "Automatically combine queued messages after a reply; split attachments into safe batches.",
   "modes.desc.queue_merge": "Automatically combine queued messages after a reply; split attachments into safe batches.",

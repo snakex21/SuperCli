@@ -54,6 +54,7 @@
   "composer.sendTogether": "Lähetä yhdessä",
   "composer.messageNumber": "Viesti {index}/{count}",
   "task.modelThinking": "{model} · ajattelun taso: {effort}",
+  "task.modelChanged": "Malli: {old} → {new}",
   "setting.queue_merge.label": "Yhdistä jono",
   "setting.queue_merge.desc": "Yhdistä viestit vastauksen jälkeen; jaa liitteet turvallisiin eriin.",
   "modes.desc.queue_merge": "Yhdistä viestit vastauksen jälkeen; jaa liitteet turvallisiin eriin.",

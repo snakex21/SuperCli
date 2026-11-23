@@ -54,6 +54,7 @@
   "composer.sendTogether": "Изпрати заедно",
   "composer.messageNumber": "Съобщение {index}/{count}",
   "task.modelThinking": "{model} · мислене: {effort}",
+  "task.modelChanged": "Модел: {old} → {new}",
   "setting.queue_merge.label": "Обединяване на опашката",
   "setting.queue_merge.desc": "След отговор автоматично обединява съобщенията от опашката и разделя прикачените файлове на безопасни пакети.",
   "modes.desc.queue_merge": "След отговор автоматично обединява съобщенията от опашката и разделя прикачените файлове на безопасни пакети.",

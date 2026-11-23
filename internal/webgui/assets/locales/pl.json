@@ -54,6 +54,7 @@
   "composer.sendTogether": "Wyślij razem",
   "composer.messageNumber": "Wiadomość {index}/{count}",
   "task.modelThinking": "{model} · rozumowanie: {effort}",
+  "task.modelChanged": "Model: {old} → {new}",
   "setting.queue_merge.label": "Łącz kolejkę",
   "setting.queue_merge.desc": "Automatycznie łącz wiadomości z kolejki po odpowiedzi; dziel załączniki na bezpieczne partie.",
   "modes.desc.queue_merge": "Automatycznie łącz wiadomości z kolejki po odpowiedzi; dziel załączniki na bezpieczne partie.",

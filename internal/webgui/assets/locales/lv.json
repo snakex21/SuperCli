@@ -54,6 +54,7 @@
   "composer.sendTogether": "Sūtīt kopā",
   "composer.messageNumber": "Ziņojums {index}/{count}",
   "task.modelThinking": "{model} · domāšana: {effort}",
+  "task.modelChanged": "Modelis: {old} → {new}",
   "setting.queue_merge.label": "Apvienot rindu",
   "setting.queue_merge.desc": "Apvienot ziņojumus pēc atbildes; sadalīt pielikumus drošās grupās.",
   "modes.desc.queue_merge": "Apvienot ziņojumus pēc atbildes; sadalīt pielikumus drošās grupās.",

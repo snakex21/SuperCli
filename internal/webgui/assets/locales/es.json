@@ -54,6 +54,7 @@
   "composer.sendTogether": "Enviar juntos",
   "composer.messageNumber": "Mensaje {index}/{count}",
   "task.modelThinking": "{model} · razonamiento: {effort}",
+  "task.modelChanged": "Modelo: {old} → {new}",
   "setting.queue_merge.label": "Combinar cola",
   "setting.queue_merge.desc": "Combinar mensajes tras una respuesta; dividir adjuntos en lotes seguros.",
   "modes.desc.queue_merge": "Combinar mensajes tras una respuesta; dividir adjuntos en lotes seguros.",

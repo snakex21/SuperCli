@@ -54,6 +54,7 @@
   "composer.sendTogether": "Send samlet",
   "composer.messageNumber": "Melding {index}/{count}",
   "task.modelThinking": "{model} · tenkning: {effort}",
+  "task.modelChanged": "Modell: {old} → {new}",
   "setting.queue_merge.label": "Slå sammen køen",
   "setting.queue_merge.desc": "Slå automatisk sammen kølagte meldinger etter et svar, og del vedlegg i sikre deler.",
   "modes.desc.queue_merge": "Slå automatisk sammen kølagte meldinger etter et svar, og del vedlegg i sikre deler.",

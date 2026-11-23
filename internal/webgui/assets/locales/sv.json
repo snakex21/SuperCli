@@ -54,6 +54,7 @@
   "composer.sendTogether": "Skicka tillsammans",
   "composer.messageNumber": "Meddelande {index}/{count}",
   "task.modelThinking": "{model} · tänkenivå: {effort}",
+  "task.modelChanged": "Modell: {old} → {new}",
   "setting.queue_merge.label": "Slå ihop kön",
   "setting.queue_merge.desc": "Slå ihop meddelanden efter ett svar; dela bilagor i säkra omgångar.",
   "modes.desc.queue_merge": "Slå ihop meddelanden efter ett svar; dela bilagor i säkra omgångar.",

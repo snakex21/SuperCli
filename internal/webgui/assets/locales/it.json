@@ -54,6 +54,7 @@
   "composer.sendTogether": "Invia insieme",
   "composer.messageNumber": "Messaggio {index}/{count}",
   "task.modelThinking": "{model} · ragionamento: {effort}",
+  "task.modelChanged": "Modello: {old} → {new}",
   "setting.queue_merge.label": "Unisci coda",
   "setting.queue_merge.desc": "Unisci i messaggi dopo una risposta; dividi gli allegati in gruppi sicuri.",
   "modes.desc.queue_merge": "Unisci i messaggi dopo una risposta; dividi gli allegati in gruppi sicuri.",

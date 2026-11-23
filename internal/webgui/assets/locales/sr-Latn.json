@@ -54,6 +54,7 @@
   "composer.sendTogether": "Pošalji zajedno",
   "composer.messageNumber": "Poruka {index}/{count}",
   "task.modelThinking": "{model} · razmišljanje: {effort}",
+  "task.modelChanged": "Model: {old} → {new}",
   "setting.queue_merge.label": "Spoji red",
   "setting.queue_merge.desc": "Spoji poruke posle odgovora; podeli priloge u bezbedne pakete.",
   "modes.desc.queue_merge": "Spoji poruke posle odgovora; podeli priloge u bezbedne pakete.",

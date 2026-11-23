@@ -23,6 +23,9 @@ type SendMessageTool struct {
 	// StartBackground starts a continuation whose runMu the caller holds and
 	// whose run the registry has admitted; it owns both from then on.
 	StartBackground func(context.Context, *Worker, string) error
+	// Refresh applies the current worker model and reasoning settings before
+	// the next run; the caller holds the worker's runMu (optional).
+	Refresh func(context.Context, *Worker)
 }
 
 func NewSendMessageTool(workers *WorkerRegistry) *SendMessageTool {
@@ -42,6 +45,7 @@ func NewSendMessageToolFor(a *AgentTool) *SendMessageTool {
 	// report can be stranded.
 	s.CanBackground = a.backgroundDelegation
 	s.StartBackground = a.startBackgroundContinuation
+	s.Refresh = a.refreshWorkerSettingsLocked
 	return s
 }
 
@@ -141,6 +145,9 @@ func (s *SendMessageTool) execute(ctx context.Context, raw json.RawMessage) (too
 		if !w.runMu.TryLock() {
 			return tools.Result{Err: fmt.Errorf("worker %s is already running; its current task must finish before a follow-up (use mode=steer to correct it)", w.ID)}, nil
 		}
+		if s.Refresh != nil {
+			s.Refresh(ctx, w)
+		}
 		before := w.Snapshot()
 		if err := s.Workers.startContinuation(w); err != nil {
 			w.runMu.Unlock()
@@ -153,6 +160,9 @@ func (s *SendMessageTool) execute(ctx context.Context, raw json.RawMessage) (too
 		}
 		return tools.Result{Text: backgroundRunningNotice(w, "continued in background")}, nil
 	}
+	// An idle worker takes the current settings; a running one keeps its own
+	// until its next run (the invocation below waits for it).
+	refreshIfIdle(ctx, w, s.Refresh)
 	handoff, err := runWorkerInvocation(llm.WithCallReason(ctx, llm.ReasonResume), w, message, s.Workers)
 	return handoff.result(w, err), nil
 }

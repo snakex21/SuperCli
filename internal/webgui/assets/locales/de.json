@@ -54,6 +54,7 @@
   "composer.sendTogether": "Zusammen senden",
   "composer.messageNumber": "Nachricht {index}/{count}",
   "task.modelThinking": "{model} · Denktiefe: {effort}",
+  "task.modelChanged": "Modell: {old} → {new}",
   "setting.queue_merge.label": "Warteschlange verbinden",
   "setting.queue_merge.desc": "Nach einer Antwort Nachrichten zusammenfassen; Anhänge in sichere Pakete aufteilen.",
   "modes.desc.queue_merge": "Nach einer Antwort Nachrichten zusammenfassen; Anhänge in sichere Pakete aufteilen.",

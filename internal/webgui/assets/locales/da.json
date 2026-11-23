@@ -54,6 +54,7 @@
   "composer.sendTogether": "Send samlet",
   "composer.messageNumber": "Besked {index}/{count}",
   "task.modelThinking": "{model} · tænkning: {effort}",
+  "task.modelChanged": "Model: {old} → {new}",
   "setting.queue_merge.label": "Saml køen",
   "setting.queue_merge.desc": "Saml beskeder efter et svar; opdel vedhæftninger i sikre portioner.",
   "modes.desc.queue_merge": "Saml beskeder efter et svar; opdel vedhæftninger i sikre portioner.",

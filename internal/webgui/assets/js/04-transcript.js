@@ -3801,6 +3801,25 @@ function applyWorkerModelInfo(row, ev) {
   if (!row._modelLabel || (row._modelLabel.parentNode && row._modelLabel.parentNode !== row._tname)) { row._modelLabel = el("small", "worker-model-info"); row._tname.appendChild(row._modelLabel); }
   if (row._modelLabel.textContent !== row._workerModelInfo) row._modelLabel.textContent = row._workerModelInfo;
 }
+// The model (and reasoning) each worker's latest run used: a resumed run on
+// another model gets one "Model: old → new" line in its activity (the
+// worker takes the current worker settings at every run).
+var workerRunModels = Object.create(null);
+function noteWorkerModelChange(row, ev) {
+  if (!ev.id || !ev.model) return;
+  var run = Number(ev.run) || 0, prev = workerRunModels[ev.id];
+  if (prev && run && prev.run >= run) return; // a replayed start of a known run
+  workerRunModels[ev.id] = { run: run, model: ev.model, effort: ev.reasoning_effort || "" };
+  if (!prev || !prev.run || (prev.model === ev.model && prev.effort === (ev.reasoning_effort || ""))) return;
+  if (!row._activity) return;
+  var waiting = row._activity.querySelector(".task-activity-empty");
+  if (waiting) waiting.remove();
+  var item = el("div", "task-activity-item model-change done");
+  item.appendChild(el("span", "activity-dot"));
+  item.appendChild(el("span", "activity-hint", t("task.modelChanged")
+    .replace("{old}", workerModelInfo(prev.model, prev.effort)).replace("{new}", workerModelInfo(ev.model, ev.reasoning_effort))));
+  row._activity.appendChild(item);
+}
 function addWorkerProgress(ev) {
   var row = findTaskRow(ev.id, ev.name, ev.parent_call_id, ev.run || undefined);
   if (!row) return false;
@@ -3835,6 +3854,7 @@ function addWorkerProgress(ev) {
     setTaskRowTitle(row, taskRowTitle(row, row._taskAgent, ev.id));
     row._tname.title = ev.id;
     applyWorkerModelInfo(row, ev);
+    noteWorkerModelChange(row, ev);
     updateWorkerOverview(ev.id, row._taskAgent, "running", row._taskPrompt || ev.prompt, row);
     setTaskHint(row, row._taskPrompt || ev.prompt || "");
     return true;

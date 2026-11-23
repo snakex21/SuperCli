@@ -54,6 +54,7 @@
   "composer.sendTogether": "Odeslat společně",
   "composer.messageNumber": "Zpráva {index}/{count}",
   "task.modelThinking": "{model} · uvažování: {effort}",
+  "task.modelChanged": "Model: {old} → {new}",
   "setting.queue_merge.label": "Sloučit frontu",
   "setting.queue_merge.desc": "Po odpovědi sloučit zprávy; rozdělit přílohy do bezpečných dávek.",
   "modes.desc.queue_merge": "Po odpovědi sloučit zprávy; rozdělit přílohy do bezpečných dávek.",

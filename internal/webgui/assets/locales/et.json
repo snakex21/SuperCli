@@ -54,6 +54,7 @@
   "composer.sendTogether": "Saada koos",
   "composer.messageNumber": "Sõnum {index}/{count}",
   "task.modelThinking": "{model} · mõtlemine: {effort}",
+  "task.modelChanged": "Mudel: {old} → {new}",
   "setting.queue_merge.label": "Ühenda järjekord",
   "setting.queue_merge.desc": "Ühenda sõnumid pärast vastust; jaga manused ohututeks partiideks.",
   "modes.desc.queue_merge": "Ühenda sõnumid pärast vastust; jaga manused ohututeks partiideks.",

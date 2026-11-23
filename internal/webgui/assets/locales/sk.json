@@ -54,6 +54,7 @@
   "composer.sendTogether": "Odoslať spolu",
   "composer.messageNumber": "Správa {index}/{count}",
   "task.modelThinking": "{model} · uvažovanie: {effort}",
+  "task.modelChanged": "Model: {old} → {new}",
   "setting.queue_merge.label": "Zlúčiť front",
   "setting.queue_merge.desc": "Po odpovedi zlúčiť správy; rozdeliť prílohy do bezpečných dávok.",
   "modes.desc.queue_merge": "Po odpovedi zlúčiť správy; rozdeliť prílohy do bezpečných dávok.",

@@ -54,6 +54,7 @@
   "composer.sendTogether": "Küldés együtt",
   "composer.messageNumber": "Üzenet {index}/{count}",
   "task.modelThinking": "{model} · gondolkodás: {effort}",
+  "task.modelChanged": "Modell: {old} → {new}",
   "setting.queue_merge.label": "Sor egyesítése",
   "setting.queue_merge.desc": "Válasz után egyesíti az üzeneteket; a mellékleteket biztonságos adagokra bontja.",
   "modes.desc.queue_merge": "Válasz után egyesíti az üzeneteket; a mellékleteket biztonságos adagokra bontja.",

@@ -54,6 +54,7 @@
   "composer.sendTogether": "Birlikte gönder",
   "composer.messageNumber": "Mesaj {index}/{count}",
   "task.modelThinking": "{model} · akıl yürütme: {effort}",
+  "task.modelChanged": "Model: {old} → {new}",
   "setting.queue_merge.label": "Kuyruğu birleştir",
   "setting.queue_merge.desc": "Yanıttan sonra mesajları birleştir; ekleri güvenli gruplara böl.",
   "modes.desc.queue_merge": "Yanıttan sonra mesajları birleştir; ekleri güvenli gruplara böl.",

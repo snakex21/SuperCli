@@ -54,6 +54,7 @@
   "composer.sendTogether": "Siųsti kartu",
   "composer.messageNumber": "Žinutė {index}/{count}",
   "task.modelThinking": "{model} · mąstymas: {effort}",
+  "task.modelChanged": "Modelis: {old} → {new}",
   "setting.queue_merge.label": "Sujungti eilę",
   "setting.queue_merge.desc": "Sujungti žinutes po atsakymo; padalyti priedus į saugias grupes.",
   "modes.desc.queue_merge": "Sujungti žinutes po atsakymo; padalyti priedus į saugias grupes.",

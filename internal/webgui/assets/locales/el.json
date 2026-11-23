@@ -54,6 +54,7 @@
   "composer.sendTogether": "Αποστολή μαζί",
   "composer.messageNumber": "Μήνυμα {index}/{count}",
   "task.modelThinking": "{model} · συλλογισμός μοντέλου: {effort}",
+  "task.modelChanged": "Μοντέλο: {old} → {new}",
   "setting.queue_merge.label": "Συγχώνευση ουράς",
   "setting.queue_merge.desc": "Συνδυασμός μηνυμάτων μετά από απάντηση· διαχωρισμός συνημμένων σε ασφαλείς παρτίδες.",
   "modes.desc.queue_merge": "Συνδυασμός μηνυμάτων μετά από απάντηση· διαχωρισμός συνημμένων σε ασφαλείς παρτίδες.",
