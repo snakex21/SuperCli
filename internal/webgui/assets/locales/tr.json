@@ -1375,5 +1375,10 @@
   "task.runStart": "Başlangıç {time}",
   "task.totalTitle": "Toplam çalışma süresi",
   "task.maxSteps": "{n} adımdan sonra durduruldu (sonsuz döngüye karşı koruma). Çalışma korunuyor; sınırı config.toml dosyasında (max_steps) değiştirebilirsiniz.",
-  "task.deadEnd": "SuperCli worker'ı durdurdu: art arda {n} dosya değişikliği aynı hatayla başarısız oldu, daha fazla deneme işe yaramazdı."
+  "task.deadEnd": "SuperCli worker'ı durdurdu: art arda {n} dosya değişikliği aynı hatayla başarısız oldu, daha fazla deneme işe yaramazdı.",
+  "filelink.title": "Bu bilgisayardaki dosya",
+  "filelink.open": "Aç",
+  "filelink.reveal": "Klasörde göster",
+  "filelink.missing": "Böyle bir dosya yok: {path}",
+  "filelink.noRun": "programlar ve betikler sohbetten başlatılmaz"
 }

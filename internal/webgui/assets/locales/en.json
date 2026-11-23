@@ -1375,5 +1375,10 @@
   "task.runStart": "Started {time}",
   "task.totalTitle": "Total working time",
   "task.maxSteps": "Stopped after {n} steps (a guard against endless loops). The work is kept; you can change the limit in config.toml (max_steps).",
-  "task.deadEnd": "SuperCli stopped the worker: {n} file changes in a row failed with the same error, so more attempts would not help."
+  "task.deadEnd": "SuperCli stopped the worker: {n} file changes in a row failed with the same error, so more attempts would not help.",
+  "filelink.title": "File on this computer",
+  "filelink.open": "Open",
+  "filelink.reveal": "Show in folder",
+  "filelink.missing": "No such file: {path}",
+  "filelink.noRun": "programs and scripts are not started from the chat"
 }

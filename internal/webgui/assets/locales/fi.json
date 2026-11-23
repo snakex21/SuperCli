@@ -1375,5 +1375,10 @@
   "task.runStart": "Aloitettu {time}",
   "task.totalTitle": "Työaika yhteensä",
   "task.maxSteps": "Pysäytetty {n} vaiheen jälkeen (suoja loputtomia silmukoita vastaan). Työ on tallessa; rajan voit muuttaa config.toml-tiedostossa (max_steps).",
-  "task.deadEnd": "SuperCli pysäytti workerin: {n} tiedostomuutosta peräkkäin epäonnistui samalla virheellä, joten uudet yritykset eivät auttaisi."
+  "task.deadEnd": "SuperCli pysäytti workerin: {n} tiedostomuutosta peräkkäin epäonnistui samalla virheellä, joten uudet yritykset eivät auttaisi.",
+  "filelink.title": "Tiedosto tällä tietokoneella",
+  "filelink.open": "Avaa",
+  "filelink.reveal": "Näytä kansiossa",
+  "filelink.missing": "Tiedostoa ei ole: {path}",
+  "filelink.noRun": "ohjelmia ja skriptejä ei käynnistetä keskustelusta"
 }

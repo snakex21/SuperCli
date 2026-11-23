@@ -1375,5 +1375,10 @@
   "task.runStart": "Algus {time}",
   "task.totalTitle": "Kogu tööaeg",
   "task.maxSteps": "Peatatud pärast {n} sammu (kaitse lõputute tsüklite vastu). Töö on alles; piirangu saad muuta failis config.toml (max_steps).",
-  "task.deadEnd": "SuperCli peatas workeri: {n} failimuudatust järjest ebaõnnestus sama veaga, seega rohkem katseid ei aitaks."
+  "task.deadEnd": "SuperCli peatas workeri: {n} failimuudatust järjest ebaõnnestus sama veaga, seega rohkem katseid ei aitaks.",
+  "filelink.title": "Fail selles arvutis",
+  "filelink.open": "Ava",
+  "filelink.reveal": "Näita kaustas",
+  "filelink.missing": "Sellist faili pole: {path}",
+  "filelink.noRun": "programme ja skripte vestlusest ei käivitata"
 }

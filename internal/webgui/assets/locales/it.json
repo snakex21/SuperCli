@@ -1375,5 +1375,10 @@
   "task.runStart": "Avvio {time}",
   "task.totalTitle": "Tempo di lavoro totale",
   "task.maxSteps": "Fermato dopo {n} passi (protezione dai cicli infiniti). Il lavoro è conservato; il limite si cambia in config.toml (max_steps).",
-  "task.deadEnd": "SuperCli ha fermato il worker: {n} modifiche ai file di fila sono fallite con lo stesso errore, altri tentativi non servirebbero."
+  "task.deadEnd": "SuperCli ha fermato il worker: {n} modifiche ai file di fila sono fallite con lo stesso errore, altri tentativi non servirebbero.",
+  "filelink.title": "File su questo computer",
+  "filelink.open": "Apri",
+  "filelink.reveal": "Mostra nella cartella",
+  "filelink.missing": "File inesistente: {path}",
+  "filelink.noRun": "programmi e script non vengono avviati dalla chat"
 }

@@ -141,7 +141,13 @@ async function renderFiles(dir) {
   panelContent.appendChild(g);
 }
 
-async function openEditor(path) {
+// openFileInPanel shows a project file in the Files panel at a line.
+async function openFileInPanel(path, line) {
+  if (typeof openPanel === "function") openPanel("files");
+  await openEditor(path, line);
+}
+
+async function openEditor(path, line) {
   var got;
   try { got = await j("/api/file/read?path=" + encodeURIComponent(path)); } catch (e) {
     toast(e.message);
@@ -159,6 +165,17 @@ async function openEditor(path) {
   ta.spellcheck = false;
   ta.value = got.content;
   g.appendChild(ta);
+  if (line > 0) {
+    // Put the caret on the line and scroll it into view.
+    var lines = got.content.split("\n"), at = 0;
+    for (var i = 0; i < Math.min(line - 1, lines.length); i++) at += lines[i].length + 1;
+    requestAnimationFrame(function () {
+      ta.focus();
+      ta.setSelectionRange(at, at + (lines[line - 1] || "").length);
+      var lh = parseFloat(getComputedStyle(ta).lineHeight) || 18;
+      ta.scrollTop = Math.max(0, (line - 4) * lh);
+    });
+  }
   var save = i18nEl("button", "btn primary", "files.save");
   save.style.marginTop = "8px";
   var status = el("span", "note");

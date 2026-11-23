@@ -1375,5 +1375,10 @@
   "task.runStart": "Gestart {time}",
   "task.totalTitle": "Totale werktijd",
   "task.maxSteps": "Gestopt na {n} stappen (bescherming tegen eindeloze lussen). Het werk is bewaard; de limiet wijzig je in config.toml (max_steps).",
-  "task.deadEnd": "SuperCli heeft de worker gestopt: {n} bestandswijzigingen op rij mislukten met dezelfde fout, dus meer pogingen zouden niet helpen."
+  "task.deadEnd": "SuperCli heeft de worker gestopt: {n} bestandswijzigingen op rij mislukten met dezelfde fout, dus meer pogingen zouden niet helpen.",
+  "filelink.title": "Bestand op deze computer",
+  "filelink.open": "Openen",
+  "filelink.reveal": "In map tonen",
+  "filelink.missing": "Bestand bestaat niet: {path}",
+  "filelink.noRun": "programma's en scripts worden niet vanuit de chat gestart"
 }

@@ -1375,5 +1375,10 @@
   "task.runStart": "Sākts {time}",
   "task.totalTitle": "Kopējais darba laiks",
   "task.maxSteps": "Apturēts pēc {n} soļiem (aizsardzība pret bezgalīgiem cikliem). Darbs ir saglabāts; ierobežojumu var mainīt config.toml (max_steps).",
-  "task.deadEnd": "SuperCli apturēja workeri: {n} failu izmaiņas pēc kārtas neizdevās ar to pašu kļūdu, tāpēc vairāk mēģinājumu nepalīdzētu."
+  "task.deadEnd": "SuperCli apturēja workeri: {n} failu izmaiņas pēc kārtas neizdevās ar to pašu kļūdu, tāpēc vairāk mēģinājumu nepalīdzētu.",
+  "filelink.title": "Fails šajā datorā",
+  "filelink.open": "Atvērt",
+  "filelink.reveal": "Rādīt mapē",
+  "filelink.missing": "Šāda faila nav: {path}",
+  "filelink.noRun": "programmas un skripti no tērzēšanas netiek palaisti"
 }

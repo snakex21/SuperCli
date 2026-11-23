@@ -110,13 +110,67 @@ $("#open-preview").addEventListener("click", toggleSitePreview);
 
 // One delegated listener also covers restored sessions and streamed answers.
 // Choosing a destination does not create a frame or launch a browser.
+// classifyChatLink tells a web link (preview dialog) from a file on this
+// computer: a relative path, C:\... or C:/..., file://..., a path with a
+// ":line" suffix, or a link that only resolved to this GUI's own address.
+// Returns {kind: "web", url} | {kind: "file", target} | {kind: "other"}.
+function classifyChatLink(raw, origin) {
+  raw = String(raw || "").trim();
+  if (!raw || raw.charAt(0) === "#") return {kind: "other"};
+  if (/^[a-zA-Z]:[\\/]/.test(raw) || /^\\\\/.test(raw)) return {kind: "file", target: raw};
+  if (/^file:/i.test(raw)) return {kind: "file", target: raw};
+  var scheme = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(raw);
+  if (scheme && !/^https?$/i.test(scheme[1])) return {kind: "other"};
+  if (!scheme) return {kind: "file", target: raw.replace(/^\.\//, "")};
+  var url;
+  try { url = new URL(raw); } catch (error) { return {kind: "other"}; }
+  if (origin && url.origin === origin) {
+    // The GUI's own pages and API are not files the chat talks about.
+    if (url.pathname === "/" || /^\/(api|\.__supercli)\//.test(url.pathname)) return {kind: "other"};
+    return {kind: "file", target: decodeURIComponent(url.pathname.replace(/^\//, "")) + (url.hash || "")};
+  }
+  return {kind: "web", url: url.href};
+}
+
+// openChatFileLink shows a file named in the chat on this computer: a
+// folder opens, a text or code file in the project opens in SuperCli's file
+// view at its line, other files can be opened with their app; programs and
+// scripts are only ever shown in their folder.
+async function openChatFileLink(target) {
+  var info;
+  try { info = await jpost("/api/file-link", { target: target }); }
+  catch (error) { toast(t("filelink.missing").replace("{path}", target)); return; }
+  if (!info.exists) { toast(t("filelink.missing").replace("{path}", info.path || target)); return; }
+  var act = async function (action) {
+    try { await jpost("/api/file-link", { target: info.path, action: action }); }
+    catch (error) { toast(error.message); }
+  };
+  if (info.kind === "dir") { act("open"); return; }
+  var choices = [];
+  if (info.kind === "text" && info.in_workspace) choices.push({ value: "view", label: t("filelink.open"), primary: true });
+  else if (!info.executable) choices.push({ value: "open", label: t("filelink.open"), primary: true });
+  choices.push({ value: "reveal", label: t("filelink.reveal"), primary: !choices.length });
+  var choice = await showAppDialog({
+    title: t("filelink.title"),
+    message: info.path + (info.line ? ":" + info.line : "") + (info.executable && info.kind !== "text" ? " — " + t("filelink.noRun") : ""),
+    choices: choices
+  });
+  if (choice === "view") openFileInPanel(info.path, info.line);
+  else if (choice === "open" || choice === "reveal") act(choice);
+}
+
 $("#stream").addEventListener("click", async function (event) {
   if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
   var link = event.target.closest("a[href]");
   if (!link || !$("#stream").contains(link)) return;
-  var target;
-  try { target = new URL(link.href); } catch (error) { return; }
-  if (target.protocol !== "http:" && target.protocol !== "https:") return;
+  var kind = classifyChatLink(link.getAttribute("href"), location.origin);
+  if (kind.kind === "file") {
+    event.preventDefault();
+    openChatFileLink(kind.target);
+    return;
+  }
+  if (kind.kind !== "web") return;
+  var target = new URL(kind.url);
   event.preventDefault();
   var destination = await showAppDialog({
     title: t("preview.title"), message: target.href,

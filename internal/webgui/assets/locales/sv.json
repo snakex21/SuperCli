@@ -1375,5 +1375,10 @@
   "task.runStart": "Startad {time}",
   "task.totalTitle": "Total arbetstid",
   "task.maxSteps": "Stoppad efter {n} steg (skydd mot oändliga loopar). Arbetet är sparat; gränsen ändras i config.toml (max_steps).",
-  "task.deadEnd": "SuperCli stoppade workern: {n} filändringar i rad misslyckades med samma fel, så fler försök skulle inte hjälpa."
+  "task.deadEnd": "SuperCli stoppade workern: {n} filändringar i rad misslyckades med samma fel, så fler försök skulle inte hjälpa.",
+  "filelink.title": "Fil på den här datorn",
+  "filelink.open": "Öppna",
+  "filelink.reveal": "Visa i mapp",
+  "filelink.missing": "Filen finns inte: {path}",
+  "filelink.noRun": "program och skript startas inte från chatten"
 }

@@ -1375,5 +1375,10 @@
   "task.runStart": "Gestartet {time}",
   "task.totalTitle": "Gesamte Arbeitszeit",
   "task.maxSteps": "Nach {n} Schritten angehalten (Schutz vor Endlosschleifen). Die Arbeit bleibt erhalten; das Limit ändern Sie in config.toml (max_steps).",
-  "task.deadEnd": "SuperCli hat den Worker angehalten: {n} Dateiänderungen nacheinander sind mit demselben Fehler gescheitert, weitere Versuche würden nicht helfen."
+  "task.deadEnd": "SuperCli hat den Worker angehalten: {n} Dateiänderungen nacheinander sind mit demselben Fehler gescheitert, weitere Versuche würden nicht helfen.",
+  "filelink.title": "Datei auf diesem Computer",
+  "filelink.open": "Öffnen",
+  "filelink.reveal": "Im Ordner anzeigen",
+  "filelink.missing": "Datei nicht gefunden: {path}",
+  "filelink.noRun": "Programme und Skripte werden nicht aus dem Chat gestartet"
 }

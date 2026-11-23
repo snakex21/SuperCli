@@ -1375,5 +1375,10 @@
   "task.runStart": "Štart {time}",
   "task.totalTitle": "Celkový čas práce",
   "task.maxSteps": "Zastavené po {n} krokoch (ochrana pred zacyklením). Práca je zachovaná; limit zmeníte v config.toml (max_steps).",
-  "task.deadEnd": "SuperCli zastavil workera: {n} zmien súborov za sebou zlyhalo s rovnakou chybou, ďalšie pokusy by nepomohli."
+  "task.deadEnd": "SuperCli zastavil workera: {n} zmien súborov za sebou zlyhalo s rovnakou chybou, ďalšie pokusy by nepomohli.",
+  "filelink.title": "Súbor v tomto počítači",
+  "filelink.open": "Otvoriť",
+  "filelink.reveal": "Zobraziť v priečinku",
+  "filelink.missing": "Taký súbor neexistuje: {path}",
+  "filelink.noRun": "programy a skripty sa z chatu nespúšťajú"
 }

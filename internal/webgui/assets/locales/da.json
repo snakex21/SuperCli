@@ -1375,5 +1375,10 @@
   "task.runStart": "Startet {time}",
   "task.totalTitle": "Samlet arbejdstid",
   "task.maxSteps": "Stoppet efter {n} trin (beskyttelse mod endeløse løkker). Arbejdet er bevaret; grænsen ændres i config.toml (max_steps).",
-  "task.deadEnd": "SuperCli stoppede workeren: {n} filændringer i træk fejlede med samme fejl, så flere forsøg ville ikke hjælpe."
+  "task.deadEnd": "SuperCli stoppede workeren: {n} filændringer i træk fejlede med samme fejl, så flere forsøg ville ikke hjælpe.",
+  "filelink.title": "Fil på denne computer",
+  "filelink.open": "Åbn",
+  "filelink.reveal": "Vis i mappe",
+  "filelink.missing": "Filen findes ikke: {path}",
+  "filelink.noRun": "programmer og scripts startes ikke fra chatten"
 }

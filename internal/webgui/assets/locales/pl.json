@@ -1375,5 +1375,10 @@
   "task.runStart": "Start {time}",
   "task.totalTitle": "Łączny czas pracy",
   "task.maxSteps": "Zatrzymano po {n} krokach (zabezpieczenie przed zapętleniem). Praca jest zachowana; limit zmienisz w config.toml (max_steps).",
-  "task.deadEnd": "SuperCli zatrzymał workera: {n} zmian plików z rzędu nie powiodło się z tym samym błędem, więc kolejne próby nic by nie dały."
+  "task.deadEnd": "SuperCli zatrzymał workera: {n} zmian plików z rzędu nie powiodło się z tym samym błędem, więc kolejne próby nic by nie dały.",
+  "filelink.title": "Plik na tym komputerze",
+  "filelink.open": "Otwórz",
+  "filelink.reveal": "Pokaż w folderze",
+  "filelink.missing": "Nie ma takiego pliku: {path}",
+  "filelink.noRun": "programów i skryptów nie uruchamiam z czatu"
 }

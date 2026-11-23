@@ -1375,5 +1375,10 @@
   "task.runStart": "Início {time}",
   "task.totalTitle": "Tempo total de trabalho",
   "task.maxSteps": "Interrompido após {n} passos (proteção contra loops infinitos). O trabalho foi mantido; o limite é alterado em config.toml (max_steps).",
-  "task.deadEnd": "O SuperCli parou o worker: {n} alterações de arquivos seguidas falharam com o mesmo erro, então mais tentativas não ajudariam."
+  "task.deadEnd": "O SuperCli parou o worker: {n} alterações de arquivos seguidas falharam com o mesmo erro, então mais tentativas não ajudariam.",
+  "filelink.title": "Arquivo neste computador",
+  "filelink.open": "Abrir",
+  "filelink.reveal": "Mostrar na pasta",
+  "filelink.missing": "Arquivo não encontrado: {path}",
+  "filelink.noRun": "programas e scripts não são iniciados pelo chat"
 }

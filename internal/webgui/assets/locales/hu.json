@@ -1375,5 +1375,10 @@
   "task.runStart": "Indítva {time}",
   "task.totalTitle": "Teljes munkaidő",
   "task.maxSteps": "Leállítva {n} lépés után (védelem a végtelen ciklusok ellen). A munka megmarad; a korlátot a config.toml fájlban módosíthatja (max_steps).",
-  "task.deadEnd": "A SuperCli leállította a workert: {n} fájlmódosítás egymás után ugyanazzal a hibával sikertelen volt, így további próbálkozás nem segítene."
+  "task.deadEnd": "A SuperCli leállította a workert: {n} fájlmódosítás egymás után ugyanazzal a hibával sikertelen volt, így további próbálkozás nem segítene.",
+  "filelink.title": "Fájl ezen a számítógépen",
+  "filelink.open": "Megnyitás",
+  "filelink.reveal": "Megjelenítés a mappában",
+  "filelink.missing": "Nincs ilyen fájl: {path}",
+  "filelink.noRun": "programokat és szkripteket nem indítunk a csevegésből"
 }

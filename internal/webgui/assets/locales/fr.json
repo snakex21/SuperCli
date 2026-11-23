@@ -1375,5 +1375,10 @@
   "task.runStart": "Début {time}",
   "task.totalTitle": "Durée totale de travail",
   "task.maxSteps": "Arrêté après {n} étapes (protection contre les boucles infinies). Le travail est conservé ; la limite se change dans config.toml (max_steps).",
-  "task.deadEnd": "SuperCli a arrêté le worker : {n} modifications de fichiers d’affilée ont échoué avec la même erreur, d’autres essais n’aideraient pas."
+  "task.deadEnd": "SuperCli a arrêté le worker : {n} modifications de fichiers d’affilée ont échoué avec la même erreur, d’autres essais n’aideraient pas.",
+  "filelink.title": "Fichier sur cet ordinateur",
+  "filelink.open": "Ouvrir",
+  "filelink.reveal": "Afficher dans le dossier",
+  "filelink.missing": "Fichier introuvable : {path}",
+  "filelink.noRun": "les programmes et scripts ne sont pas lancés depuis le chat"
 }

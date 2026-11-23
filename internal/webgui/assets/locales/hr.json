@@ -1375,5 +1375,10 @@
   "task.runStart": "Početak {time}",
   "task.totalTitle": "Ukupno vrijeme rada",
   "task.maxSteps": "Zaustavljeno nakon {n} koraka (zaštita od beskonačnih petlji). Rad je sačuvan; ograničenje mijenjate u config.toml (max_steps).",
-  "task.deadEnd": "SuperCli je zaustavio workera: {n} izmjena datoteka zaredom nije uspjelo s istom pogreškom, pa novi pokušaji ne bi pomogli."
+  "task.deadEnd": "SuperCli je zaustavio workera: {n} izmjena datoteka zaredom nije uspjelo s istom pogreškom, pa novi pokušaji ne bi pomogli.",
+  "filelink.title": "Datoteka na ovom računalu",
+  "filelink.open": "Otvori",
+  "filelink.reveal": "Prikaži u mapi",
+  "filelink.missing": "Nema takve datoteke: {path}",
+  "filelink.noRun": "programi i skripte ne pokreću se iz razgovora"
 }

@@ -1375,5 +1375,10 @@
   "task.runStart": "Pradžia {time}",
   "task.totalTitle": "Bendras darbo laikas",
   "task.maxSteps": "Sustabdyta po {n} žingsnių (apsauga nuo begalinių ciklų). Darbas išsaugotas; ribą pakeisite config.toml (max_steps).",
-  "task.deadEnd": "SuperCli sustabdė workerį: {n} failų pakeitimai iš eilės nepavyko su ta pačia klaida, todėl nauji bandymai nepadėtų."
+  "task.deadEnd": "SuperCli sustabdė workerį: {n} failų pakeitimai iš eilės nepavyko su ta pačia klaida, todėl nauji bandymai nepadėtų.",
+  "filelink.title": "Failas šiame kompiuteryje",
+  "filelink.open": "Atidaryti",
+  "filelink.reveal": "Rodyti aplanke",
+  "filelink.missing": "Tokio failo nėra: {path}",
+  "filelink.noRun": "programos ir scenarijai iš pokalbio nepaleidžiami"
 }
