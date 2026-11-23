@@ -178,7 +178,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/folder/open", s.handleOpenFolder)
 	mux.HandleFunc("/api/path/open", s.handleOpenPath)
 
-	return s.withLocalGuard(mux)
+	return withStartupTiming(s.withLocalGuard(mux))
 }
 
 // withSecretLocalOnly protects endpoints that return plaintext credentials.

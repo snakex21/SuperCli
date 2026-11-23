@@ -109,6 +109,7 @@ func runNativeAppWindow(opts nativeWindowOptions) error {
 	devtoolsEnv := strings.TrimSpace(strings.ToLower(os.Getenv("SUPERCLI_DEVTOOLS")))
 	devtools := devtoolsEnv == "1" || devtoolsEnv == "true" || devtoolsEnv == "yes" || devtoolsEnv == "on"
 	var w glaze.WebView
+	StartupTimingf("window: creating WebView2")
 	err := withPortableWebViewProfile(dataDir, func() error {
 		var createErr error
 		w, createErr = glaze.New(devtools)
@@ -117,6 +118,7 @@ func runNativeAppWindow(opts nativeWindowOptions) error {
 	if err != nil {
 		return fmt.Errorf("native WebView2 unavailable: %w", err)
 	}
+	StartupTimingf("window: WebView2 ready")
 	if devtools {
 		log.Printf("WebView2 DevTools enabled (manual access; browser keyboard shortcuts protected)")
 	}
@@ -232,6 +234,7 @@ func runNativeAppWindow(opts nativeWindowOptions) error {
 	// permanently docked inspector consuming half of the client width.
 	w.SetSize(720, 520, glaze.HintMin)
 	w.Navigate(url)
+	StartupTimingf("window: navigate")
 	if windowState.Maximized {
 		_, _, _ = showWindowW.Call(uintptr(w.Window()), swMaximize)
 	}

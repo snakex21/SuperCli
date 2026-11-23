@@ -113,6 +113,7 @@ func Run(eng *Engine, opts RunOptions) error {
 	}()
 
 	log.Printf("%s web GUI: %s", appName, url)
+	StartupTimingf("listening")
 	if opts.Phone {
 		ctx, stop := signal.NotifyContext(context.Background(), shutdownSignals()...)
 		defer stop()

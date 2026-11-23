@@ -37,6 +37,7 @@ import (
 )
 
 func main() {
+	webgui.MarkProcessStart(time.Now())
 	detachAccidentalConsole()
 	crashDataDir := storage.PortableDataRoot()
 	defer func() {
@@ -198,7 +199,8 @@ func run(crashDataDir *string) {
 		Debug:    boolPtr(*debugFlag),
 	})
 	if *debugFlag {
-		// Log how long each step after the model's last token takes.
+		// Log how long each step after the model's last token takes, and
+		// each start-up stage.
 		agent.SetTurnTiming(true)
 	}
 	if err != nil {
@@ -304,7 +306,9 @@ func run(crashDataDir *string) {
 	allowAll := resolveAllowAll(appProfile, *allowAllFlag, tomlErr == nil && tomlCfg.AllowAll, os.Getenv("SUPERCLI_ALLOW_ALL"))
 	sandbox.SetUnsandboxed(allowAll)
 
+	webgui.StartupTimingf("config loaded")
 	eng, err := webgui.NewEngine(cfg, home, dataDir)
+	webgui.StartupTimingf("engine ready")
 	if err != nil {
 		fatal("build engine", err)
 	}

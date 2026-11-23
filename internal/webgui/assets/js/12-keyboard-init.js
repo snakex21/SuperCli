@@ -57,14 +57,17 @@ document.addEventListener("keydown", function (e) {
 (async function init() {
   var settingsSnapshot = await loadUI();
   applyI18n();
+  // The conversation list does not wait for the health check or the draft
+  // store; only reopening the last conversation needs the drafts loaded.
   var healthReady = checkHealth();
+  var sessionsReady = loadSessions();
   await composerDraftStore.load(settingsSnapshot);
+  sessionsReady.then(resumeLastSessionOnStart);
   var h = await healthReady;
   if (h) {
     if (selectedModelID(h.model)) loadReasoning();
     loadModels();
   }
-  loadSessions().then(resumeLastSessionOnStart);
   loadProjects();
 	loadPromptQueue();
 	loadWorkers();
