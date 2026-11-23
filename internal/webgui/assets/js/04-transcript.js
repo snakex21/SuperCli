@@ -1292,8 +1292,41 @@ function rebindWorkerOverview() {
 }
 // The card state for styling (icon) follows the worker's real state only.
 function setTaskStatus(row, status) {
+  if (workerStatusTerminal(status) && !workerStatusTerminal(row._taskStatus) && !row._runEndMS) row._runEndMS = typeof workerNow === "function" ? workerNow() : Date.now();
+  if (status === "running" && workerStatusTerminal(row._taskStatus)) row._runEndMS = 0;
   row._taskStatus = status;
   if (row.dataset) row.dataset.taskStatus = status || "";
+}
+// workerTotalMS: how long the worker's current (or last) run has worked;
+// frozen at its end. null when the start is not known.
+function workerTotalMS(row) {
+  if (!row) return null;
+  var start = row._runStartMS || (row._startedAtMS > 0 ? row._startedAtMS : 0);
+  if (!start) return null;
+  var end = workerStatusTerminal(row._taskStatus) ? (row._runEndMS || 0) : 0;
+  var now = typeof workerNow === "function" ? workerNow() : Date.now();
+  if (!end && workerStatusTerminal(row._taskStatus)) return null;
+  return Math.max(0, (end || now) - start);
+}
+// The run's start time and model in one small grey line on the card.
+function renderWorkerRunMeta(row) {
+  if (!row || !row._body || typeof row._body.insertBefore !== "function") return;
+  var start = row._runStartMS || (row._startedAtMS > 0 ? row._startedAtMS : 0);
+  var parts = [];
+  if (start) {
+    var at = new Date(start);
+    parts.push(t("task.runStart").replace("{time}", (at.getHours() < 10 ? "0" : "") + at.getHours() + ":" + (at.getMinutes() < 10 ? "0" : "") + at.getMinutes()));
+  }
+  if (row._workerModel) parts.push(row._workerModel);
+  var node = row._runMetaNode;
+  if (!parts.length) { if (node) node.hidden = true; return; }
+  if (!node || node.parentNode !== row._body) {
+    node = row._runMetaNode = el("div", "task-run-meta");
+    var anchor = row._livenessNode && row._livenessNode.parentNode === row._body ? row._livenessNode.nextSibling : row._body.firstChild;
+    row._body.insertBefore(node, anchor);
+  }
+  node.hidden = false;
+  setNodeText(node, parts.join(" · "));
 }
 function workerStatusTerminal(status) { return status === "done" || status === "review" || status === "failed" || status === "stopped" || status === "interrupted"; }
 // "done" with a review note (no file changes, red verify command) is shown as
@@ -1314,19 +1347,21 @@ function updateWorkerOverview(id, agentName, status, activity, row) {
   var nextActivity = activity != null ? activity : item && item.activity;
   // A delayed start/tool callback cannot resurrect the same finished invocation.
   if (item && item.row === nextRow && item.run === nextRun && workerStatusTerminal(item.status) && nextStatus === "running") return;
-  var label = workerLabel(id) + (nextAgent ? " · " + nextAgent : "");
-  var detail = clip(humanTaskText(nextActivity), 140);
+  // One line: name · task title · current step (or the result) · total time.
+  // The worker kind and model stay in the tooltip and the expanded card.
+  var label = workerLabel(id);
+  var detail = clip(humanTaskText((nextRow && nextRow._taskPrompt) || nextActivity), 140);
   var state = taskStatusLabel(nextStatus);
-  var title = clip([id, nextRow && nextRow._workerModelInfo, nextActivity].filter(Boolean).join(" · "), 400);
+  var title = clip([id + (nextAgent ? " · " + nextAgent : ""), nextRow && nextRow._workerModelInfo, nextActivity].filter(Boolean).join(" · "), 400);
   // Keep raw activity/row ownership exact, even when clipped text looks equal.
   // Check the live DOM too: language changes, replaced roots and altered views
   // must still repair synchronously, without replacing a focused worker button.
   if (item && item.row === nextRow && item.run === nextRun && item.agent === nextAgent &&
       item.status === nextStatus && item.activity === nextActivity &&
       (!nextRow || nextRow.isConnected) && item.button.dataset.state === nextStatus &&
-      item.button.children.length === 5 && item.button.children[1] === item.label &&
+      item.button.children.length === 6 && item.button.children[1] === item.label &&
       item.button.children[2] === item.detail && item.button.children[3] === item.state &&
-      item.button.children[4] === item.live &&
+      item.button.children[4] === item.live && item.button.children[5] === item.total &&
       item.label.textContent === label && item.detail.textContent === detail &&
       item.state.textContent === state && item.button.title === title && workerOverviewViewMatches()) return;
   if (!item) {
@@ -1346,12 +1381,16 @@ function updateWorkerOverview(id, agentName, status, activity, row) {
     item.state = el("span", "worker-overview-status");
     item.live = el("span", "worker-overview-live");
     item.live.hidden = true;
-    item.button.append(item.label, item.detail, item.state, item.live);
+    item.total = el("span", "worker-overview-total");
+    item.total.title = t("task.totalTitle");
+    item.button.append(item.label, item.detail, item.state, item.live, item.total);
     $("#worker-overview-list").appendChild(item.button);
   }
-  if (item.button.children.length !== 5 || item.button.children[1] !== item.label ||
-      item.button.children[2] !== item.detail || item.button.children[3] !== item.state || item.button.children[4] !== item.live) {
-    item.button.replaceChildren(item.button.querySelector(".worker-overview-dot") || el("span", "worker-overview-dot"), item.label, item.detail, item.state, item.live);
+  if (!item.total) { item.total = el("span", "worker-overview-total"); item.total.title = t("task.totalTitle"); }
+  if (item.button.children.length !== 6 || item.button.children[1] !== item.label ||
+      item.button.children[2] !== item.detail || item.button.children[3] !== item.state || item.button.children[4] !== item.live ||
+      item.button.children[5] !== item.total) {
+    item.button.replaceChildren(item.button.querySelector(".worker-overview-dot") || el("span", "worker-overview-dot"), item.label, item.detail, item.state, item.live, item.total);
   }
   item.run = nextRun;
   item.agent = nextAgent;
@@ -1365,9 +1404,16 @@ function updateWorkerOverview(id, agentName, status, activity, row) {
   item.detail.textContent = detail;
   item.state.textContent = state;
   item.button.title = title;
+  renderWorkerTotal(item);
   renderWorkerOverview();
   // A new or re-bound button shows its worker's liveness line at once.
   if (nextRow && nextRow._liveness) renderWorkerLiveness(nextRow);
+}
+function renderWorkerTotal(item) {
+  if (!item || !item.total) return;
+  var ms = workerTotalMS(item.row);
+  setNodeText(item.total, ms == null ? "" : activityClock(ms));
+  item.total.title = t("task.totalTitle");
 }
 // After stream/history boundaries, reconcile only displayed worker IDs.
 // Healthy progress stays event-driven; no model calls or global-worker imports.
@@ -1476,6 +1522,7 @@ function applyWorkerStatusSnapshot(workers, bindings, serverNow, livenessOnly) {
   bindings.forEach(function (binding) {
     var row = binding.row, worker = snapshots[binding.id];
     if (workerRows[binding.id] !== row || !row.isConnected || (row._taskRun || 0) !== binding.run) return;
+    applyWorkerRunTiming(row, worker, serverNow);
     if (livenessOnly) {
       // During a live turn its events own the card's state; the snapshot only
       // adds what events cannot show (model progress, last activity).
@@ -2724,6 +2771,17 @@ function noteWorkerLiveEvent(row, ev) {
   }
   renderWorkerLiveness(row);
 }
+// The run's start/end from the server (server epoch ms) for the total time.
+function applyWorkerRunTiming(row, worker, serverNow) {
+  if (!row || !worker || !(worker.run_started_at > 0)) return;
+  var offset = serverNow > 0 ? (typeof workerNow === "function" ? workerNow() : Date.now()) - serverNow : 0;
+  row._runStartMS = worker.run_started_at + offset;
+  row._runEndMS = worker.run_ended_at > 0 ? worker.run_ended_at + offset : (workerStatusTerminal(row._taskStatus) ? row._runEndMS : 0);
+  if (worker.model && !row._workerModel) row._workerModel = worker.model;
+  renderWorkerRunMeta(row);
+  var item = row._taskID && workerOverview[row._taskID];
+  if (item && item.row === row) renderWorkerTotal(item);
+}
 // The status snapshot carries the server's view (server epoch ms).
 function applyWorkerLivenessSnapshot(row, worker, serverNow) {
   if (!row || !worker || worker.status !== "running" || !worker.phase) return;
@@ -2806,7 +2864,13 @@ function renderWorkerLiveness(row) {
     if (view.stalled) addWorkerStallActions(row);
     else if (row._stallActions) row._stallActions.hidden = true;
   }
+  renderWorkerRunMeta(row);
+  if (row._taskStatus === "running" && !row._clock && row._stat) {
+    var total = workerTotalMS(row);
+    if (total != null) setRowClock(row, taskStatusLabel("running"), total);
+  }
   var item = row._taskID && workerOverview[row._taskID];
+  if (item && item.row === row) renderWorkerTotal(item);
   if (item && item.row === row && item.live) {
     // One line per worker: the live step replaces the task text and the
     // "running" word (both stay in the tooltip and the expanded card).
@@ -2852,7 +2916,7 @@ function ensureWorkerLiveTimer() {
     var any = false;
     Object.keys(workerRows).forEach(function (id) {
       var row = workerRows[id];
-      if (row && row.isConnected && row._liveness && row._taskStatus === "running") { any = true; renderWorkerLiveness(row); }
+      if (row && row.isConnected && row._taskStatus === "running" && (row._liveness || row._runStartMS)) { any = true; renderWorkerLiveness(row); }
     });
     if (!any) { clearInterval(workerLiveTimer); workerLiveTimer = null; }
   }, 1000);

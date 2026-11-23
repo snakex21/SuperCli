@@ -1371,5 +1371,7 @@
   "prov.removeActive": "The selected model uses this provider. Choose another model first, or it will stop working.",
   "prov.removeRefs": "Modes or settings point to this provider; they will need another model.",
   "prov.removeYes": "Remove",
-  "prov.removed": "Removed {n}"
+  "prov.removed": "Removed {n}",
+  "task.runStart": "Started {time}",
+  "task.totalTitle": "Total working time"
 }

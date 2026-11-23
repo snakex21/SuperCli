@@ -1371,5 +1371,7 @@
   "prov.removeActive": "Il modello selezionato usa questo provider. Scegli prima un altro modello, altrimenti smetterà di funzionare.",
   "prov.removeRefs": "Alcune modalità o impostazioni puntano a questo provider; avranno bisogno di un altro modello.",
   "prov.removeYes": "Rimuovi",
-  "prov.removed": "{n} rimosso"
+  "prov.removed": "{n} rimosso",
+  "task.runStart": "Avvio {time}",
+  "task.totalTitle": "Tempo di lavoro totale"
 }

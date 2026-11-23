@@ -1371,5 +1371,7 @@
   "prov.removeActive": "Den valda modellen använder den här leverantören. Välj en annan modell först, annars slutar den fungera.",
   "prov.removeRefs": "Lägen eller inställningar pekar på den här leverantören; de behöver en annan modell.",
   "prov.removeYes": "Ta bort",
-  "prov.removed": "Tog bort {n}"
+  "prov.removed": "Tog bort {n}",
+  "task.runStart": "Startad {time}",
+  "task.totalTitle": "Total arbetstid"
 }

@@ -1371,5 +1371,7 @@
   "prov.removeActive": "Odabrani model koristi ovog pružatelja. Najprije odaberite drugi model, inače će prestati raditi.",
   "prov.removeRefs": "Načini rada ili postavke upućuju na ovog pružatelja; trebat će im drugi model.",
   "prov.removeYes": "Ukloni",
-  "prov.removed": "Uklonjeno: {n}"
+  "prov.removed": "Uklonjeno: {n}",
+  "task.runStart": "Početak {time}",
+  "task.totalTitle": "Ukupno vrijeme rada"
 }

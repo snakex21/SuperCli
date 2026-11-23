@@ -35,6 +35,10 @@ type webWorker struct {
 	// Review: the run ended "done" but needs a look (no file changes, or a
 	// red verify command); the card shows "needs review", not "done".
 	Review string `json:"review,omitempty"`
+	// The current or last run's start and end (server epoch ms; 0 unknown,
+	// end 0 while it runs): the GUI's total working time.
+	RunStartedAt int64 `json:"run_started_at,omitempty"`
+	RunEndedAt   int64 `json:"run_ended_at,omitempty"`
 	// Liveness of a running worker (server epoch ms; 0 when idle): its
 	// current phase ("model" or "tool"), since when, the latest observable
 	// progress and the running tool's live progress line.
@@ -58,6 +62,12 @@ func workerDTO(s agent.Snapshot) webWorker {
 		TokensOut: s.TokensOut, Steps: s.Steps, ToolNames: s.ToolNames,
 		Run: s.Runs, UpdatedAt: s.UpdatedAt.UnixMilli(), Activity: activity,
 		Session: s.SessionID, Review: s.Review,
+	}
+	if !s.RunStartedAt.IsZero() {
+		dto.RunStartedAt = s.RunStartedAt.UnixMilli()
+		if !s.RunEndedAt.IsZero() {
+			dto.RunEndedAt = s.RunEndedAt.UnixMilli()
+		}
 	}
 	if live := s.Live; live.Phase != "" {
 		dto.Phase, dto.PhaseTool, dto.ToolProgress = live.Phase, live.Tool, live.ToolProgress

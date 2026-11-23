@@ -1371,5 +1371,7 @@
   "prov.removeActive": "Vybraný model používá tohoto poskytovatele. Nejprve zvolte jiný model, jinak přestane fungovat.",
   "prov.removeRefs": "Režimy nebo nastavení odkazují na tohoto poskytovatele; budou potřebovat jiný model.",
   "prov.removeYes": "Odebrat",
-  "prov.removed": "Odebráno: {n}"
+  "prov.removed": "Odebráno: {n}",
+  "task.runStart": "Start {time}",
+  "task.totalTitle": "Celková doba práce"
 }

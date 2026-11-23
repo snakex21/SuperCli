@@ -66,6 +66,9 @@ type Worker struct {
 	reviewSnapshot func(context.Context, *Worker) string
 	uiActivity     json.RawMessage   // immutable latest-run UI trail; guarded by stateMu
 	live           WorkerLiveness    // current run's liveness; guarded by stateMu
+	// runStartedAt/runEndedAt bound the current (or last) run; guarded by
+	// stateMu. Zero end while the run is in progress.
+	runStartedAt, runEndedAt time.Time
 	liveUI         *workerUIActivity // current run's UI journal; guarded by stateMu
 	// reasoningEffort follows this worker across background runs and continuations.
 	// It is applied only inside the worker loop, never to coordinator verdicts.
@@ -155,6 +158,9 @@ type Snapshot struct {
 	Activity        WorkerActivity
 	// Live is the running worker's current phase and last progress time.
 	Live WorkerLiveness
+	// RunStartedAt/RunEndedAt bound the current or last run (zero when not
+	// known; zero end while it runs).
+	RunStartedAt, RunEndedAt time.Time
 	// SessionID names the conversation the worker belongs to ("" when not
 	// persisted). The registry is process-wide, so ids alone do not identify
 	// a conversation's worker.
@@ -190,6 +196,8 @@ func (w *Worker) Snapshot() Snapshot {
 		ChecksRun:       w.ChecksRun,
 		Activity:        w.activity,
 		Live:            w.live,
+		RunStartedAt:    w.runStartedAt,
+		RunEndedAt:      w.runEndedAt,
 		SessionID:       w.sessionID,
 		Review:          w.review,
 	}
@@ -209,7 +217,15 @@ func (w *Worker) emitProgress(ev WorkerProgressEvent) {
 // stateMu is held.
 func (w *Worker) setState(fn func(w *Worker)) {
 	w.stateMu.Lock()
+	before := w.Status
 	fn(w)
+	// The current run's working time for the GUI: it starts when the worker
+	// begins running and ends when it leaves "running".
+	if w.Status == "running" && before != "running" {
+		w.runStartedAt, w.runEndedAt = time.Now(), time.Time{}
+	} else if before == "running" && w.Status != "running" && !w.runStartedAt.IsZero() {
+		w.runEndedAt = time.Now()
+	}
 	w.stateMu.Unlock()
 }
 

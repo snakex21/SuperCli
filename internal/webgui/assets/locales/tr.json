@@ -1371,5 +1371,7 @@
   "prov.removeActive": "Seçili model bu sağlayıcıyı kullanıyor. Önce başka bir model seçin, aksi halde çalışmayı durduracak.",
   "prov.removeRefs": "Bazı modlar veya ayarlar bu sağlayıcıyı gösteriyor; bunlar için başka bir model gerekecek.",
   "prov.removeYes": "Kaldır",
-  "prov.removed": "{n} kaldırıldı"
+  "prov.removed": "{n} kaldırıldı",
+  "task.runStart": "Başlangıç {time}",
+  "task.totalTitle": "Toplam çalışma süresi"
 }

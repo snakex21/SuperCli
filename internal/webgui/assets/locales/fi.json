@@ -1371,5 +1371,7 @@
   "prov.removeActive": "Valittu malli käyttää tätä palveluntarjoajaa. Valitse ensin toinen malli, muuten se lakkaa toimimasta.",
   "prov.removeRefs": "Tilat tai asetukset viittaavat tähän palveluntarjoajaan; niille on valittava toinen malli.",
   "prov.removeYes": "Poista",
-  "prov.removed": "Poistettu: {n}"
+  "prov.removed": "Poistettu: {n}",
+  "task.runStart": "Aloitettu {time}",
+  "task.totalTitle": "Työaika yhteensä"
 }

@@ -1371,5 +1371,7 @@
   "prov.removeActive": "Le modèle sélectionné utilise ce fournisseur. Choisissez d’abord un autre modèle, sinon il cessera de fonctionner.",
   "prov.removeRefs": "Des modes ou paramètres renvoient à ce fournisseur ; il leur faudra un autre modèle.",
   "prov.removeYes": "Supprimer",
-  "prov.removed": "{n} supprimé"
+  "prov.removed": "{n} supprimé",
+  "task.runStart": "Début {time}",
+  "task.totalTitle": "Durée totale de travail"
 }

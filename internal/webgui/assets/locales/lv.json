@@ -1371,5 +1371,7 @@
   "prov.removeActive": "Izvēlētais modelis izmanto šo nodrošinātāju. Vispirms izvēlieties citu modeli, citādi tas pārstās darboties.",
   "prov.removeRefs": "Režīmi vai iestatījumi norāda uz šo nodrošinātāju; tiem būs vajadzīgs cits modelis.",
   "prov.removeYes": "Noņemt",
-  "prov.removed": "Noņemts: {n}"
+  "prov.removed": "Noņemts: {n}",
+  "task.runStart": "Sākts {time}",
+  "task.totalTitle": "Kopējais darba laiks"
 }

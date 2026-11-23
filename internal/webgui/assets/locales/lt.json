@@ -1371,5 +1371,7 @@
   "prov.removeActive": "Pasirinktas modelis naudoja šį teikėją. Pirmiausia pasirinkite kitą modelį, kitaip jis nustos veikti.",
   "prov.removeRefs": "Režimai arba nustatymai nurodo į šį teikėją; jiems reikės kito modelio.",
   "prov.removeYes": "Pašalinti",
-  "prov.removed": "Pašalinta: {n}"
+  "prov.removed": "Pašalinta: {n}",
+  "task.runStart": "Pradžia {time}",
+  "task.totalTitle": "Bendras darbo laikas"
 }

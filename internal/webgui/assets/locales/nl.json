@@ -1371,5 +1371,7 @@
   "prov.removeActive": "Het geselecteerde model gebruikt deze provider. Kies eerst een ander model, anders werkt het niet meer.",
   "prov.removeRefs": "Modi of instellingen verwijzen naar deze provider; ze hebben een ander model nodig.",
   "prov.removeYes": "Verwijderen",
-  "prov.removed": "{n} verwijderd"
+  "prov.removed": "{n} verwijderd",
+  "task.runStart": "Gestart {time}",
+  "task.totalTitle": "Totale werktijd"
 }

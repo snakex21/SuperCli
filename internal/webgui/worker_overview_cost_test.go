@@ -100,7 +100,10 @@ function legacyUpdate(id, agentName, status, activity, row) {
     // (shared, outside both renderers) fills it.
     item.live = el("span", "worker-overview-live");
     item.live.hidden = true;
-    item.button.append(item.label, item.detail, item.state, item.live);
+    // 2026-11: the right edge shows the worker's total working time.
+    item.total = el("span", "worker-overview-total");
+    item.total.title = t("task.totalTitle");
+    item.button.append(item.label, item.detail, item.state, item.live, item.total);
     $("#worker-overview-list").appendChild(item.button);
   }
   item.run = row && row._taskRun || item.run || 0;
@@ -109,11 +112,13 @@ function legacyUpdate(id, agentName, status, activity, row) {
   if (activity != null) item.activity = activity;
   if (row) item.row = row;
   item.button.dataset.state = item.status;
-  item.label.textContent = workerLabel(id) + (item.agent ? " · " + item.agent : "");
-  // 1.0.39: the overview shows the task in human words (shortened paths).
-  item.detail.textContent = clip(humanTaskText(item.activity), 140);
+  // 2026-11: name only; the kind moves to the tooltip. The task title comes
+  // from the brief (human words, shortened paths).
+  item.label.textContent = workerLabel(id);
+  item.detail.textContent = clip(humanTaskText((item.row && item.row._taskPrompt) || item.activity), 140);
   item.state.textContent = taskStatusLabel(item.status);
-  item.button.title = clip([id, item.row && item.row._workerModelInfo, item.activity].filter(Boolean).join(" · "), 400);
+  item.button.title = clip([id + (item.agent ? " · " + item.agent : ""), item.row && item.row._workerModelInfo, item.activity].filter(Boolean).join(" · "), 400);
+  renderWorkerTotal(item);
   renderWorkerOverview();
   // Shared liveness painter, as in production: a (re)bound item shows its
   // worker's current step at once (the step label is debounced from then on).

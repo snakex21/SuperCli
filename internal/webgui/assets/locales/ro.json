@@ -1371,5 +1371,7 @@
   "prov.removeActive": "Modelul selectat folosește acest furnizor. Alege mai întâi alt model, altfel nu va mai funcționa.",
   "prov.removeRefs": "Unele moduri sau setări indică acest furnizor; vor avea nevoie de alt model.",
   "prov.removeYes": "Elimină",
-  "prov.removed": "Eliminat: {n}"
+  "prov.removed": "Eliminat: {n}",
+  "task.runStart": "Pornit {time}",
+  "task.totalTitle": "Timp total de lucru"
 }

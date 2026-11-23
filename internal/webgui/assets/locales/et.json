@@ -1371,5 +1371,7 @@
   "prov.removeActive": "Valitud mudel kasutab seda teenusepakkujat. Vali enne teine mudel, muidu lakkab see töötamast.",
   "prov.removeRefs": "Režiimid või seaded viitavad sellele teenusepakkujale; need vajavad teist mudelit.",
   "prov.removeYes": "Eemalda",
-  "prov.removed": "Eemaldatud: {n}"
+  "prov.removed": "Eemaldatud: {n}",
+  "task.runStart": "Algus {time}",
+  "task.totalTitle": "Kogu tööaeg"
 }

@@ -1371,5 +1371,7 @@
   "prov.removeActive": "A kiválasztott modell ezt a szolgáltatót használja. Előbb válasszon másik modellt, különben leáll a működése.",
   "prov.removeRefs": "Módok vagy beállítások hivatkoznak erre a szolgáltatóra; ezekhez másik modell kell.",
   "prov.removeYes": "Eltávolítás",
-  "prov.removed": "Eltávolítva: {n}"
+  "prov.removed": "Eltávolítva: {n}",
+  "task.runStart": "Indítva {time}",
+  "task.totalTitle": "Teljes munkaidő"
 }

@@ -1371,5 +1371,7 @@
   "prov.removeActive": "Den valgte model bruger denne udbyder. Vælg først en anden model, ellers holder den op med at virke.",
   "prov.removeRefs": "Tilstande eller indstillinger peger på denne udbyder; de skal have en anden model.",
   "prov.removeYes": "Fjern",
-  "prov.removed": "Fjernede {n}"
+  "prov.removed": "Fjernede {n}",
+  "task.runStart": "Startet {time}",
+  "task.totalTitle": "Samlet arbejdstid"
 }

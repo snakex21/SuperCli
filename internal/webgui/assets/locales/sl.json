@@ -1371,5 +1371,7 @@
   "prov.removeActive": "Izbrani model uporablja tega ponudnika. Najprej izberite drug model, sicer bo prenehal delovati.",
   "prov.removeRefs": "Načini ali nastavitve kažejo na tega ponudnika; potrebovali bodo drug model.",
   "prov.removeYes": "Odstrani",
-  "prov.removed": "Odstranjeno: {n}"
+  "prov.removed": "Odstranjeno: {n}",
+  "task.runStart": "Začetek {time}",
+  "task.totalTitle": "Skupni čas dela"
 }

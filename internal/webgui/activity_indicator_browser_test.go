@@ -287,9 +287,16 @@ function checkWorkerActivityLine(){return run(function(){
   // A status snapshot has no arguments: the running call on the card has them.
   now+=1500;toolRows['call-a']._liveness.args='';renderWorkerLiveness(toolRows['call-a']);
   check(item.live.textContent==='Uruchamia testy · 0:03','snapshot lost the command: '+item.live.textContent);
-  check(getComputedStyle(item.detail).display==='none'&&getComputedStyle(item.state).display==='none','duplicate text in the worker line');
+  // One line: name · task title · step · total; the status word is hidden.
+  check(item.label.textContent==='Worker 4','name only (kind in the tooltip): '+item.label.textContent);
+  check(getComputedStyle(item.state).display==='none'&&item.detail.textContent==='Dodaj pająka','task title beside the step: '+item.detail.textContent);
+  check(item.total.textContent==='0:03'&&item.total.title==='Łączny czas pracy','total working time: '+item.total.textContent);
   check(item.live.textContent.indexOf('ostatnia')<0,'constant last-activity counter');
+  now+=2000;
   addWorkerProgress({id:'worker-4',name:'code',kind:'finished',status:'done',parent_call_id:'call-a',run:1,at:now});
   check(!item.button.classList.contains('live')&&item.live.hidden,'finished worker still live');
+  check(item.state.textContent==='gotowe'&&getComputedStyle(item.state).display!=='none','result instead of the step: '+item.state.textContent);
+  var frozen=item.total.textContent;now+=60000;renderWorkerTotal(item);
+  check(frozen==='0:05'&&item.total.textContent===frozen,'total not frozen at the end: '+frozen+' -> '+item.total.textContent);
 });}
 `
