@@ -28,7 +28,7 @@ export async function initial() {
   const bothQuestions=document.querySelectorAll('.question-inline').length===2;
   closeQuestionOverlay('worker-question-1');const questionRetained=document.querySelectorAll('.question-inline').length===1 && !!questionOverlays['worker-question-2'];closeQuestionOverlay();
   old.open=false;second.open=false;
-  const overviewStable=document.querySelectorAll('.worker-overview-item').length===2 && workerOverview['worker-1'].row===resumed && workerOverview['worker-1'].label.textContent==='Worker 1 · code' && workerOverview['worker-1'].status==='done';
+  const overviewStable=document.querySelectorAll('.worker-overview-item').length===2 && workerOverview['worker-1'].row===resumed && workerOverview['worker-1'].label.textContent==='Worker 1' && workerOverview['worker-1'].status==='done';
   resumed.open=false;workerOverview['worker-1'].button.click();const overviewOpensLatest=resumed.open;stage.scrollTop=0;
   const result={parallelMapped,isolated,backlink,collapsePreserved,bothQuestions,questionRetained,overviewStable,overviewOpensLatest};
   for(const [name,value] of Object.entries(result))equal(value,true,name);
@@ -44,7 +44,7 @@ export async function active(){
   addWorkerProgress({id:'worker-3',name:'review',kind:'tool_call',parent_call_id:'spawn-c',call_id:'c-mcp',tool:'mcp_'+token,args:'{}'});
   addToolResult('resume-a',window.__note('worker-1','code','Raport z delegacji: '+token+'\n\nŚcieżka: `'+token+'`\n\n```text\n'+token+'\n```'));
   equal(workerOverview['worker-3'].status,'running','active worker state');const summary=$('#worker-overview-summary').textContent;
-  check(summary.includes('pracuje: 1') && summary.includes('gotowe: 2'),'worker summary counts',summary);
+  check(summary.includes('1 pracuje') && summary.includes('2 gotowe'),'worker summary counts',summary);
   equal(document.querySelector('.worker-overview-item'),workerOverview['worker-3'].button,'running worker first');
   check($('#worker-overview').open,'overview open while running');toolRows['resume-a'].open=false;stage.scrollTop=0;await frame();
 }
