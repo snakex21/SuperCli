@@ -70,6 +70,12 @@ func (s *Server) handleOpenPath(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+	} else if _, executable := fileLinkKind(path, false); executable {
+		// Programs and scripts are never started by a click: show them.
+		if err := revealInFolder(path, false); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	} else if err := openSystemFile(path); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -166,8 +172,10 @@ func openSystemFile(path string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
-		// start opens with the default app (Word for .docx).
-		cmd = exec.Command("cmd", "/c", "start", "", path)
+		// Explorer opens the file with its default app (Word for .docx),
+		// without a cmd.exe line that would expand %VAR% in the name.
+		// Callers never pass programs or scripts here.
+		cmd = exec.Command("explorer.exe", path)
 	case "darwin":
 		cmd = exec.Command("open", path)
 	default:

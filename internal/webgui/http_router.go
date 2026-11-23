@@ -180,6 +180,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/attachment/document-preview", s.handleAttachmentDocumentPreview)
 	mux.HandleFunc("/api/folder/open", s.handleOpenFolder)
 	mux.HandleFunc("/api/path/open", s.handleOpenPath)
+	mux.HandleFunc("/api/file-link", s.handleFileLink)
 
 	return withStartupTiming(s.withLocalGuard(mux))
 }
