@@ -224,7 +224,7 @@ func (g *guard) segment(sg shellSeg, kind shellKind, depth int) {
 				g.segment(shellSeg{words: args[i+1:]}, kind, depth+1)
 				return
 			}
-			// PowerShell: ForEach-Object { Remove-Item /c/Users/ASRock/Desktop/SuperCli/wt-orch-status } - a delete in a
+			// PowerShell: ForEach-Object { Remove-Item $_ } - a delete in a
 			// script block runs on items known only at run time.
 			if isDeleteProgram(programName(strings.Trim(a, "{}")), kind) {
 				g.raise(CommandAsk, "a delete inside a loop")
