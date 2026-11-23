@@ -212,3 +212,29 @@ func TestSplitShellKeepsQuotedSeparators(t *testing.T) {
 		t.Fatalf("pwsh segments = %+v", segs)
 	}
 }
+
+// The text judge for Windows drive paths is what catches them when the guard
+// runs off Windows, where filepath does not treat C:\ as absolute.
+func TestWindowsCatastropheByText(t *testing.T) {
+	cases := map[string]bool{
+		`C:\`:                        true,
+		`C:`:                         true,
+		`d:/`:                        true,
+		`C:\Users`:                   true,
+		`C:\Users\me`:                true,
+		`C:\Users\me\..`:             true,
+		`C:\Windows`:                 true,
+		`C:\Windows\System32`:        true,
+		`C:\Program Files\App`:       true,
+		`C:\ProgramData`:             true,
+		`C:\Users\me\proj\build`:     false,
+		`C:\Users\me\proj\..\..\x\y`: false,
+		`D:\work\out`:                false,
+		`C:\Users\me\proj\..\..\..\`: true,
+	}
+	for path, want := range cases {
+		if got := windowsCatastrophe(path) != ""; got != want {
+			t.Errorf("windowsCatastrophe(%q) = %v, want %v", path, got, want)
+		}
+	}
+}

@@ -505,6 +505,15 @@ func (g *guard) target(raw, what string) {
 		}
 		container = pattern != "*" && pattern != "*.*" && pattern != ".*" && pattern != "**"
 	}
+	if runtime.GOOS != "windows" && windowsDrivePath.MatchString(dir) {
+		// A Windows path in a cmd or PowerShell command judged off Windows
+		// (remote shells, tests): the filepath package does not see it as
+		// absolute, so judge it by its text.
+		if why := windowsCatastrophe(dir); why != "" {
+			g.raise(CommandBlock, what+" of "+why+" ("+raw+")")
+		}
+		return
+	}
 	abs := g.resolve(dir)
 	if abs == "" {
 		g.raise(CommandAsk, what+" relative to a working directory that cannot be known ("+raw+")")
@@ -594,6 +603,41 @@ func (g *guard) judge(abs string, container bool) (CommandVerdict, string) {
 		}
 	}
 	return CommandAllow, ""
+}
+
+var windowsDrivePath = regexp.MustCompile(`^[A-Za-z]:([\\/]|$)`)
+
+// windowsCatastrophe judges a Windows drive path by its text: the drive
+// root, the Users folder and each home directly in it, and the system and
+// program folders. "" when none of these.
+func windowsCatastrophe(p string) string {
+	p = strings.TrimRight(strings.ReplaceAll(p, "/", `\`), `\`)
+	parts := strings.Split(p, `\`)
+	var kept []string
+	for _, part := range parts[1:] {
+		switch part {
+		case "", ".":
+			continue
+		case "..":
+			if len(kept) > 0 {
+				kept = kept[:len(kept)-1]
+			}
+			continue
+		}
+		kept = append(kept, strings.ToLower(part))
+	}
+	if len(kept) == 0 {
+		return "a drive or filesystem root"
+	}
+	switch kept[0] {
+	case "users":
+		if len(kept) <= 2 {
+			return "a user's home folder"
+		}
+	case "windows", "program files", "program files (x86)", "programdata":
+		return "a system folder"
+	}
+	return ""
 }
 
 func isRoot(p string) bool {
