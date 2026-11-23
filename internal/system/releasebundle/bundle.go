@@ -114,16 +114,21 @@ func Pack(opts Options) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Licences of embedded third-party assets (GUI fonts): LICENSES/fonts/*.txt
-	// and the MANIFEST.json with their sources and checksums.
-	fontLicences := filepath.Join(opts.Source, "LICENSES", "fonts")
-	if entries, err := os.ReadDir(fontLicences); err == nil {
+	// Licences of embedded third-party assets: GUI fonts (LICENSES/fonts/*.txt
+	// and the MANIFEST.json with their sources and checksums) and provider
+	// logos (LICENSES/icons/*.txt).
+	for _, group := range []string{"fonts", "icons"} {
+		licences := filepath.Join(opts.Source, "LICENSES", group)
+		entries, err := os.ReadDir(licences)
+		if err != nil {
+			continue
+		}
 		for _, entry := range entries {
 			name := entry.Name()
 			if entry.IsDir() || (!strings.HasSuffix(name, ".txt") && name != "MANIFEST.json") {
 				continue
 			}
-			if err := add(filepath.Join(fontLicences, name), "LICENSES/fonts/"+name, 0644); err != nil {
+			if err := add(filepath.Join(licences, name), "LICENSES/"+group+"/"+name, 0644); err != nil {
 				return "", err
 			}
 		}

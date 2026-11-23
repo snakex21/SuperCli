@@ -1,35 +1,25 @@
 # Provider icons
 
-Bundled SVG logos for the provider picker and the configured-providers list in
-the web GUI. Served from `icons/providers/` (embedded via `//go:embed assets/*`).
+Built-in provider logos for the provider list, the provider catalog and the
+logo picker in the web GUI, embedded in the executable.
 
-## Naming convention
+Source: LobeHub Icons (`@lobehub/icons-static-svg` 1.104.0, MIT,
+https://github.com/lobehub/lobe-icons). See `THIRD_PARTY_NOTICES.md` and
+`LICENSES/icons/lobe-icons-MIT.txt`. Files were reduced to the drawing (no
+title, fixed 24x24 size).
 
-One file per provider, named after the provider slug plus `.svg`:
+## Naming
 
-```
-openai.svg
-anthropic.svg
-deepseek.svg
-xiaomi.svg
-```
+One file per logo key, e.g. `openai.svg`, `deepseek.svg`. The key is not the
+provider's name: the server picks it from the provider type and base URL
+(`ProviderIconKey` in `internal/webgui/provider_icons.go`), so a provider the
+user named "ja" that points at api.anthropic.com shows the Anthropic logo.
 
-The slug is the provider `Name` lowercased with anything outside `[a-z0-9-]`
-removed.
+Logos drawn in `currentColor` are single-colour: the GUI shows them as a mask
+in the theme's text colour. All others are shown as images.
 
-## Family fallback
+## No match
 
-Regional variants reuse the family icon automatically. The loader tries the full
-slug first, then the part before the first `-`:
-
-- `xiaomi-tokenplan-global` → `xiaomi-tokenplan-global.svg`, then `xiaomi.svg`
-- `dashscope-tokenplan-cn`  → `dashscope-tokenplan-cn.svg`, then `dashscope.svg`
-
-So dropping a single `xiaomi.svg` covers every `xiaomi-*` variant. Add a
-variant-specific file only when you want it to differ from the family.
-
-## No icon?
-
-Any provider without a matching file shows a colored monogram (first letter,
-color derived from the name). Nothing to configure — a new provider is never
-left blank.
+A provider without a matching logo shows a coloured letter. Users can pick any
+built-in logo or upload their own image in the provider's edit form
+(stored under `<data>/provider-logos/`).

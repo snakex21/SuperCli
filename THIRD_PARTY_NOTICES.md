@@ -130,3 +130,34 @@ punctuation, and converted to WOFF2 (Fira Code once more without programming lig
 - Source Code Pro (Version 1.026): `LICENSES/fonts/sourcecodepro.txt`
 - IBM Plex Mono (Version 2.3): `LICENSES/fonts/ibmplexmono.txt`
 - Cascadia Code (Version 2102.025): `LICENSES/fonts/cascadia.txt`
+
+## Provider logos (LobeHub Icons)
+
+The SVG logos in `internal/webgui/assets/icons/providers/` come from
+LobeHub Icons, package `@lobehub/icons-static-svg` 1.104.0
+(https://github.com/lobehub/lobe-icons). They were reduced to one file per
+provider (title and size attributes removed). The license text is also in
+`LICENSES/icons/lobe-icons-MIT.txt`. The logos depict trademarks of their
+respective owners; they are shown only to identify each provider.
+
+MIT License
+
+Copyright (c) 2023 LobeHub
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
