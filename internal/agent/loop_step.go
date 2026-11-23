@@ -591,6 +591,25 @@ func (l *Loop) runStep(
 			return stepAbort
 		}
 	}
+	// A worker whose file changes keep failing the same way (the environment
+	// refuses them) stops with one clear report instead of retrying to the
+	// step limit.
+	if count, tool, sample, due := l.deadEnd.due(); due && inWorkerRun(ctx) {
+		stopText := fmt.Sprintf(deadEndStopText, count)
+		sys := llm.Message{
+			Role: llm.RoleSystem,
+			Content: "[dead end] " + stopText + " Last failure (" + tool + "): " + sample + " " +
+				"Stop now. Report to the coordinator: which file changes failed, this exact error, its likely cause, " +
+				"and what you finished before. Do not try other ways to write the same files.",
+		}
+		l.Messages = append(l.Messages, sys)
+		l.persist(ctx, sys)
+		out <- NoticeEvent{Text: stopText}
+		l.finalReplyOnly = true
+		l.finalReplyFallback = stopText + " Last error (" + tool + "): " + sample
+		l.statsEndStep(stepStart)
+		return stepContinue
+	}
 	// Edits keep returning to versions that already failed the same check:
 	// stop the tool loop and have the model report where it stands.
 	if repeats, due := l.checkCycles.stopDue(); due {

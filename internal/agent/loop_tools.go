@@ -760,6 +760,16 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) (r
 		l.resultReuse.finish(reuseClaim, verified, tool.ReuseTTL, time.Now())
 		haveReuseClaim = false
 	}
+	if toolCallKind(tc.Name, tc.Arguments) == "mutation" {
+		switch {
+		case err != nil:
+			l.deadEnd.failure(tc.Name, err.Error())
+		case res.Err != nil:
+			l.deadEnd.failure(tc.Name, res.Err.Error())
+		default:
+			l.deadEnd.success()
+		}
+	}
 	if err != nil || res.Err != nil {
 		l.identicalFails.recordFailure(tc.Name, tc.Arguments, l.failedChecks.stateRevision())
 	} else {

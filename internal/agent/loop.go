@@ -466,6 +466,8 @@ type Loop struct {
 	// checkCycles notices edits that return to versions already shown to
 	// fail the same check, and stops such a loop after a few repeats.
 	checkCycles checkCycles
+	// deadEnd ends a worker run whose file changes keep failing the same way.
+	deadEnd deadEndTracker
 
 	// identicalWrites blocks an identical successful mutation that has
 	// already been applied repeatedMutationLimit times in a Run.
