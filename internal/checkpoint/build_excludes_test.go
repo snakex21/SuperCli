@@ -40,7 +40,9 @@ func openExcludeManager(t *testing.T, home string) *Manager {
 // 1.0.38: build caches and outputs are never scanned by a checkpoint, so a
 // project full of Zig/node/Python caches cannot make snapshots slow.
 func TestCheckpointSkipsBuildCachesAndOutputs(t *testing.T) {
-	parallelNativeTest(t)
+	// Not parallel: the scan hook and WholeSnapshotBudget are package
+	// globals, and a parallel test clearing or replacing the hook made the
+	// slow scan finish inside the budget (flaky on Linux CI).
 	home := t.TempDir()
 	writeTree(t, home,
 		"src/main.zig", "build-migration/run-1/notes.md",
@@ -93,7 +95,9 @@ func TestCheckpointSkipsBuildCachesAndOutputs(t *testing.T) {
 // checkpoint lock: the command runs with a note, and another agent's file
 // write gets the lock within a short bound.
 func TestSlowWorkspaceSnapshotDoesNotBlockOtherAgentsWrite(t *testing.T) {
-	parallelNativeTest(t)
+	// Not parallel: the scan hook and WholeSnapshotBudget are package
+	// globals, and a parallel test clearing or replacing the hook made the
+	// slow scan finish inside the budget (flaky on Linux CI).
 	home := t.TempDir()
 	var files []string
 	for i := 0; i < 400; i++ {
