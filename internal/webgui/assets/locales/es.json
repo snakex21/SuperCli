@@ -1356,5 +1356,7 @@
   "toolHint.range": "mensajes {from}–{to}",
   "tool.blockedDanger": "Bloqueado: este comando borraría un disco, la carpeta personal o una carpeta del sistema. No se ejecutó.",
   "activity.checking": "Revisando la respuesta…",
-  "activity.finishing": "Terminando…"
+  "activity.finishing": "Terminando…",
+  "goalTool.staleVerification": "Tras la última comprobación correcta ({command}) cambiaron estos archivos: {files}. Vuelve a ejecutar las pruebas y luego cierra el objetivo.",
+  "goalTool.checkNotPassed": "La comprobación falló o no se ejecutó: {command}. Ejecútala de nuevo y luego cierra el objetivo."
 }

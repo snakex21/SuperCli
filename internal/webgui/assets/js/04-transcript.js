@@ -2002,6 +2002,15 @@ function toolHint(name, args) {
   }
 }
 
+// goalVerificationText translates the goal tool's verification blocker
+// (agent/failed_check.go blocker) or returns "".
+function goalVerificationText(err) {
+  var m = /^goal: code changed since verification: files changed after the last passing `([^`]*)`: ([\s\S]*?)\. Run that check again/.exec(err);
+  if (m) return t("goalTool.staleVerification").replace("{command}", clip(m[1], 90)).replace("{files}", m[2]);
+  m = /^goal: failed or not run: `([^`]*)`/.exec(err);
+  if (m) return t("goalTool.checkNotPassed").replace("{command}", clip(m[1], 90));
+  return "";
+}
 // "AGENTS.md, build-standalone.ps1" from a list of reads: an array of paths
 // or {path} objects, or one "a | b" string.
 function fileListHint(list) {
@@ -3310,6 +3319,13 @@ function addToolResult(id, output, err, at) {
   if (err && /^blocked: destructive command \(/.test(String(err)) && row._thint) {
     row.classList.add("guard-blocked");
     setNodeText(row._thint, t("tool.blockedDanger"));
+    row._thint.title = String(err);
+  }
+  // The goal tool refused to close a goal: say in the UI language which
+  // check to rerun and which files changed; the full text stays in details.
+  var goalBlock = err && row._toolName === "goal" && row._thint ? goalVerificationText(String(err)) : "";
+  if (goalBlock) {
+    setNodeText(row._thint, goalBlock);
     row._thint.title = String(err);
   }
   appendToolMediaPreview(row, payload, row._toolName, !!err);

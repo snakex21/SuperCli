@@ -1356,5 +1356,7 @@
   "toolHint.range": "messages {from}–{to}",
   "tool.blockedDanger": "Bloquée : cette commande effacerait un disque, le dossier personnel ou un dossier système. Elle n’a pas été exécutée.",
   "activity.checking": "Vérifie la réponse…",
-  "activity.finishing": "Termine…"
+  "activity.finishing": "Termine…",
+  "goalTool.staleVerification": "Après la dernière vérification réussie ({command}), ces fichiers ont changé : {files}. Relancez les tests, puis clôturez l’objectif.",
+  "goalTool.checkNotPassed": "La vérification a échoué ou n’a pas été lancée : {command}. Relancez-la, puis clôturez l’objectif."
 }

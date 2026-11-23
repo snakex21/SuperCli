@@ -1356,5 +1356,7 @@
   "toolHint.range": "meddelanden {from}–{to}",
   "tool.blockedDanger": "Blockerat: kommandot skulle radera en disk, hemmappen eller en systemmapp. Det kördes inte.",
   "activity.checking": "Kontrollerar svaret…",
-  "activity.finishing": "Avslutar…"
+  "activity.finishing": "Avslutar…",
+  "goalTool.staleVerification": "Efter den senaste godkända kontrollen ({command}) har dessa filer ändrats: {files}. Kör testerna igen och stäng sedan målet.",
+  "goalTool.checkNotPassed": "Kontrollen misslyckades eller kördes inte: {command}. Kör den igen och stäng sedan målet."
 }

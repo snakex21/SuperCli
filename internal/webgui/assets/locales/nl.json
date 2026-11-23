@@ -1356,5 +1356,7 @@
   "toolHint.range": "berichten {from}–{to}",
   "tool.blockedDanger": "Geblokkeerd: deze opdracht zou een schijf, de thuismap of een systeemmap wissen. Hij is niet uitgevoerd.",
   "activity.checking": "Controleert het antwoord…",
-  "activity.finishing": "Rondt af…"
+  "activity.finishing": "Rondt af…",
+  "goalTool.staleVerification": "Na de laatste geslaagde controle ({command}) zijn deze bestanden gewijzigd: {files}. Voer de tests opnieuw uit en sluit dan het doel.",
+  "goalTool.checkNotPassed": "De controle is mislukt of niet uitgevoerd: {command}. Voer hem opnieuw uit en sluit dan het doel."
 }

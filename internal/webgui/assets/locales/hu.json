@@ -1356,5 +1356,7 @@
   "toolHint.range": "üzenetek: {from}–{to}",
   "tool.blockedDanger": "Letiltva: ez a parancs törölne egy meghajtót, a saját mappát vagy egy rendszermappát. Nem futott le.",
   "activity.checking": "Ellenőrzi a választ…",
-  "activity.finishing": "Befejezi…"
+  "activity.finishing": "Befejezi…",
+  "goalTool.staleVerification": "Az utolsó sikeres ellenőrzés ({command}) után megváltozott fájlok: {files}. Futtassa újra a teszteket, majd zárja le a célt.",
+  "goalTool.checkNotPassed": "Az ellenőrzés nem sikerült vagy nem futott le: {command}. Futtassa újra, majd zárja le a célt."
 }

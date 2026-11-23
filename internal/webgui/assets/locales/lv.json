@@ -1356,5 +1356,7 @@
   "toolHint.range": "ziņas {from}–{to}",
   "tool.blockedDanger": "Bloķēts: šī komanda izdzēstu disku, mājas mapi vai sistēmas mapi. Tā netika palaista.",
   "activity.checking": "Pārbauda atbildi…",
-  "activity.finishing": "Pabeidz…"
+  "activity.finishing": "Pabeidz…",
+  "goalTool.staleVerification": "Pēc pēdējās veiksmīgās pārbaudes ({command}) mainījās faili: {files}. Palaidiet testus vēlreiz un pēc tam aizveriet mērķi.",
+  "goalTool.checkNotPassed": "Pārbaude neizdevās vai netika palaista: {command}. Palaidiet to vēlreiz un pēc tam aizveriet mērķi."
 }

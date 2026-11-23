@@ -1356,5 +1356,7 @@
   "toolHint.range": "poruke {from}–{to}",
   "tool.blockedDanger": "Blokirano: ova komanda bi obrisala disk, početnu fasciklu ili sistemsku fasciklu. Nije pokrenuta.",
   "activity.checking": "Proverava odgovor…",
-  "activity.finishing": "Završava…"
+  "activity.finishing": "Završava…",
+  "goalTool.staleVerification": "Posle poslednje uspešne provere ({command}) promenjene su datoteke: {files}. Ponovo pokrenite testove, zatim zatvorite cilj.",
+  "goalTool.checkNotPassed": "Provera nije prošla ili nije pokrenuta: {command}. Ponovo je pokrenite, zatim zatvorite cilj."
 }

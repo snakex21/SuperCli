@@ -1356,5 +1356,7 @@
   "toolHint.range": "Nachrichten {from}–{to}",
   "tool.blockedDanger": "Blockiert: Dieser Befehl würde ein Laufwerk, den Benutzerordner oder einen Systemordner löschen. Er wurde nicht ausgeführt.",
   "activity.checking": "Prüft die Antwort…",
-  "activity.finishing": "Schließt ab…"
+  "activity.finishing": "Schließt ab…",
+  "goalTool.staleVerification": "Nach der letzten erfolgreichen Prüfung ({command}) wurden Dateien geändert: {files}. Führen Sie die Tests erneut aus und schließen Sie dann das Ziel.",
+  "goalTool.checkNotPassed": "Die Prüfung ist fehlgeschlagen oder wurde nicht ausgeführt: {command}. Führen Sie sie erneut aus und schließen Sie dann das Ziel."
 }

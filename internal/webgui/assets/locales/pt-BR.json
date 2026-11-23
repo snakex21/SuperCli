@@ -1356,5 +1356,7 @@
   "toolHint.range": "mensagens {from}–{to}",
   "tool.blockedDanger": "Bloqueado: este comando apagaria um disco, a pasta pessoal ou uma pasta do sistema. Ele não foi executado.",
   "activity.checking": "Verificando a resposta…",
-  "activity.finishing": "Finalizando…"
+  "activity.finishing": "Finalizando…",
+  "goalTool.staleVerification": "Depois da última verificação aprovada ({command}) estes arquivos mudaram: {files}. Rode os testes de novo e depois feche a meta.",
+  "goalTool.checkNotPassed": "A verificação falhou ou não foi executada: {command}. Rode-a de novo e depois feche a meta."
 }

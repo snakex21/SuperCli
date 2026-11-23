@@ -1356,5 +1356,7 @@
   "toolHint.range": "sporočila {from}–{to}",
   "tool.blockedDanger": "Blokirano: ta ukaz bi izbrisal disk, domačo mapo ali sistemsko mapo. Ni bil zagnan.",
   "activity.checking": "Preverja odgovor…",
-  "activity.finishing": "Zaključuje…"
+  "activity.finishing": "Zaključuje…",
+  "goalTool.staleVerification": "Po zadnjem uspešnem preverjanju ({command}) so se spremenile datoteke: {files}. Znova zaženite teste, nato zaprite cilj.",
+  "goalTool.checkNotPassed": "Preverjanje ni uspelo ali ni bilo zagnano: {command}. Znova ga zaženite, nato zaprite cilj."
 }

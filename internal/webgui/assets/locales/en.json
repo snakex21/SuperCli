@@ -1356,5 +1356,7 @@
   "toolHint.range": "messages {from}–{to}",
   "tool.blockedDanger": "Blocked: this command would wipe a disk, the home folder or a system folder. It was not run.",
   "activity.checking": "Checking the answer…",
-  "activity.finishing": "Finishing…"
+  "activity.finishing": "Finishing…",
+  "goalTool.staleVerification": "After the last passing check ({command}) these files changed: {files}. Run the tests again, then close the goal.",
+  "goalTool.checkNotPassed": "The check failed or was not run: {command}. Run it again, then close the goal."
 }

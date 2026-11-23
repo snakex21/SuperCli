@@ -1356,5 +1356,7 @@
   "toolHint.range": "mesajlar {from}–{to}",
   "tool.blockedDanger": "Engellendi: bu komut bir diski, ana klasörü veya bir sistem klasörünü silerdi. Çalıştırılmadı.",
   "activity.checking": "Yanıtı kontrol ediyor…",
-  "activity.finishing": "Bitiriyor…"
+  "activity.finishing": "Bitiriyor…",
+  "goalTool.staleVerification": "Son başarılı denetimden ({command}) sonra şu dosyalar değişti: {files}. Testleri yeniden çalıştırın, ardından hedefi kapatın.",
+  "goalTool.checkNotPassed": "Denetim başarısız oldu veya çalıştırılmadı: {command}. Yeniden çalıştırın, ardından hedefi kapatın."
 }

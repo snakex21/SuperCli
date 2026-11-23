@@ -1356,5 +1356,7 @@
   "toolHint.range": "wiadomości {from}–{to}",
   "tool.blockedDanger": "Zablokowano: ta komenda skasowałaby dysk, katalog domowy albo folder systemowy. Nie została uruchomiona.",
   "activity.checking": "Sprawdza odpowiedź…",
-  "activity.finishing": "Kończy…"
+  "activity.finishing": "Kończy…",
+  "goalTool.staleVerification": "Po ostatnim udanym sprawdzeniu ({command}) zmieniono pliki: {files}. Uruchom ponownie testy, potem zamknij cel.",
+  "goalTool.checkNotPassed": "Sprawdzenie nie przeszło albo nie zostało uruchomione: {command}. Uruchom je ponownie, potem zamknij cel."
 }

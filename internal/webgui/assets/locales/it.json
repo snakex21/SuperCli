@@ -1356,5 +1356,7 @@
   "toolHint.range": "messaggi {from}–{to}",
   "tool.blockedDanger": "Bloccato: questo comando cancellerebbe un disco, la cartella home o una cartella di sistema. Non è stato eseguito.",
   "activity.checking": "Controlla la risposta…",
-  "activity.finishing": "Sta finendo…"
+  "activity.finishing": "Sta finendo…",
+  "goalTool.staleVerification": "Dopo l’ultimo controllo riuscito ({command}) sono cambiati questi file: {files}. Riesegui i test, poi chiudi l’obiettivo.",
+  "goalTool.checkNotPassed": "Il controllo non è riuscito o non è stato eseguito: {command}. Rieseguilo, poi chiudi l’obiettivo."
 }

@@ -1356,5 +1356,7 @@
   "toolHint.range": "sõnumid {from}–{to}",
   "tool.blockedDanger": "Blokeeritud: see käsk kustutaks ketta, kodukausta või süsteemikausta. Seda ei käivitatud.",
   "activity.checking": "Kontrollib vastust…",
-  "activity.finishing": "Lõpetab…"
+  "activity.finishing": "Lõpetab…",
+  "goalTool.staleVerification": "Pärast viimast õnnestunud kontrolli ({command}) muutusid failid: {files}. Käivita testid uuesti ja seejärel sulge eesmärk.",
+  "goalTool.checkNotPassed": "Kontroll ebaõnnestus või jäi käivitamata: {command}. Käivita see uuesti ja seejärel sulge eesmärk."
 }

@@ -1356,5 +1356,7 @@
   "toolHint.range": "žinutės {from}–{to}",
   "tool.blockedDanger": "Užblokuota: ši komanda ištrintų diską, namų aplanką arba sistemos aplanką. Ji nebuvo paleista.",
   "activity.checking": "Tikrina atsakymą…",
-  "activity.finishing": "Baigia…"
+  "activity.finishing": "Baigia…",
+  "goalTool.staleVerification": "Po paskutinio sėkmingo patikrinimo ({command}) pakeisti failai: {files}. Paleiskite testus iš naujo, tada uždarykite tikslą.",
+  "goalTool.checkNotPassed": "Patikrinimas nepavyko arba nebuvo paleistas: {command}. Paleiskite jį iš naujo, tada uždarykite tikslą."
 }

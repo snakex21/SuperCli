@@ -1356,5 +1356,7 @@
   "toolHint.range": "beskeder {from}–{to}",
   "tool.blockedDanger": "Blokeret: denne kommando ville slette et drev, hjemmemappen eller en systemmappe. Den blev ikke kørt.",
   "activity.checking": "Tjekker svaret…",
-  "activity.finishing": "Afslutter…"
+  "activity.finishing": "Afslutter…",
+  "goalTool.staleVerification": "Efter det sidste beståede tjek ({command}) er disse filer ændret: {files}. Kør testene igen, og luk derefter målet.",
+  "goalTool.checkNotPassed": "Tjekket fejlede eller blev ikke kørt: {command}. Kør det igen, og luk derefter målet."
 }

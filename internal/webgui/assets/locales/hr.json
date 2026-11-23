@@ -1356,5 +1356,7 @@
   "toolHint.range": "poruke {from}–{to}",
   "tool.blockedDanger": "Blokirano: ova bi naredba izbrisala disk, osobnu mapu ili sistemsku mapu. Nije pokrenuta.",
   "activity.checking": "Provjerava odgovor…",
-  "activity.finishing": "Završava…"
+  "activity.finishing": "Završava…",
+  "goalTool.staleVerification": "Nakon posljednje uspješne provjere ({command}) promijenjene su datoteke: {files}. Ponovno pokrenite testove, zatim zatvorite cilj.",
+  "goalTool.checkNotPassed": "Provjera nije prošla ili nije pokrenuta: {command}. Pokrenite je ponovno, zatim zatvorite cilj."
 }
