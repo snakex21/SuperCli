@@ -538,6 +538,7 @@ function buildHistoryFragment(messages, pager, prepend) {
           { name: toolDisplayName(persistedName), hint: clip(m.content || "", 90) };
         var row = document.createElement("details");
         row.className = "tool-row done";
+        row._callID = m.tool_call_id || "";
         applyToolKind(row, persistedName);
         row.open = toolDisclosureOpen();
         var sum = el("summary");
@@ -721,12 +722,17 @@ async function resumeSession(id, session, fromQueue, fromSync) {
     composerDraftStore.restore("session:" + id);
     transcriptSessionID = id;
     if (typeof restorePendingQuestions === "function") restorePendingQuestions(id);
+    // A sync refresh of the conversation already on screen rebuilds it (each
+    // event of a run started elsewhere, e.g. busy workers). Cards the user
+    // opened stay open across the rebuild.
+    var openBefore = fromSync && transcriptSessionID === id ? snapshotOpenDisclosures() : null;
     loadedTranscriptMessages = msgs;
     transcriptHasMore = !!page.has_more;
     transcriptBeforeSeq = page.before_seq || 0;
     renderLoadedTranscript(false);
     if (liveRun) reattachDetachedRun(id);
     else showFailedRun(id);
+    if (openBefore) restoreOpenDisclosures(openBefore);
     // A run that started elsewhere and is not shown yet keeps its message.
     if (typeof syncAfterHistoryRender === "function") syncAfterHistoryRender(id, fetchStartedAt);
     loadSessions();

@@ -137,8 +137,53 @@ stream.addEventListener("click", function (event) {
   var summary = target.closest("summary"), row = summary && summary.parentNode;
   if (!row || !stream.contains(row) || !row.classList ||
       target.closest("a,button,input,select,textarea,label")) return;
+  if (row.classList.contains("task-row")) {
+    // Worker cards toggle themselves, like the delegation panel does: their
+    // line is repainted while the worker runs, which could swallow the
+    // native summary toggle. A pointer press already toggled it.
+    event.preventDefault();
+    if (taskRowToggledByPointer) { taskRowToggledByPointer = false; return; }
+    toggleTaskRow(row);
+    return;
+  }
   if (row.classList.contains("tool-row")) saveDisclosurePreference("tools", !row.open);
   else if (row.classList.contains("think-block")) saveDisclosurePreference("thinking", !row.open);
+});
+
+// A press on a worker card's line opens or closes it on release, even when
+// the line's text was repainted (or the card rebuilt) in between, so a
+// running worker's card always answers the click.
+var taskRowPress = null, taskRowToggledByPointer = false;
+function taskRowFromEvent(event) {
+  var target = event.target, summary = target && target.closest && target.closest("summary");
+  var row = summary && summary.parentNode;
+  if (!row || !row.classList || !row.classList.contains("task-row") || !stream.contains(row)) return null;
+  if (target.closest("a,button,input,select,textarea,label")) return null;
+  return row;
+}
+function toggleTaskRow(row) {
+  if (!row) return;
+  row.open = !row.open;
+  if (row._body) row._body.hidden = !row.open;
+}
+stream.addEventListener("pointerdown", function (event) {
+  var row = event.button === 0 ? taskRowFromEvent(event) : null;
+  taskRowPress = row ? {row: row, id: row._taskID || ""} : null;
+  taskRowToggledByPointer = false;
+});
+stream.addEventListener("pointerup", function (event) {
+  var press = taskRowPress;
+  taskRowPress = null;
+  if (!press || event.button !== 0) return;
+  var row = taskRowFromEvent(event);
+  if (!row) return;
+  var same = row === press.row || (press.id && row._taskID === press.id);
+  if (!same) return;
+  toggleTaskRow(row);
+  taskRowToggledByPointer = true;
+  // The click that may follow is suppressed above; none follows when the
+  // pressed node was replaced, so clear the flag after this event loop.
+  setTimeout(function () { taskRowToggledByPointer = false; }, 0);
 });
 
 function appendStream(node) {
@@ -3132,6 +3177,31 @@ function stopWorkerFromCard(id) {
   return j("/api/workers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: id, action: "stop" }) });
 }
 
+// Keys of the tool and worker cards that are open, so a rebuild of the same
+// conversation can reopen them: a worker card by its worker id, a tool card
+// by its call id; the n-th card with the same key keeps its own state.
+function disclosureKeys() {
+  var seen = Object.create(null), out = [];
+  stream.querySelectorAll("details.tool-row").forEach(function (row) {
+    var base = row._taskID ? "task:" + row._taskID : row._callID ? "call:" + row._callID : "";
+    if (!base) return;
+    seen[base] = (seen[base] || 0) + 1;
+    out.push({row: row, key: base + "#" + seen[base]});
+  });
+  return out;
+}
+function snapshotOpenDisclosures() {
+  var open = Object.create(null);
+  disclosureKeys().forEach(function (entry) { if (entry.row.open) open[entry.key] = true; });
+  return open;
+}
+function restoreOpenDisclosures(open) {
+  disclosureKeys().forEach(function (entry) {
+    if (!open[entry.key] || entry.row.open) return;
+    entry.row.open = true;
+    if (entry.row._body) entry.row._body.hidden = false;
+  });
+}
 function addHistoryTask(note, prompt, savedActivity) {
   var row = document.createElement("details");
   row.className = "tool-row task-row done";
@@ -3180,6 +3250,7 @@ function addToolCall(name, args, id, at) {
   var info = toolHint(name, args);
   var row = document.createElement("details");
   row.className = "tool-row";
+  row._callID = id || "";
   applyToolKind(row, name);
   row.open = toolDisclosureOpen();
   var sum = el("summary");
