@@ -788,7 +788,7 @@ button.side-cost:focus-visible { outline: 2px solid var(--accent); outline-offse
 .tool-row.failed { border-left: 2px solid var(--danger); }
 .tool-row summary {
   list-style: none; cursor: pointer;
-  display: grid; grid-template-columns: 10px 176px 1fr auto;
+  display: grid; grid-template-columns: 10px 176px minmax(0, 1fr) minmax(0, max-content);
   align-items: center; column-gap: 10px;
   padding: 5px 10px;
   font: var(--fs-sm) var(--mono); color: var(--muted);
@@ -822,6 +822,15 @@ button.side-cost:focus-visible { outline: 2px solid var(--accent); outline-offse
 .tool-row .tstat {
   display: inline-flex; align-items: center; justify-content: flex-end; gap: 7px;
   font-size: var(--fs-xs); color: var(--faint); text-align: right; white-space: nowrap;
+  /* Long live progress ("6/10 native_player_…") stays inside the row:
+     the cell is capped and its text ends with an ellipsis. */
+  min-width: 0; max-width: 52ch; overflow: hidden;
+}
+.tool-row .tstat-clock { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Narrow window: the name, the hint and the status share the row. */
+@media (max-width: 560px) {
+  .tool-row summary { grid-template-columns: 10px minmax(0, 120px) minmax(0, 1fr) minmax(0, max-content); }
+  .tool-row .tstat { max-width: 45vw; }
 }
 .tool-row.running .tstat { color: var(--status-running); }
 .tool-row.pending-approval { border-color: var(--status-pending); }
@@ -1034,7 +1043,7 @@ button[data-sec="about"].has-update::after {
 .task-row { min-width: 0; overflow-wrap: anywhere; border-left: 2px solid var(--accent); }
 .task-row.done { border-left-color: var(--ok); }
 .task-row.failed { border-left-color: var(--danger); }
-.task-row > summary { grid-template-columns: 10px minmax(150px, 190px) 1fr auto; }
+.task-row > summary { grid-template-columns: 10px minmax(150px, 190px) minmax(0, 1fr) minmax(0, max-content); }
 .task-row .worker-model-info { overflow: hidden; text-overflow: ellipsis; }
 .task-row .tname { font-family: var(--sans); font-weight: 600; }
 /* Ticks rewrite only the elapsed span; tabular digits and a fixed minimum keep
@@ -2638,7 +2647,7 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
 }
 .task-row .worker-stop:hover { border-color: var(--danger); color: var(--danger); }
 .task-row summary .worker-stop.in-summary { margin: 0 8px 0 0; padding: 1px 8px; line-height: 1.5; align-self: center; }
-.task-row > summary { grid-template-columns: 10px minmax(150px, 190px) 1fr auto auto; }
+.task-row > summary { grid-template-columns: 10px minmax(150px, 190px) minmax(0, 1fr) auto minmax(0, max-content); }
 .tool-row.refused { border-left: 2px solid var(--line-strong, var(--line)); }
 .tool-row.refused .tname, .tool-row.refused .tstat { color: var(--muted); font-weight: 500; }
 .tool-row.refused .tstat::before { content: "\2139  "; }
