@@ -137,9 +137,6 @@ stream.addEventListener("click", function (event) {
   var summary = target.closest("summary"), row = summary && summary.parentNode;
   if (!row || !stream.contains(row) || !row.classList ||
       target.closest("a,button,input,select,textarea,label")) return;
-  // A folded worker line in the chat is a link to its card in the
-  // delegation panel; the panel entry opens the full card here.
-  if (row.classList.contains("task-row") && !row.open && focusWorkerInOverview(row)) { event.preventDefault(); return; }
   if (row.classList.contains("tool-row")) saveDisclosurePreference("tools", !row.open);
   else if (row.classList.contains("think-block")) saveDisclosurePreference("thinking", !row.open);
 });
@@ -1651,21 +1648,6 @@ function taskRowTitle(row, agentName, id) {
   return (id ? workerLabel(id) : t("task.delegation")) +
     (row._toolName === "send_message" ? " · " + t("task.continue") : "");
 }
-function focusWorkerInOverview(row) {
-  var item = row && row._taskID && workerOverview[row._taskID], panel = $("#worker-overview");
-  if (!item || item.row !== row || !panel || panel.hidden || !item.button.isConnected) return false;
-  panel.open = true;
-  workerOverviewUserToggled = true;
-  item.button.classList.remove("highlight");
-  void item.button.offsetWidth; // restart the highlight animation
-  item.button.classList.add("highlight");
-  clearTimeout(item.highlightTimer);
-  item.highlightTimer = setTimeout(function () { item.button.classList.remove("highlight"); }, 2200);
-  item.button.scrollIntoView({ block: "nearest" });
-  if (typeof item.button.focus === "function") item.button.focus({ preventScroll: true });
-  return true;
-}
-
 /* Stable tool/task summaries. Clock ticks, status polls and replayed worker
    events used to rewrite whole summary cells; a tstat without its elapsed part
    (or a rebuilt title) reflowed the grid, so the truncated task text jumped

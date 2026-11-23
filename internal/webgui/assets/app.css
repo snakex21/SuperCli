@@ -2800,22 +2800,6 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
 /* This message's own numbers: one compact grey line. */
 .turn-meta { font-family: var(--sans); font-variant-numeric: tabular-nums; }
 
-/* A folded worker in the chat is one short link line:
-   "→ Worker 3: <task> · interrupted". Expanded, it is the full card. */
-.task-row:not([open]) { border: 0; border-left: 0; background: transparent; }
-.task-row:not([open]):hover { background: transparent; }
-.task-row:not([open]) > summary {
-  display: flex; align-items: baseline; gap: 6px; padding: 2px 0;
-  font: var(--fs-sm) var(--sans); color: var(--muted);
-}
-.task-row:not([open]) > summary::before { content: "\2192"; color: var(--faint); }
-.task-row:not([open]) .tname { flex: none; font-weight: 500; color: var(--text); }
-.task-row:not([open]) .tname::after { content: ":"; }
-.task-row:not([open]) > summary:hover .tname { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
-.task-row:not([open]) .worker-model-info { display: none; }
-.task-row:not([open]) .thint { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.task-row:not([open]) .tstat { flex: none; font: var(--fs-xs) var(--sans); }
-.worker-overview-item.highlight { background: color-mix(in srgb, var(--accent) 16%, transparent); transition: background-color 300ms ease; }
 
 /* Delegation panel header: one calm clickable summary line. */
 .worker-overview > summary {
