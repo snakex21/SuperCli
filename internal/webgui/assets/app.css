@@ -1,5 +1,5 @@
 /* Shared image viewer and queued attachment editor. */
-.image-lightbox { position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; border-radius: 0; outline: none; background: rgba(9, 10, 12, .97); color: var(--viewer-text); overflow: hidden; overscroll-behavior: contain; -webkit-user-select: none; user-select: none; }
+.image-lightbox { position: fixed; inset: 0; width: var(--app-viewport-width, 100%); height: var(--app-viewport-height, 100%); max-width: none; max-height: none; margin: 0; padding: 0; border: 0; border-radius: 0; outline: none; background: rgba(9, 10, 12, .97); color: var(--viewer-text); overflow: hidden; overscroll-behavior: contain; -webkit-user-select: none; user-select: none; }
 .image-lightbox::backdrop { background: rgba(0, 0, 0, .88); }
 .image-lightbox[open] { display: flex; flex-direction: column; }
 .image-lightbox-toolbar { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; padding: max(8px, env(safe-area-inset-top)) 10px 8px; border-bottom: 1px solid var(--viewer-line-soft); background: var(--viewer-bg); z-index: 1; }

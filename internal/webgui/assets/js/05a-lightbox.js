@@ -36,12 +36,24 @@ function openImageLightbox(paths, selected, trigger, previewPath) {
   toolbar.appendChild(title);
   button("attachment.zoomOut", "−", function () { zoom(state.scale / 1.25, 0, 0); });
   button("attachment.zoomIn", "+", function () { zoom(state.scale * 1.25, 0, 0); });
-  var fitButton = button("attachment.fitImage", "⤢", fit);
+  // ⤢ switches between the whole image (fit) and its actual pixels (100%).
+  var fitButton = button("attachment.fitImage", "⤢", function () { if (state.scale > state.fit + 0.001 || state.fit >= 1) fit(); else zoom(1, 0, 0); });
   button("attachment.rotateImage", "↻", rotate);
   var closeButton = button("common.close", "×", close);
   prev.disabled = next.disabled = paths.length < 2;
   dialog.appendChild(toolbar); dialog.appendChild(stage); document.body.appendChild(dialog);
-  function bounds() { return stage.getBoundingClientRect(); }
+  // The stage in the image's own CSS pixels. The app scales its root with
+  // CSS zoom (UI scale): getBoundingClientRect and pointer coordinates are
+  // zoomed, sizes and transforms are not. Mixing them made the "fit" image
+  // larger than the stage (cropped). k converts screen to CSS pixels.
+  function bounds() {
+    var rect = stage.getBoundingClientRect(), width = stage.clientWidth || rect.width, height = stage.clientHeight || rect.height;
+    return { left: rect.left, top: rect.top, width: width, height: height, k: width ? rect.width / width : 1 };
+  }
+  function stagePoint(clientX, clientY) {
+    var r = bounds();
+    return { x: (clientX - r.left) / r.k - r.width / 2, y: (clientY - r.top) / r.k - r.height / 2 };
+  }
   function dimensions() {
     return state.rotation % 180 ? { width: image.naturalHeight, height: image.naturalWidth } : { width: image.naturalWidth, height: image.naturalHeight };
   }
@@ -103,7 +115,7 @@ function openImageLightbox(paths, selected, trigger, previewPath) {
   image.addEventListener("error", function () { failure.hidden = false; });
   stage.addEventListener("wheel", function (event) {
     event.preventDefault();
-    var r = bounds(); zoom(state.scale * Math.exp(-event.deltaY * 0.002), event.clientX - r.left - r.width / 2, event.clientY - r.top - r.height / 2);
+    var p = stagePoint(event.clientX, event.clientY); zoom(state.scale * Math.exp(-event.deltaY * 0.002), p.x, p.y);
   }, { passive: false });
   stage.addEventListener("dblclick", function (event) {
     event.preventDefault();
@@ -158,11 +170,11 @@ function openImageLightbox(paths, selected, trigger, previewPath) {
     var old = geometry(), pointer = pointers.get(event.pointerId);
     pointer.x = event.clientX; pointer.y = event.clientY;
     var current = geometry();
-    var dx = current.x - old.x, dy = current.y - old.y;
+    var k = bounds().k || 1, dx = (current.x - old.x) / k, dy = (current.y - old.y) / k;
     // Accumulate from pointerdown: many small mouse/touch moves are still a drag.
     if (Math.hypot(pointer.x - pointer.startX, pointer.y - pointer.startY) > 3) moved = true;
     if (old.distance && current.distance) {
-      var r = bounds(); zoom(state.scale * current.distance / old.distance, old.x - r.left - r.width / 2, old.y - r.top - r.height / 2);
+      var p = stagePoint(old.x, old.y); zoom(state.scale * current.distance / old.distance, p.x, p.y);
       moved = true;
     }
     state.x += dx; state.y += dy; paint();
