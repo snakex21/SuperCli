@@ -1358,5 +1358,18 @@
   "activity.checking": "Sprawdza odpowiedź…",
   "activity.finishing": "Kończy…",
   "goalTool.staleVerification": "Po ostatnim udanym sprawdzeniu ({command}) zmieniono pliki: {files}. Uruchom ponownie testy, potem zamknij cel.",
-  "goalTool.checkNotPassed": "Sprawdzenie nie przeszło albo nie zostało uruchomione: {command}. Uruchom je ponownie, potem zamknij cel."
+  "goalTool.checkNotPassed": "Sprawdzenie nie przeszło albo nie zostało uruchomione: {command}. Uruchom je ponownie, potem zamknij cel.",
+  "prov.logo": "Logo",
+  "prov.logoAuto": "Automatyczne",
+  "prov.logoUpload": "Wgraj obraz…",
+  "prov.logoReset": "Przywróć domyślne",
+  "prov.logoHint": "Wybierz wbudowane logo albo wgraj własne (PNG, JPG, SVG lub WebP, do 512 KB).",
+  "prov.logoSaved": "Zapisano logo",
+  "prov.logoTooBig": "Plik ma więcej niż 512 KB.",
+  "prov.logoInvalid": "Ten plik nie jest obsługiwanym obrazem.",
+  "prov.removeConfirm": "Usunąć dostawcę {n}? Jego klucz i lista modeli zostaną usunięte z konfiguracji.",
+  "prov.removeActive": "Ten dostawca jest używany przez wybrany model. Najpierw wybierz inny model, inaczej przestanie działać.",
+  "prov.removeRefs": "Tryby lub ustawienia wskazują na tego dostawcę; trzeba będzie wybrać dla nich inny model.",
+  "prov.removeYes": "Usuń",
+  "prov.removed": "Usunięto {n}"
 }

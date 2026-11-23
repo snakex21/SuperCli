@@ -1358,5 +1358,18 @@
   "activity.checking": "Ellenőrzi a választ…",
   "activity.finishing": "Befejezi…",
   "goalTool.staleVerification": "Az utolsó sikeres ellenőrzés ({command}) után megváltozott fájlok: {files}. Futtassa újra a teszteket, majd zárja le a célt.",
-  "goalTool.checkNotPassed": "Az ellenőrzés nem sikerült vagy nem futott le: {command}. Futtassa újra, majd zárja le a célt."
+  "goalTool.checkNotPassed": "Az ellenőrzés nem sikerült vagy nem futott le: {command}. Futtassa újra, majd zárja le a célt.",
+  "prov.logo": "Logó",
+  "prov.logoAuto": "Automatikus",
+  "prov.logoUpload": "Kép feltöltése…",
+  "prov.logoReset": "Alapértelmezett visszaállítása",
+  "prov.logoHint": "Válasszon beépített logót, vagy töltsön fel sajátot (PNG, JPG, SVG vagy WebP, legfeljebb 512 KB).",
+  "prov.logoSaved": "Logó mentve",
+  "prov.logoTooBig": "A fájl nagyobb 512 KB-nál.",
+  "prov.logoInvalid": "Ez a fájl nem támogatott kép.",
+  "prov.removeConfirm": "Eltávolítja a(z) {n} szolgáltatót? A kulcsa és a modelllistája törlődik a konfigurációból.",
+  "prov.removeActive": "A kiválasztott modell ezt a szolgáltatót használja. Előbb válasszon másik modellt, különben leáll a működése.",
+  "prov.removeRefs": "Módok vagy beállítások hivatkoznak erre a szolgáltatóra; ezekhez másik modell kell.",
+  "prov.removeYes": "Eltávolítás",
+  "prov.removed": "Eltávolítva: {n}"
 }

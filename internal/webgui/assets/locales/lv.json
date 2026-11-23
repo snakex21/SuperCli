@@ -1358,5 +1358,18 @@
   "activity.checking": "Pārbauda atbildi…",
   "activity.finishing": "Pabeidz…",
   "goalTool.staleVerification": "Pēc pēdējās veiksmīgās pārbaudes ({command}) mainījās faili: {files}. Palaidiet testus vēlreiz un pēc tam aizveriet mērķi.",
-  "goalTool.checkNotPassed": "Pārbaude neizdevās vai netika palaista: {command}. Palaidiet to vēlreiz un pēc tam aizveriet mērķi."
+  "goalTool.checkNotPassed": "Pārbaude neizdevās vai netika palaista: {command}. Palaidiet to vēlreiz un pēc tam aizveriet mērķi.",
+  "prov.logo": "Logotips",
+  "prov.logoAuto": "Automātiski",
+  "prov.logoUpload": "Augšupielādēt attēlu…",
+  "prov.logoReset": "Atjaunot noklusējumu",
+  "prov.logoHint": "Izvēlieties iebūvētu logotipu vai augšupielādējiet savu (PNG, JPG, SVG vai WebP, līdz 512 KB).",
+  "prov.logoSaved": "Logotips saglabāts",
+  "prov.logoTooBig": "Fails ir lielāks par 512 KB.",
+  "prov.logoInvalid": "Šis fails nav atbalstīts attēls.",
+  "prov.removeConfirm": "Noņemt nodrošinātāju {n}? Tā atslēga un modeļu saraksts tiks dzēsti no konfigurācijas.",
+  "prov.removeActive": "Izvēlētais modelis izmanto šo nodrošinātāju. Vispirms izvēlieties citu modeli, citādi tas pārstās darboties.",
+  "prov.removeRefs": "Režīmi vai iestatījumi norāda uz šo nodrošinātāju; tiem būs vajadzīgs cits modelis.",
+  "prov.removeYes": "Noņemt",
+  "prov.removed": "Noņemts: {n}"
 }

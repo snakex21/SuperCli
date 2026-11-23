@@ -1358,5 +1358,18 @@
   "activity.checking": "Tjekker svaret…",
   "activity.finishing": "Afslutter…",
   "goalTool.staleVerification": "Efter det sidste beståede tjek ({command}) er disse filer ændret: {files}. Kør testene igen, og luk derefter målet.",
-  "goalTool.checkNotPassed": "Tjekket fejlede eller blev ikke kørt: {command}. Kør det igen, og luk derefter målet."
+  "goalTool.checkNotPassed": "Tjekket fejlede eller blev ikke kørt: {command}. Kør det igen, og luk derefter målet.",
+  "prov.logo": "Logo",
+  "prov.logoAuto": "Automatisk",
+  "prov.logoUpload": "Upload billede…",
+  "prov.logoReset": "Gendan standard",
+  "prov.logoHint": "Vælg et indbygget logo, eller upload dit eget (PNG, JPG, SVG eller WebP, op til 512 KB).",
+  "prov.logoSaved": "Logo gemt",
+  "prov.logoTooBig": "Filen er større end 512 KB.",
+  "prov.logoInvalid": "Denne fil er ikke et understøttet billede.",
+  "prov.removeConfirm": "Fjern udbyderen {n}? Dens nøgle og modelliste slettes fra konfigurationen.",
+  "prov.removeActive": "Den valgte model bruger denne udbyder. Vælg først en anden model, ellers holder den op med at virke.",
+  "prov.removeRefs": "Tilstande eller indstillinger peger på denne udbyder; de skal have en anden model.",
+  "prov.removeYes": "Fjern",
+  "prov.removed": "Fjernede {n}"
 }

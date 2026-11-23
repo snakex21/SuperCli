@@ -1358,5 +1358,18 @@
   "activity.checking": "Sjekker svaret…",
   "activity.finishing": "Avslutter…",
   "goalTool.staleVerification": "Etter den siste beståtte sjekken ({command}) er disse filene endret: {files}. Kjør testene på nytt, og lukk deretter målet.",
-  "goalTool.checkNotPassed": "Sjekken feilet eller ble ikke kjørt: {command}. Kjør den på nytt, og lukk deretter målet."
+  "goalTool.checkNotPassed": "Sjekken feilet eller ble ikke kjørt: {command}. Kjør den på nytt, og lukk deretter målet.",
+  "prov.logo": "Logo",
+  "prov.logoAuto": "Automatisk",
+  "prov.logoUpload": "Last opp bilde…",
+  "prov.logoReset": "Gjenopprett standard",
+  "prov.logoHint": "Velg en innebygd logo eller last opp din egen (PNG, JPG, SVG eller WebP, opptil 512 KB).",
+  "prov.logoSaved": "Logo lagret",
+  "prov.logoTooBig": "Filen er større enn 512 KB.",
+  "prov.logoInvalid": "Denne filen er ikke et støttet bilde.",
+  "prov.removeConfirm": "Fjerne leverandøren {n}? Nøkkelen og modellisten slettes fra konfigurasjonen.",
+  "prov.removeActive": "Den valgte modellen bruker denne leverandøren. Velg en annen modell først, ellers slutter den å virke.",
+  "prov.removeRefs": "Moduser eller innstillinger peker til denne leverandøren; de trenger en annen modell.",
+  "prov.removeYes": "Fjern",
+  "prov.removed": "Fjernet {n}"
 }

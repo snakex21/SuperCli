@@ -1358,5 +1358,18 @@
   "activity.checking": "Tarkistaa vastausta…",
   "activity.finishing": "Viimeistelee…",
   "goalTool.staleVerification": "Viimeisen onnistuneen tarkistuksen ({command}) jälkeen muuttuivat tiedostot: {files}. Aja testit uudelleen ja sulje sitten tavoite.",
-  "goalTool.checkNotPassed": "Tarkistus epäonnistui tai jäi ajamatta: {command}. Aja se uudelleen ja sulje sitten tavoite."
+  "goalTool.checkNotPassed": "Tarkistus epäonnistui tai jäi ajamatta: {command}. Aja se uudelleen ja sulje sitten tavoite.",
+  "prov.logo": "Logo",
+  "prov.logoAuto": "Automaattinen",
+  "prov.logoUpload": "Lataa kuva…",
+  "prov.logoReset": "Palauta oletus",
+  "prov.logoHint": "Valitse sisäänrakennettu logo tai lataa oma (PNG, JPG, SVG tai WebP, enintään 512 KB).",
+  "prov.logoSaved": "Logo tallennettu",
+  "prov.logoTooBig": "Tiedosto on suurempi kuin 512 KB.",
+  "prov.logoInvalid": "Tämä tiedosto ei ole tuettu kuva.",
+  "prov.removeConfirm": "Poistetaanko palveluntarjoaja {n}? Sen avain ja malliluettelo poistetaan määrityksistä.",
+  "prov.removeActive": "Valittu malli käyttää tätä palveluntarjoajaa. Valitse ensin toinen malli, muuten se lakkaa toimimasta.",
+  "prov.removeRefs": "Tilat tai asetukset viittaavat tähän palveluntarjoajaan; niille on valittava toinen malli.",
+  "prov.removeYes": "Poista",
+  "prov.removed": "Poistettu: {n}"
 }

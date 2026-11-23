@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 
@@ -20,7 +21,7 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 		for i := range templates {
 			templates[i].Desc = uilang.ProviderDescription(r.URL.Query().Get("lang"), templates[i].Name, templates[i].Desc)
 		}
-		writeJSON(w, map[string]any{"providers": m.ListConfigured(s.eng.caps), "templates": templates})
+		writeJSON(w, map[string]any{"providers": s.providersWithLogos(m.ListConfigured(s.eng.caps)), "templates": templatesWithIcons(templates)})
 	case http.MethodPost:
 		var req struct {
 			Name    string `json:"name"`
@@ -202,6 +203,9 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 		if err := m.Remove(name); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
+		}
+		if err := removeProviderLogo(s.eng.DataDir(), name); err != nil {
+			log.Printf("provider logo cleanup for %q: %v", name, err)
 		}
 		writeJSON(w, map[string]any{"ok": true, "name": name})
 	default:

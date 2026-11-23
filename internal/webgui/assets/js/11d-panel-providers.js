@@ -6,44 +6,78 @@ function providerModelCount(models) {
   return Array.isArray(models) ? models.length : (Number(models) || 0);
 }
 
-// providerSlug normalizes a provider name to a filename-safe icon key.
+// providerSlug normalizes a provider name for the letter badge colour.
 function providerSlug(name) {
   return String(name || "").toLowerCase().replace(/[^a-z0-9-]/g, "");
 }
 
-// providerIconEl builds a small provider badge. It renders a colored monogram
-// immediately, then tries to swap in a bundled SVG from icons/providers/.
-// Regional variants (xiaomi-tokenplan-global) fall back to the family icon
-// (xiaomi) after the slug, so one logo covers the whole family. Anything with
-// no bundled icon keeps the monogram — a new provider is never left blank.
-function providerIconEl(name) {
-  var slug = providerSlug(name);
-  var family = slug.split("-")[0];
+// Built-in logos (icons/providers/<key>.svg): key -> true for single-colour
+// logos, which are drawn as a mask in the theme's text colour so they read on
+// a dark background; colour logos are shown as images.
+var providerIconMono = null;
+async function loadProviderIconCatalog() {
+  if (providerIconMono) return providerIconMono;
+  try {
+    var list = await j("/api/provider/icons");
+    providerIconMono = {};
+    (list || []).forEach(function (icon) { providerIconMono[icon.key] = !!icon.mono; });
+  } catch (e) { providerIconMono = {}; }
+  return providerIconMono;
+}
+function providerGlyph(key, onReady) {
+  var url = "icons/providers/" + encodeURIComponent(key) + ".svg";
+  if (providerIconMono && providerIconMono[key]) {
+    var glyph = el("span", "prov-glyph");
+    glyph.style.webkitMaskImage = glyph.style.maskImage = "url(" + url + ")";
+    onReady();
+    return glyph;
+  }
+  var img = new Image();
+  img.className = "prov-img";
+  img.alt = "";
+  img.addEventListener("load", onReady);
+  img.src = url;
+  return img;
+}
+
+// providerIconEl is a provider's badge: the user's own logo, else the
+// built-in logo the server matched from type and address (p.Icon), else a
+// coloured letter. The name the user typed never picks the logo.
+function providerIconEl(p) {
+  if (typeof p === "string") p = {Name: p};
+  p = p || {};
+  var slug = providerSlug(p.Name);
   var wrap = el("span", "prov-icon");
-  var letter = (family.charAt(0) || "?").toUpperCase();
-  var mono = el("span", "prov-mono", letter);
+  var mono = el("span", "prov-mono", (slug.charAt(0) || "?").toUpperCase());
   var h = 0;
   for (var i = 0; i < slug.length; i++) h = ((h * 31) + slug.charCodeAt(i)) >>> 0;
   mono.style.background = "hsl(" + (h % 360) + " 52% 42%)";
   wrap.appendChild(mono);
-  var candidates = [];
-  if (slug) candidates.push("icons/providers/" + slug + ".svg");
-  if (family && family !== slug) candidates.push("icons/providers/" + family + ".svg");
-  if (candidates.length) {
-    var idx = 0;
-    var img = new Image();
-    img.className = "prov-img";
-    img.alt = "";
-    img.addEventListener("load", function () { mono.style.display = "none"; wrap.appendChild(img); });
-    img.addEventListener("error", function () { idx++; if (idx < candidates.length) img.src = candidates[idx]; });
-    img.src = candidates[0];
+  var logo = p.Logo || {};
+  function ready(node) { return function () { mono.style.display = "none"; node.style.display = ""; }; }
+  if (logo.url) {
+    var own = new Image();
+    own.className = "prov-img prov-own";
+    own.alt = "";
+    own.style.display = "none";
+    own.addEventListener("load", ready(own));
+    own.src = logo.url;
+    wrap.appendChild(own);
+  } else if (logo.builtin || p.Icon) {
+    var holder = el("span", "prov-tile");
+    holder.style.display = "none";
+    holder.appendChild(providerGlyph(logo.builtin || p.Icon, ready(holder)));
+    wrap.appendChild(holder);
   }
   return wrap;
 }
 
 async function renderProvidersList() {
   var got;
-  try { got = await j("/api/providers?lang=" + encodeURIComponent(ui.lang)); } catch (e) {
+  try {
+    await loadProviderIconCatalog();
+    got = await j("/api/providers?lang=" + encodeURIComponent(ui.lang));
+  } catch (e) {
     panelContent.innerHTML = '<div class="note">' + escHtml(e.message) + "</div>";
     return;
   }
@@ -58,7 +92,7 @@ async function renderProvidersList() {
   if (!provs.length) g.appendChild(i18nEl("div", "note", "prov.none"));
   provs.forEach(function (p) {
     var row = el("div", "list-row" + (p.Disabled ? " provider-disabled" : ""));
-    row.appendChild(providerIconEl(p.Name));
+    row.appendChild(providerIconEl(p));
     var main = el("div", "lr-main");
     var title = el("div", "lr-title");
     title.innerHTML = "<strong>" + escHtml(p.Name) + "</strong> <span class='note'>" + escHtml(p.Type || "") + "</span>";
@@ -98,12 +132,7 @@ async function renderProvidersList() {
     });
     act.appendChild(be);
     var bx = i18nEl("button", "danger", "common.remove");
-    bx.addEventListener("click", async function () {
-      try {
-        await fetch("/api/providers?name=" + encodeURIComponent(p.Name), { method: "DELETE" });
-        renderProvidersList();
-      } catch (e) { toast(e.message); }
-    });
+    bx.addEventListener("click", function () { confirmProviderRemove(row, main, act, p); });
     act.appendChild(bx);
     row.appendChild(act);
     g.appendChild(row);
@@ -170,6 +199,133 @@ function startProviderRename(row, main, act, p) {
   inp.select();
 }
 
+// confirmProviderRemove asks inside the row before deleting, and says when
+// the selected model or saved choices (modes, roles, settings) use it.
+async function confirmProviderRemove(row, main, act, p) {
+  if (row.querySelector(".provider-remove-confirm")) return;
+  var box = el("div", "provider-remove-confirm");
+  box.appendChild(el("div", "", t("prov.removeConfirm").replace("{n}", p.Name)));
+  var warn = el("div", "note provider-remove-warn");
+  warn.hidden = true;
+  box.appendChild(warn);
+  var buttons = el("div", "provider-remove-buttons");
+  var yes = i18nEl("button", "btn danger", "prov.removeYes");
+  var no = i18nEl("button", "btn", "common.cancel");
+  buttons.appendChild(yes); buttons.appendChild(no);
+  box.appendChild(buttons);
+  main.style.display = "none";
+  act.style.display = "none";
+  row.insertBefore(box, act);
+  function close() { box.remove(); main.style.display = ""; act.style.display = ""; }
+  no.addEventListener("click", close);
+  yes.addEventListener("click", async function () {
+    yes.disabled = no.disabled = true;
+    try {
+      var resp = await fetch("/api/providers?name=" + encodeURIComponent(p.Name), { method: "DELETE" });
+      if (!resp.ok) throw new Error((await resp.text()) || ("HTTP " + resp.status));
+      toast(t("prov.removed").replace("{n}", p.Name));
+      if (typeof loadModels === "function") loadModels();
+      renderProvidersList();
+    } catch (e) {
+      yes.disabled = no.disabled = false;
+      toast(e.message);
+    }
+  });
+  no.focus();
+  try {
+    var usage = await j("/api/provider/usage?name=" + encodeURIComponent(p.Name));
+    var lines = [];
+    if (usage && usage.active) lines.push(t("prov.removeActive"));
+    if (usage && usage.refs) lines.push(t("prov.removeRefs"));
+    warn.textContent = lines.join(" ");
+    warn.hidden = !lines.length;
+  } catch (e) { /* the question still stands without the warning */ }
+}
+
+// renderProviderLogoPicker: the edit form's logo row. Choices apply at once:
+// automatic (matched from type and address), any built-in logo, or an
+// uploaded image (PNG, JPG, SVG, WebP; up to 512 KB; SVG is sanitized).
+function renderProviderLogoPicker(parent, existing) {
+  var box = el("div", "fw provider-logo-picker");
+  var head = el("div", "provider-logo-head");
+  head.appendChild(el("span", "", t("prov.logo")));
+  var preview = el("span", "provider-logo-preview");
+  head.appendChild(preview);
+  box.appendChild(head);
+  box.appendChild(el("div", "note", t("prov.logoHint")));
+  var grid = el("div", "provider-logo-grid");
+  box.appendChild(grid);
+  var tools = el("div", "provider-logo-tools");
+  var file = document.createElement("input");
+  file.type = "file";
+  file.accept = ".png,.jpg,.jpeg,.svg,.webp,image/png,image/jpeg,image/svg+xml,image/webp";
+  file.hidden = true;
+  var upload = i18nEl("button", "btn", "prov.logoUpload");
+  upload.type = "button";
+  var reset = i18nEl("button", "btn", "prov.logoReset");
+  reset.type = "button";
+  var status = el("span", "note provider-logo-status");
+  tools.appendChild(upload); tools.appendChild(reset); tools.appendChild(file); tools.appendChild(status);
+  box.appendChild(tools);
+  parent.appendChild(box);
+
+  function paint() {
+    preview.replaceChildren(providerIconEl(existing));
+    var current = (existing.Logo && existing.Logo.builtin) || (!existing.Logo ? "auto" : "");
+    grid.querySelectorAll("button").forEach(function (b) {
+      b.setAttribute("aria-pressed", b.dataset.key === current ? "true" : "false");
+    });
+    reset.disabled = !existing.Logo;
+  }
+  async function save(body) {
+    status.textContent = "…";
+    body.name = existing.Name;
+    try {
+      var resp = await fetch("/api/provider/logo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      var data = await resp.json().catch(function () { return {}; });
+      if (!resp.ok) throw new Error(data.code ? t(data.code) : (data.error || ("HTTP " + resp.status)));
+      existing.Logo = data.logo || null;
+      status.textContent = t("prov.logoSaved");
+      paint();
+    } catch (e) { status.textContent = e.message; }
+  }
+  var auto = el("button", "provider-logo-choice provider-logo-auto", t("prov.logoAuto"));
+  auto.type = "button";
+  auto.dataset.key = "auto";
+  auto.title = t("prov.logoAuto");
+  auto.addEventListener("click", function () { save({ reset: true }); });
+  grid.appendChild(auto);
+  loadProviderIconCatalog().then(function (icons) {
+    Object.keys(icons).sort().forEach(function (key) {
+      var b = el("button", "provider-logo-choice");
+      b.type = "button";
+      b.dataset.key = key;
+      b.title = key;
+      b.setAttribute("aria-label", key);
+      b.appendChild(providerIconEl({ Name: key, Icon: key }));
+      b.addEventListener("click", function () { save({ builtin: key }); });
+      grid.appendChild(b);
+    });
+    paint();
+  });
+  upload.addEventListener("click", function () { file.click(); });
+  reset.addEventListener("click", function () { save({ reset: true }); });
+  file.addEventListener("change", function () {
+    var f = file.files && file.files[0];
+    file.value = "";
+    if (!f) return;
+    if (f.size > 512 * 1024) { status.textContent = t("prov.logoTooBig"); return; }
+    var reader = new FileReader();
+    reader.onload = function () {
+      var text = String(reader.result || "");
+      save({ filename: f.name, data: text.slice(text.indexOf(",") + 1) });
+    };
+    reader.onerror = function () { status.textContent = t("prov.logoInvalid"); };
+    reader.readAsDataURL(f);
+  });
+  paint();
+}
+
 function normalizeProviderSearch(value) {
   var text = String(value || "").toLowerCase();
   return text.normalize ? text.normalize("NFD").replace(/[\u0300-\u036f]/g, "") : text;
@@ -211,7 +367,7 @@ function renderProviderChooser(templates) {
     var b = el("button");
     b.type = "button";
     b.dataset.search = normalizeProviderSearch([displayName, tpl.Name, tpl.Desc, tpl.BaseURL].filter(Boolean).join(" "));
-    b.appendChild(providerIconEl(tpl.Name));
+    b.appendChild(providerIconEl(tpl.Custom ? {Name: "custom"} : tpl));
     var txt = el("span", "tpl-txt");
     txt.appendChild(el("span", "tt", displayName));
     txt.appendChild(el("span", "ts", tpl.Desc || tpl.BaseURL || ""));
@@ -421,6 +577,7 @@ function renderProviderForm(templates, existing, selectedTemplate) {
       status.textContent = existing ? err.message : t("prov.addFailed") + ": " + err.message;
     }
   });
+  if (existing) renderProviderLogoPicker(form, existing);
   g.appendChild(form);
   panelContent.appendChild(g);
   if (existing) loadStoredKey();

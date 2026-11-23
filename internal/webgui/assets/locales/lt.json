@@ -1358,5 +1358,18 @@
   "activity.checking": "Tikrina atsakymą…",
   "activity.finishing": "Baigia…",
   "goalTool.staleVerification": "Po paskutinio sėkmingo patikrinimo ({command}) pakeisti failai: {files}. Paleiskite testus iš naujo, tada uždarykite tikslą.",
-  "goalTool.checkNotPassed": "Patikrinimas nepavyko arba nebuvo paleistas: {command}. Paleiskite jį iš naujo, tada uždarykite tikslą."
+  "goalTool.checkNotPassed": "Patikrinimas nepavyko arba nebuvo paleistas: {command}. Paleiskite jį iš naujo, tada uždarykite tikslą.",
+  "prov.logo": "Logotipas",
+  "prov.logoAuto": "Automatiškai",
+  "prov.logoUpload": "Įkelti paveikslėlį…",
+  "prov.logoReset": "Atkurti numatytąjį",
+  "prov.logoHint": "Pasirinkite integruotą logotipą arba įkelkite savo (PNG, JPG, SVG arba WebP, iki 512 KB).",
+  "prov.logoSaved": "Logotipas išsaugotas",
+  "prov.logoTooBig": "Failas didesnis nei 512 KB.",
+  "prov.logoInvalid": "Šis failas nėra palaikomas paveikslėlis.",
+  "prov.removeConfirm": "Pašalinti teikėją {n}? Jo raktas ir modelių sąrašas bus ištrinti iš konfigūracijos.",
+  "prov.removeActive": "Pasirinktas modelis naudoja šį teikėją. Pirmiausia pasirinkite kitą modelį, kitaip jis nustos veikti.",
+  "prov.removeRefs": "Režimai arba nustatymai nurodo į šį teikėją; jiems reikės kito modelio.",
+  "prov.removeYes": "Pašalinti",
+  "prov.removed": "Pašalinta: {n}"
 }

@@ -1358,5 +1358,18 @@
   "activity.checking": "Kontrollerar svaret…",
   "activity.finishing": "Avslutar…",
   "goalTool.staleVerification": "Efter den senaste godkända kontrollen ({command}) har dessa filer ändrats: {files}. Kör testerna igen och stäng sedan målet.",
-  "goalTool.checkNotPassed": "Kontrollen misslyckades eller kördes inte: {command}. Kör den igen och stäng sedan målet."
+  "goalTool.checkNotPassed": "Kontrollen misslyckades eller kördes inte: {command}. Kör den igen och stäng sedan målet.",
+  "prov.logo": "Logotyp",
+  "prov.logoAuto": "Automatisk",
+  "prov.logoUpload": "Ladda upp bild…",
+  "prov.logoReset": "Återställ standard",
+  "prov.logoHint": "Välj en inbyggd logotyp eller ladda upp en egen (PNG, JPG, SVG eller WebP, högst 512 KB).",
+  "prov.logoSaved": "Logotypen sparades",
+  "prov.logoTooBig": "Filen är större än 512 KB.",
+  "prov.logoInvalid": "Filen är inte en bild som stöds.",
+  "prov.removeConfirm": "Ta bort leverantören {n}? Dess nyckel och modellista raderas från konfigurationen.",
+  "prov.removeActive": "Den valda modellen använder den här leverantören. Välj en annan modell först, annars slutar den fungera.",
+  "prov.removeRefs": "Lägen eller inställningar pekar på den här leverantören; de behöver en annan modell.",
+  "prov.removeYes": "Ta bort",
+  "prov.removed": "Tog bort {n}"
 }

@@ -1795,6 +1795,32 @@ button[data-sec="about"].has-update::after {
   font: 600 var(--fs-sm) var(--sans, sans-serif); line-height: 1;
 }
 .prov-icon .prov-img { width: 28px; height: 28px; border-radius: 6px; object-fit: contain; }
+/* Built-in logos sit on one calm rounded tile; single-colour ones take the
+   text colour (mask), colour ones keep theirs. */
+.prov-icon .prov-tile {
+  width: 28px; height: 28px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--raise, var(--line-soft)); border: 1px solid var(--line-soft);
+}
+.prov-icon .prov-tile .prov-img { width: 18px; height: 18px; border-radius: 0; }
+.prov-icon .prov-glyph {
+  width: 18px; height: 18px; background: var(--text);
+  -webkit-mask: center / contain no-repeat; mask: center / contain no-repeat;
+}
+.prov-icon .prov-own { background: var(--raise, var(--line-soft)); }
+.provider-logo-picker { display: flex; flex-direction: column; gap: 6px; }
+.provider-logo-head { display: flex; align-items: center; gap: 10px; }
+.provider-logo-grid { display: flex; flex-wrap: wrap; gap: 6px; max-height: 148px; overflow-y: auto; padding: 2px; }
+.provider-logo-choice {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 36px; height: 36px; padding: 0 4px;
+  border: 1px solid var(--line); border-radius: 8px; background: transparent; cursor: pointer; font: inherit; font-size: var(--fs-xs); color: var(--muted);
+}
+.provider-logo-choice:hover { border-color: var(--muted); }
+.provider-logo-choice[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.provider-logo-auto { padding: 0 10px; }
+.provider-logo-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.provider-remove-confirm { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.provider-remove-warn { color: var(--status-pending, var(--muted)); }
+.provider-remove-buttons { display: flex; gap: 8px; }
 
 /* Form grid */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

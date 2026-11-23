@@ -1358,5 +1358,18 @@
   "activity.checking": "Preverja odgovor…",
   "activity.finishing": "Zaključuje…",
   "goalTool.staleVerification": "Po zadnjem uspešnem preverjanju ({command}) so se spremenile datoteke: {files}. Znova zaženite teste, nato zaprite cilj.",
-  "goalTool.checkNotPassed": "Preverjanje ni uspelo ali ni bilo zagnano: {command}. Znova ga zaženite, nato zaprite cilj."
+  "goalTool.checkNotPassed": "Preverjanje ni uspelo ali ni bilo zagnano: {command}. Znova ga zaženite, nato zaprite cilj.",
+  "prov.logo": "Logotip",
+  "prov.logoAuto": "Samodejno",
+  "prov.logoUpload": "Naloži sliko…",
+  "prov.logoReset": "Obnovi privzeto",
+  "prov.logoHint": "Izberite vgrajeni logotip ali naložite svojega (PNG, JPG, SVG ali WebP, do 512 KB).",
+  "prov.logoSaved": "Logotip shranjen",
+  "prov.logoTooBig": "Datoteka je večja od 512 KB.",
+  "prov.logoInvalid": "Ta datoteka ni podprta slika.",
+  "prov.removeConfirm": "Odstranim ponudnika {n}? Njegov ključ in seznam modelov bosta izbrisana iz konfiguracije.",
+  "prov.removeActive": "Izbrani model uporablja tega ponudnika. Najprej izberite drug model, sicer bo prenehal delovati.",
+  "prov.removeRefs": "Načini ali nastavitve kažejo na tega ponudnika; potrebovali bodo drug model.",
+  "prov.removeYes": "Odstrani",
+  "prov.removed": "Odstranjeno: {n}"
 }

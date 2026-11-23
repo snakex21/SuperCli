@@ -1358,5 +1358,18 @@
   "activity.checking": "Revisando la respuesta…",
   "activity.finishing": "Terminando…",
   "goalTool.staleVerification": "Tras la última comprobación correcta ({command}) cambiaron estos archivos: {files}. Vuelve a ejecutar las pruebas y luego cierra el objetivo.",
-  "goalTool.checkNotPassed": "La comprobación falló o no se ejecutó: {command}. Ejecútala de nuevo y luego cierra el objetivo."
+  "goalTool.checkNotPassed": "La comprobación falló o no se ejecutó: {command}. Ejecútala de nuevo y luego cierra el objetivo.",
+  "prov.logo": "Logotipo",
+  "prov.logoAuto": "Automático",
+  "prov.logoUpload": "Subir imagen…",
+  "prov.logoReset": "Restaurar predeterminado",
+  "prov.logoHint": "Elige un logotipo integrado o sube el tuyo (PNG, JPG, SVG o WebP, hasta 512 KB).",
+  "prov.logoSaved": "Logotipo guardado",
+  "prov.logoTooBig": "El archivo supera los 512 KB.",
+  "prov.logoInvalid": "Este archivo no es una imagen compatible.",
+  "prov.removeConfirm": "¿Quitar el proveedor {n}? Su clave y su lista de modelos se eliminarán de la configuración.",
+  "prov.removeActive": "El modelo seleccionado usa este proveedor. Elige primero otro modelo o dejará de funcionar.",
+  "prov.removeRefs": "Hay modos o ajustes que apuntan a este proveedor; necesitarán otro modelo.",
+  "prov.removeYes": "Quitar",
+  "prov.removed": "Se quitó {n}"
 }

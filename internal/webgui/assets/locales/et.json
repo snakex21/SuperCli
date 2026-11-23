@@ -1358,5 +1358,18 @@
   "activity.checking": "Kontrollib vastust…",
   "activity.finishing": "Lõpetab…",
   "goalTool.staleVerification": "Pärast viimast õnnestunud kontrolli ({command}) muutusid failid: {files}. Käivita testid uuesti ja seejärel sulge eesmärk.",
-  "goalTool.checkNotPassed": "Kontroll ebaõnnestus või jäi käivitamata: {command}. Käivita see uuesti ja seejärel sulge eesmärk."
+  "goalTool.checkNotPassed": "Kontroll ebaõnnestus või jäi käivitamata: {command}. Käivita see uuesti ja seejärel sulge eesmärk.",
+  "prov.logo": "Logo",
+  "prov.logoAuto": "Automaatne",
+  "prov.logoUpload": "Laadi pilt üles…",
+  "prov.logoReset": "Taasta vaikimisi",
+  "prov.logoHint": "Vali sisseehitatud logo või laadi üles oma (PNG, JPG, SVG või WebP, kuni 512 KB).",
+  "prov.logoSaved": "Logo salvestatud",
+  "prov.logoTooBig": "Fail on suurem kui 512 KB.",
+  "prov.logoInvalid": "See fail ei ole toetatud pilt.",
+  "prov.removeConfirm": "Kas eemaldada teenusepakkuja {n}? Selle võti ja mudelite loend kustutatakse seadistusest.",
+  "prov.removeActive": "Valitud mudel kasutab seda teenusepakkujat. Vali enne teine mudel, muidu lakkab see töötamast.",
+  "prov.removeRefs": "Režiimid või seaded viitavad sellele teenusepakkujale; need vajavad teist mudelit.",
+  "prov.removeYes": "Eemalda",
+  "prov.removed": "Eemaldatud: {n}"
 }

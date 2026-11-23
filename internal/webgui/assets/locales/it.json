@@ -1358,5 +1358,18 @@
   "activity.checking": "Controlla la risposta…",
   "activity.finishing": "Sta finendo…",
   "goalTool.staleVerification": "Dopo l’ultimo controllo riuscito ({command}) sono cambiati questi file: {files}. Riesegui i test, poi chiudi l’obiettivo.",
-  "goalTool.checkNotPassed": "Il controllo non è riuscito o non è stato eseguito: {command}. Rieseguilo, poi chiudi l’obiettivo."
+  "goalTool.checkNotPassed": "Il controllo non è riuscito o non è stato eseguito: {command}. Rieseguilo, poi chiudi l’obiettivo.",
+  "prov.logo": "Logo",
+  "prov.logoAuto": "Automatico",
+  "prov.logoUpload": "Carica immagine…",
+  "prov.logoReset": "Ripristina predefinito",
+  "prov.logoHint": "Scegli un logo integrato o caricane uno tuo (PNG, JPG, SVG o WebP, fino a 512 KB).",
+  "prov.logoSaved": "Logo salvato",
+  "prov.logoTooBig": "Il file supera i 512 KB.",
+  "prov.logoInvalid": "Questo file non è un’immagine supportata.",
+  "prov.removeConfirm": "Rimuovere il provider {n}? La sua chiave e l’elenco dei modelli verranno eliminati dalla configurazione.",
+  "prov.removeActive": "Il modello selezionato usa questo provider. Scegli prima un altro modello, altrimenti smetterà di funzionare.",
+  "prov.removeRefs": "Alcune modalità o impostazioni puntano a questo provider; avranno bisogno di un altro modello.",
+  "prov.removeYes": "Rimuovi",
+  "prov.removed": "{n} rimosso"
 }

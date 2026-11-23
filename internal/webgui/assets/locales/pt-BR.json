@@ -1358,5 +1358,18 @@
   "activity.checking": "Verificando a resposta…",
   "activity.finishing": "Finalizando…",
   "goalTool.staleVerification": "Depois da última verificação aprovada ({command}) estes arquivos mudaram: {files}. Rode os testes de novo e depois feche a meta.",
-  "goalTool.checkNotPassed": "A verificação falhou ou não foi executada: {command}. Rode-a de novo e depois feche a meta."
+  "goalTool.checkNotPassed": "A verificação falhou ou não foi executada: {command}. Rode-a de novo e depois feche a meta.",
+  "prov.logo": "Logotipo",
+  "prov.logoAuto": "Automático",
+  "prov.logoUpload": "Enviar imagem…",
+  "prov.logoReset": "Restaurar padrão",
+  "prov.logoHint": "Escolha um logotipo integrado ou envie o seu (PNG, JPG, SVG ou WebP, até 512 KB).",
+  "prov.logoSaved": "Logotipo salvo",
+  "prov.logoTooBig": "O arquivo é maior que 512 KB.",
+  "prov.logoInvalid": "Este arquivo não é uma imagem compatível.",
+  "prov.removeConfirm": "Remover o provedor {n}? A chave e a lista de modelos dele serão excluídas da configuração.",
+  "prov.removeActive": "O modelo selecionado usa este provedor. Escolha outro modelo primeiro, ou ele deixará de funcionar.",
+  "prov.removeRefs": "Modos ou configurações apontam para este provedor; eles precisarão de outro modelo.",
+  "prov.removeYes": "Remover",
+  "prov.removed": "{n} removido"
 }

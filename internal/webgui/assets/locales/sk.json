@@ -1358,5 +1358,18 @@
   "activity.checking": "Kontroluje odpoveď…",
   "activity.finishing": "Dokončuje…",
   "goalTool.staleVerification": "Po poslednej úspešnej kontrole ({command}) sa zmenili súbory: {files}. Spustite testy znova a potom uzavrite cieľ.",
-  "goalTool.checkNotPassed": "Kontrola neprešla alebo nebola spustená: {command}. Spustite ju znova a potom uzavrite cieľ."
+  "goalTool.checkNotPassed": "Kontrola neprešla alebo nebola spustená: {command}. Spustite ju znova a potom uzavrite cieľ.",
+  "prov.logo": "Logo",
+  "prov.logoAuto": "Automaticky",
+  "prov.logoUpload": "Nahrať obrázok…",
+  "prov.logoReset": "Obnoviť predvolené",
+  "prov.logoHint": "Vyberte vstavané logo alebo nahrajte vlastné (PNG, JPG, SVG alebo WebP, max. 512 KB).",
+  "prov.logoSaved": "Logo uložené",
+  "prov.logoTooBig": "Súbor je väčší ako 512 KB.",
+  "prov.logoInvalid": "Tento súbor nie je podporovaný obrázok.",
+  "prov.removeConfirm": "Odstrániť poskytovateľa {n}? Jeho kľúč a zoznam modelov sa vymažú z konfigurácie.",
+  "prov.removeActive": "Vybraný model používa tohto poskytovateľa. Najprv zvoľte iný model, inak prestane fungovať.",
+  "prov.removeRefs": "Režimy alebo nastavenia odkazujú na tohto poskytovateľa; budú potrebovať iný model.",
+  "prov.removeYes": "Odstrániť",
+  "prov.removed": "Odstránené: {n}"
 }

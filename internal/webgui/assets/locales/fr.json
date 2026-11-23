@@ -1358,5 +1358,18 @@
   "activity.checking": "Vérifie la réponse…",
   "activity.finishing": "Termine…",
   "goalTool.staleVerification": "Après la dernière vérification réussie ({command}), ces fichiers ont changé : {files}. Relancez les tests, puis clôturez l’objectif.",
-  "goalTool.checkNotPassed": "La vérification a échoué ou n’a pas été lancée : {command}. Relancez-la, puis clôturez l’objectif."
+  "goalTool.checkNotPassed": "La vérification a échoué ou n’a pas été lancée : {command}. Relancez-la, puis clôturez l’objectif.",
+  "prov.logo": "Logo",
+  "prov.logoAuto": "Automatique",
+  "prov.logoUpload": "Importer une image…",
+  "prov.logoReset": "Rétablir par défaut",
+  "prov.logoHint": "Choisissez un logo intégré ou importez le vôtre (PNG, JPG, SVG ou WebP, 512 KB max.).",
+  "prov.logoSaved": "Logo enregistré",
+  "prov.logoTooBig": "Le fichier dépasse 512 KB.",
+  "prov.logoInvalid": "Ce fichier n’est pas une image prise en charge.",
+  "prov.removeConfirm": "Supprimer le fournisseur {n} ? Sa clé et sa liste de modèles seront effacées de la configuration.",
+  "prov.removeActive": "Le modèle sélectionné utilise ce fournisseur. Choisissez d’abord un autre modèle, sinon il cessera de fonctionner.",
+  "prov.removeRefs": "Des modes ou paramètres renvoient à ce fournisseur ; il leur faudra un autre modèle.",
+  "prov.removeYes": "Supprimer",
+  "prov.removed": "{n} supprimé"
 }

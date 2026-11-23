@@ -1358,5 +1358,18 @@
   "activity.checking": "Proverava odgovor…",
   "activity.finishing": "Završava…",
   "goalTool.staleVerification": "Posle poslednje uspešne provere ({command}) promenjene su datoteke: {files}. Ponovo pokrenite testove, zatim zatvorite cilj.",
-  "goalTool.checkNotPassed": "Provera nije prošla ili nije pokrenuta: {command}. Ponovo je pokrenite, zatim zatvorite cilj."
+  "goalTool.checkNotPassed": "Provera nije prošla ili nije pokrenuta: {command}. Ponovo je pokrenite, zatim zatvorite cilj.",
+  "prov.logo": "Logo",
+  "prov.logoAuto": "Automatski",
+  "prov.logoUpload": "Otpremi sliku…",
+  "prov.logoReset": "Vrati podrazumevano",
+  "prov.logoHint": "Izaberite ugrađeni logo ili otpremite svoj (PNG, JPG, SVG ili WebP, do 512 KB).",
+  "prov.logoSaved": "Logo je sačuvan",
+  "prov.logoTooBig": "Datoteka je veća od 512 KB.",
+  "prov.logoInvalid": "Ova datoteka nije podržana slika.",
+  "prov.removeConfirm": "Ukloniti dobavljača {n}? Njegov ključ i lista modela biće obrisani iz konfiguracije.",
+  "prov.removeActive": "Izabrani model koristi ovog dobavljača. Prvo izaberite drugi model, inače će prestati da radi.",
+  "prov.removeRefs": "Režimi ili podešavanja upućuju na ovog dobavljača; biće im potreban drugi model.",
+  "prov.removeYes": "Ukloni",
+  "prov.removed": "Uklonjeno: {n}"
 }

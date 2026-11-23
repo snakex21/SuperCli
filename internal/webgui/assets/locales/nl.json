@@ -1358,5 +1358,18 @@
   "activity.checking": "Controleert het antwoord…",
   "activity.finishing": "Rondt af…",
   "goalTool.staleVerification": "Na de laatste geslaagde controle ({command}) zijn deze bestanden gewijzigd: {files}. Voer de tests opnieuw uit en sluit dan het doel.",
-  "goalTool.checkNotPassed": "De controle is mislukt of niet uitgevoerd: {command}. Voer hem opnieuw uit en sluit dan het doel."
+  "goalTool.checkNotPassed": "De controle is mislukt of niet uitgevoerd: {command}. Voer hem opnieuw uit en sluit dan het doel.",
+  "prov.logo": "Logo",
+  "prov.logoAuto": "Automatisch",
+  "prov.logoUpload": "Afbeelding uploaden…",
+  "prov.logoReset": "Standaard herstellen",
+  "prov.logoHint": "Kies een ingebouwd logo of upload je eigen logo (PNG, JPG, SVG of WebP, max. 512 KB).",
+  "prov.logoSaved": "Logo opgeslagen",
+  "prov.logoTooBig": "Het bestand is groter dan 512 KB.",
+  "prov.logoInvalid": "Dit bestand is geen ondersteunde afbeelding.",
+  "prov.removeConfirm": "Provider {n} verwijderen? De sleutel en modellijst worden uit de configuratie verwijderd.",
+  "prov.removeActive": "Het geselecteerde model gebruikt deze provider. Kies eerst een ander model, anders werkt het niet meer.",
+  "prov.removeRefs": "Modi of instellingen verwijzen naar deze provider; ze hebben een ander model nodig.",
+  "prov.removeYes": "Verwijderen",
+  "prov.removed": "{n} verwijderd"
 }

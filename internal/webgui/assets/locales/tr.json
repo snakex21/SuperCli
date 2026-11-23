@@ -1358,5 +1358,18 @@
   "activity.checking": "Yanıtı kontrol ediyor…",
   "activity.finishing": "Bitiriyor…",
   "goalTool.staleVerification": "Son başarılı denetimden ({command}) sonra şu dosyalar değişti: {files}. Testleri yeniden çalıştırın, ardından hedefi kapatın.",
-  "goalTool.checkNotPassed": "Denetim başarısız oldu veya çalıştırılmadı: {command}. Yeniden çalıştırın, ardından hedefi kapatın."
+  "goalTool.checkNotPassed": "Denetim başarısız oldu veya çalıştırılmadı: {command}. Yeniden çalıştırın, ardından hedefi kapatın.",
+  "prov.logo": "Logo",
+  "prov.logoAuto": "Otomatik",
+  "prov.logoUpload": "Görsel yükle…",
+  "prov.logoReset": "Varsayılana dön",
+  "prov.logoHint": "Yerleşik bir logo seçin veya kendinizinkini yükleyin (PNG, JPG, SVG veya WebP, en fazla 512 KB).",
+  "prov.logoSaved": "Logo kaydedildi",
+  "prov.logoTooBig": "Dosya 512 KB’tan büyük.",
+  "prov.logoInvalid": "Bu dosya desteklenen bir görsel değil.",
+  "prov.removeConfirm": "{n} sağlayıcısı kaldırılsın mı? Anahtarı ve model listesi yapılandırmadan silinir.",
+  "prov.removeActive": "Seçili model bu sağlayıcıyı kullanıyor. Önce başka bir model seçin, aksi halde çalışmayı durduracak.",
+  "prov.removeRefs": "Bazı modlar veya ayarlar bu sağlayıcıyı gösteriyor; bunlar için başka bir model gerekecek.",
+  "prov.removeYes": "Kaldır",
+  "prov.removed": "{n} kaldırıldı"
 }

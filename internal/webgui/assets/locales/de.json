@@ -1358,5 +1358,18 @@
   "activity.checking": "Prüft die Antwort…",
   "activity.finishing": "Schließt ab…",
   "goalTool.staleVerification": "Nach der letzten erfolgreichen Prüfung ({command}) wurden Dateien geändert: {files}. Führen Sie die Tests erneut aus und schließen Sie dann das Ziel.",
-  "goalTool.checkNotPassed": "Die Prüfung ist fehlgeschlagen oder wurde nicht ausgeführt: {command}. Führen Sie sie erneut aus und schließen Sie dann das Ziel."
+  "goalTool.checkNotPassed": "Die Prüfung ist fehlgeschlagen oder wurde nicht ausgeführt: {command}. Führen Sie sie erneut aus und schließen Sie dann das Ziel.",
+  "prov.logo": "Logo",
+  "prov.logoAuto": "Automatisch",
+  "prov.logoUpload": "Bild hochladen…",
+  "prov.logoReset": "Standard wiederherstellen",
+  "prov.logoHint": "Wähle ein integriertes Logo oder lade ein eigenes hoch (PNG, JPG, SVG oder WebP, bis 512 KB).",
+  "prov.logoSaved": "Logo gespeichert",
+  "prov.logoTooBig": "Die Datei ist größer als 512 KB.",
+  "prov.logoInvalid": "Diese Datei ist kein unterstütztes Bild.",
+  "prov.removeConfirm": "Anbieter {n} entfernen? Sein Schlüssel und seine Modellliste werden aus der Konfiguration gelöscht.",
+  "prov.removeActive": "Das ausgewählte Modell nutzt diesen Anbieter. Wähle zuerst ein anderes Modell, sonst funktioniert es nicht mehr.",
+  "prov.removeRefs": "Modi oder Einstellungen verweisen auf diesen Anbieter; sie brauchen dann ein anderes Modell.",
+  "prov.removeYes": "Entfernen",
+  "prov.removed": "{n} entfernt"
 }

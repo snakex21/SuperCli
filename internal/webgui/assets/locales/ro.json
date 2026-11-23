@@ -1358,5 +1358,18 @@
   "activity.checking": "Verifică răspunsul…",
   "activity.finishing": "Finalizează…",
   "goalTool.staleVerification": "După ultima verificare reușită ({command}) s-au modificat fișierele: {files}. Rulează din nou testele, apoi închide obiectivul.",
-  "goalTool.checkNotPassed": "Verificarea a eșuat sau nu a fost rulată: {command}. Rulează-o din nou, apoi închide obiectivul."
+  "goalTool.checkNotPassed": "Verificarea a eșuat sau nu a fost rulată: {command}. Rulează-o din nou, apoi închide obiectivul.",
+  "prov.logo": "Logo",
+  "prov.logoAuto": "Automat",
+  "prov.logoUpload": "Încarcă imagine…",
+  "prov.logoReset": "Restabilește implicit",
+  "prov.logoHint": "Alege un logo încorporat sau încarcă unul propriu (PNG, JPG, SVG sau WebP, până la 512 KB).",
+  "prov.logoSaved": "Logo salvat",
+  "prov.logoTooBig": "Fișierul depășește 512 KB.",
+  "prov.logoInvalid": "Acest fișier nu este o imagine acceptată.",
+  "prov.removeConfirm": "Elimini furnizorul {n}? Cheia și lista sa de modele vor fi șterse din configurație.",
+  "prov.removeActive": "Modelul selectat folosește acest furnizor. Alege mai întâi alt model, altfel nu va mai funcționa.",
+  "prov.removeRefs": "Unele moduri sau setări indică acest furnizor; vor avea nevoie de alt model.",
+  "prov.removeYes": "Elimină",
+  "prov.removed": "Eliminat: {n}"
 }

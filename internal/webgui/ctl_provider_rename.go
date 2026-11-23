@@ -58,6 +58,9 @@ func (s *Server) handleProviderRename(w http.ResponseWriter, r *http.Request) {
 	if err := renameWebGUIProviderRefs(s.eng.dataDir, oldName, newName); err != nil {
 		warnings = append(warnings, err.Error())
 	}
+	if err := renameProviderLogo(s.eng.dataDir, oldName, newName); err != nil {
+		warnings = append(warnings, "provider logo was not moved: "+err.Error())
+	}
 	runtimeRefreshed := false
 	if activeProvider == oldName && activeModel != "" {
 		if err := s.eng.SwitchModel(activeModel, newName); err != nil {

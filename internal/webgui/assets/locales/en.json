@@ -1358,5 +1358,18 @@
   "activity.checking": "Checking the answer…",
   "activity.finishing": "Finishing…",
   "goalTool.staleVerification": "After the last passing check ({command}) these files changed: {files}. Run the tests again, then close the goal.",
-  "goalTool.checkNotPassed": "The check failed or was not run: {command}. Run it again, then close the goal."
+  "goalTool.checkNotPassed": "The check failed or was not run: {command}. Run it again, then close the goal.",
+  "prov.logo": "Logo",
+  "prov.logoAuto": "Automatic",
+  "prov.logoUpload": "Upload image…",
+  "prov.logoReset": "Restore default",
+  "prov.logoHint": "Pick a built-in logo or upload your own (PNG, JPG, SVG or WebP, up to 512 KB).",
+  "prov.logoSaved": "Logo saved",
+  "prov.logoTooBig": "The file is larger than 512 KB.",
+  "prov.logoInvalid": "This file is not a supported image.",
+  "prov.removeConfirm": "Remove provider {n}? Its key and model list are deleted from the configuration.",
+  "prov.removeActive": "The selected model uses this provider. Choose another model first, or it will stop working.",
+  "prov.removeRefs": "Modes or settings point to this provider; they will need another model.",
+  "prov.removeYes": "Remove",
+  "prov.removed": "Removed {n}"
 }
