@@ -10,6 +10,8 @@
    tests drive it with a fake clock. The view below owns the DOM and a 1 s tick. */
 
 var RUN_ACTIVITY_HISTORY = 40;
+// Quiet time after the last answer text before the line says "Finishing…".
+var ACTIVITY_FINISHING_MS = 1500;
 
 function runActivityNew(now) {
   var step = {kind: "thinking", detail: "", since: now};
@@ -92,6 +94,12 @@ function runActivityNote(model, ev, now) {
       if (model.waitUser) { model.waitUser = null; runActivityFromOpen(model, now); }
       break;
     case "notice":
+      // A completion check or a review is another model call after the
+      // answer: say so instead of an unexplained wait.
+      if (/^(completion check:|review \()/.test(ev.text || "") && !model.waitUser) {
+        runActivitySet(model, {kind: "checking", detail: ""}, now);
+        break;
+      }
       var retry = activityRetryStep(ev.text);
       // Consecutive retries are one step: its clock counts from the first.
       if (retry && model.step && model.step.kind === "retry") retry.since = model.step.since;
@@ -113,10 +121,15 @@ function runActivityView(model, now, userWaiting) {
   if (userWaiting && model.step.kind !== "user") model.userSince = model.userSince || now;
   else model.userSince = 0;
   var step = userWaiting ? {kind: "user", detail: model.step.kind === "user" ? model.step.detail : "", since: model.step.kind === "user" ? model.step.since : model.userSince} : model.step;
+  // The answer stopped streaming but the turn has not ended yet (the
+  // provider is closing the stream, the answer is being saved or checked):
+  // "Finishing…", never a stale "Writing the answer…".
+  if (step.kind === "writing" && now - model.last >= ACTIVITY_FINISHING_MS) step = {kind: "finishing", detail: "", since: model.last};
   var label = runActivityStepLabel(step);
-  // The user's turn and a retry are shown at once (a retry is never a
-  // flicker: it waits seconds); other changes wait out the 1 s debounce.
-  var shown = step.kind === "user" || step.kind === "retry" ? (model._liveShown = {label: label, since: step.since, at: now}) :
+  // The user's turn, a retry, a check and the end of the turn are shown at
+  // once (never a flicker); other changes wait out the 1 s debounce.
+  var immediate = step.kind === "user" || step.kind === "retry" || step.kind === "checking" || step.kind === "finishing";
+  var shown = immediate ? (model._liveShown = {label: label, since: step.since, at: now}) :
     activityDebounce(model, label, step.since, now);
   var quiet = Math.max(0, now - model.last), limit = userWaiting ? 0 : activitySilenceMS(step);
   var view = {kind: step.kind, label: shown.label, step: activityClock(now - shown.since), turn: activityClock(now - model.start),

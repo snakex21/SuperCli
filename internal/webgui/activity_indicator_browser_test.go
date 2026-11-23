@@ -125,7 +125,10 @@ function checkActivityStates(){return run(function(){
   var T=1000000,m=runActivityNew(T);
   check(label(m,T)==='Myśli…','start: '+label(m,T));
   runActivityNote(m,{type:'message',text:'Hej'},T+10);
+  runActivityNote(m,{type:'message',text:' dalej'},T+1500);
   check(label(m,T+2000)==='Pisze odpowiedź…','writing: '+label(m,T+2000));
+  // Text stopped but the turn has not ended: "Kończy…" at once, not "Pisze".
+  check(label(m,T+3000)==='Kończy…','finishing: '+label(m,T+3000));
   runActivityNote(m,{type:'tool_call',id:'c1',name:'ctx_execute',args:args({command:['go','test','./...']})},T+3000);
   var v=runActivityView(m,T+5000);
   check(v.label==='Uruchamia testy'&&v.step==='0:02','tests: '+JSON.stringify(v));
@@ -162,6 +165,13 @@ function checkActivityStates(){return run(function(){
   runActivityNote(m,{type:'tool_call',id:'c6',name:'task',args:args({prompt:'tło',async:true})},T+20200);
   runActivityNote(m,{type:'tool_result',id:'c6'},T+20300);
   check(label(m,T+21000)==='Czeka na: Worker 2','async delegation is not a wait: '+label(m,T+21000));
+  // A completion check or review is another model call: shown at once.
+  var c=runActivityNew(T);
+  runActivityNote(c,{type:'notice',text:'completion check: the reply admits unfinished work; asking to finish the possible parts'},T+100);
+  check(label(c,T+200)==='Sprawdza odpowiedź…','completion check: '+label(c,T+200));
+  var rv2=runActivityNew(T);
+  runActivityNote(rv2,{type:'notice',text:'review (m): accepted'},T+100);
+  check(label(rv2,T+200)==='Sprawdza odpowiedź…','review: '+label(rv2,T+200));
   runActivityNote(m,{type:'done'},T+22000);
   check(runActivityView(m,T+22000)===null,'done must clear the line');
 });}

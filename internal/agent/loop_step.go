@@ -339,6 +339,8 @@ func (l *Loop) runStep(
 	}
 
 	if len(toolCalls) == 0 {
+		// Turn-end timing (debug): from the end of the model's stream.
+		streamEnd := time.Now()
 		l.drainBackgroundMessages(ctx)
 		if l.backgroundHandoff() {
 			// A host wake-up scheduler owns late reports: end this turn now so
@@ -469,10 +471,12 @@ func (l *Loop) runStep(
 		// Completion check: once per Run, a multi-file edit or a reply that
 		// says work is unfinished gets one more pass to find and finish
 		// leftovers (or report exactly what is blocked) before it completes.
+		TurnTimingf("agent: background, interjections", streamEnd)
 		if l.completionCheck && l.runCompletionCheck(ctx, out, text, step+1 < stepLimit) {
 			l.statsEndStep(stepStart)
 			return stepContinue
 		}
+		TurnTimingf("agent: completion check", streamEnd)
 		// Post-work review (config review_model): a file-changing Run gets
 		// one tool-free verdict before it completes; revise/takeover notes go
 		// back to the main model for another pass (capped per Run).
@@ -484,13 +488,16 @@ func (l *Loop) runStep(
 		// smaller provider projection. The lossless transcript remains intact
 		// and searchable, while reopening this session no longer reloads every
 		// historical tool envelope into the model context.
+		TurnTimingf("agent: post review", streamEnd)
 		l.persistCompletedProjection(ctx)
+		TurnTimingf("agent: saved projection", streamEnd)
 		l.statsEndStep(stepStart)
 		if err := ctx.Err(); err != nil {
 			out <- ErrorEvent{Err: err, Usage: *totalUsage, Steps: step + 1}
 			return stepAbort
 		}
 		l.hostPowerSuccessCandidate(ctx)
+		TurnTimingf("agent: done event", streamEnd)
 		out <- DoneEvent{Model: l.modelID, Usage: *totalUsage, Steps: step + 1, GenerationTokens: l.generationTokens, GenerationDuration: l.generationDuration}
 		return stepDone
 	}

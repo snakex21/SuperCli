@@ -673,13 +673,17 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 			var fileChanges []checkpoint.FileChange
 			_, doneEvent := ev.(agent.DoneEvent)
 			_, errorEvent := ev.(agent.ErrorEvent)
+			var terminalAt time.Time
 			if doneEvent || errorEvent {
+				terminalAt = time.Now()
 				flushMessages()
 				// The model has ended; release the GUI animation/composer before
 				// potentially slow checkpoint and telemetry writes. Keep terminal
 				// metadata and HTTP EOF after those writes so turns cannot overlap.
 				emit(wireEvent{Type: "finishing"})
+				agent.TurnTimingf("web: finishing sent", terminalAt)
 				checkpointID, fileChanges = finishCheckpoint()
+				agent.TurnTimingf("web: checkpoint", terminalAt)
 			}
 			if done, ok := ev.(agent.DoneEvent); ok {
 				terminalUsage = done.Usage
@@ -701,6 +705,9 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 					turnDiag.Terminal = truncateDiag(failed.Err.Error(), 300)
 				}
 				saveTurnSummary()
+			}
+			if !terminalAt.IsZero() {
+				agent.TurnTimingf("web: turn summary", terminalAt)
 			}
 			if w, keep := toWireEvent(ev); keep {
 				w.CheckpointID = checkpointID

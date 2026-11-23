@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"supercli/internal/agent"
 	"supercli/internal/storage"
 	"supercli/internal/storage/memory"
 	"supercli/internal/system/config"
@@ -196,6 +197,10 @@ func run(crashDataDir *string) {
 		Model:    *modelFlag,
 		Debug:    boolPtr(*debugFlag),
 	})
+	if *debugFlag {
+		// Log how long each step after the model's last token takes.
+		agent.SetTurnTiming(true)
+	}
 	if err != nil {
 		fatal("load config", err)
 	}
