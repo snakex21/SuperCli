@@ -108,6 +108,11 @@ func TestGUIBackgroundWorkerWakesIdleConversation(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("GUI turn blocked on its background worker")
 	}
+	// The background worker starts on its own goroutine: the coordinator's
+	// turn may end before the worker's first model call (seen on Linux CI).
+	for wait := time.Now().Add(5 * time.Second); provider.workerCalls.Load() == 0 && time.Now().Before(wait); {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if sid == "" || provider.workerCalls.Load() == 0 {
 		t.Fatalf("sid=%q worker calls=%d", sid, provider.workerCalls.Load())
 	}
