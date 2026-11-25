@@ -178,3 +178,26 @@ func TestUnknownWorkerWithoutSavedTranscriptStillFails(t *testing.T) {
 		t.Fatalf("err = %v", out.Err)
 	}
 }
+
+// The audited race: a live worker finished (done or failed) in memory while
+// its record still says running. Reconcile saves its real state and never
+// reports it "interrupted" (no second notice for the same run).
+func TestReconcileSavesAFinishedLiveWorkersRealState(t *testing.T) {
+	for _, final := range []string{"done", "failed"} {
+		store := newMemWorkerStore()
+		_, at := persistentCoordinator(t, store, makeScriptedProvider("x"))
+		w := at.Workers.Add("code", "bow", nil)
+		w.sessionID = "sess-1"
+		w.setState(func(w *Worker) { w.Status = "running" })
+		at.Workers.persist(w) // saved as running
+		w.setState(func(w *Worker) { w.Status, w.LastError = final, map[string]string{"failed": "http 429"}[final] })
+		changed, err := at.Workers.ReconcileSavedWorkers(context.Background(), "sess-1")
+		if err != nil || len(changed) != 0 {
+			t.Fatalf("%s: finished live worker reported as reconciled: %+v %v", final, changed, err)
+		}
+		rec, _, _ := store.LoadWorker(context.Background(), "sess-1", w.ID)
+		if rec.Status != final {
+			t.Fatalf("%s: saved status = %q", final, rec.Status)
+		}
+	}
+}

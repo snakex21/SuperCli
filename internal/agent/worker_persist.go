@@ -257,11 +257,19 @@ func (r *WorkerRegistry) ReconcileSavedWorkers(ctx context.Context, sessionID st
 		if rec.Status != "created" && rec.Status != "running" {
 			continue
 		}
-		if w, ok := r.Get(rec.ID); ok && w.Snapshot().SessionID == sessionID {
-			// The registry is process-wide: only this conversation's worker
-			// with the same id proves a live runner.
-			if s := w.status(); s == "created" || s == "running" {
-				continue // genuinely live in this process
+		if w, ok := r.Get(rec.ID); ok {
+			if s := w.Snapshot(); s.SessionID == sessionID {
+				// The registry is process-wide: only this conversation's worker
+				// with the same id is its runner. A runner that just finished
+				// (its own done/failed save may not have landed yet) is never
+				// "interrupted": its real state is saved instead, and its own
+				// report stays the only notice of that run.
+				if s.Status != "created" && s.Status != "running" && s.Status != "" {
+					if err := store.SetWorkerStatus(ctx, sessionID, rec.ID, s.Status, s.LastError); err != nil {
+						return changed, err
+					}
+				}
+				continue
 			}
 		}
 		reason := "runner ended without a final report (app closed or crashed); resume to continue"
