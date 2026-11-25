@@ -337,6 +337,8 @@
   "stats.orchOff": "soha",
   "stats.taskModel": "az alügynök modellje",
   "stats.taskEffort": "az alügynök gondolkodási szintje",
+  "stats.usageLimitUntil": "korlát eddig: {time}",
+  "stats.usageLimitTip": "A modell használati kerete elfogyott; az ügynökei a visszaállásig el vannak utasítva.",
   "stats.effortInherit": "mint a főmodell",
   "stats.orchTooltip": "A feladatok alügynököknek való delegálásának módja.",
   "stats.taskModelTooltip": "Az alügynökök által használt modell.",

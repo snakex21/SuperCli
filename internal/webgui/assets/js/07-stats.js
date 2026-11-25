@@ -78,6 +78,7 @@ function normalizeStats(raw) {
       model: activeContext.model || "", provider: activeContext.provider || "", providerType: activeContext.provider_type || "",
       window: statNumber(activeContext.window), windowSource: String(activeContext.window_source || ""),
     } : null,
+    usageLimits: Array.isArray(raw.usage_limits) ? raw.usage_limits : [],
     cost: {
       subscriptionUsage: Array.isArray(raw.subscription_usage) ? raw.subscription_usage : [],
       state: String(cost.state || "unknown").toLowerCase(), amount: statNullableNumber(cost.amount),
@@ -1026,6 +1027,7 @@ async function renderStats() {
     appendCompactContext(box, stats.context);
     appendActiveContext(box, stats.activeContext, stats.context, stats.session);
     appendSidebarCost(box, stats.cost, [stats.session.providerType, stats.activeContext ? stats.activeContext.providerType : ""]);
+    appendUsageLimits(box, stats.usageLimits);
     costSnapshot = stats.cost;
     // Missing/old quota snapshot: refresh in the background (throttled), never
     // blocking this render; a successful refresh re-renders statistics.
@@ -1419,4 +1421,19 @@ function closeOrchPickerPopups(e) {
       }
     }
   }
+}
+
+// Worker models blocked by a usage limit: "model · limit until 26.11 09:14".
+// The server lists only limits that have not reset yet.
+function appendUsageLimits(box, limits) {
+  (limits || []).forEach(function (limit) {
+    var until = new Date(limit.until);
+    if (!limit.model || isNaN(until.getTime()) || until.getTime() <= Date.now()) return;
+    var when = until.toLocaleString(typeof ui === "object" && ui && ui.lang || undefined,
+      { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    var row = statRow(limit.model, t("stats.usageLimitUntil").replace("{time}", when));
+    row.classList.add("usage-limit-row");
+    row.title = t("stats.usageLimitTip");
+    box.appendChild(row);
+  });
 }

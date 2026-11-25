@@ -337,6 +337,8 @@
   "stats.orchOff": "ei koskaan",
   "stats.taskModel": "aliagenttimalli",
   "stats.taskEffort": "aliagenttien ajattelun taso",
+  "stats.usageLimitUntil": "raja {time} asti",
+  "stats.usageLimitTip": "Tämän mallin käyttöraja on täynnä; sen agentit torjutaan nollaukseen asti.",
   "stats.effortInherit": "kuten päämalli",
   "stats.orchTooltip": "Käytetäänkö työn delegointiin aliagentteja.",
   "stats.taskModelTooltip": "Aliagenttien käyttämä malli.",

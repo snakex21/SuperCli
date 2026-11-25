@@ -337,6 +337,8 @@
   "stats.orchOff": "aldrig",
   "stats.taskModel": "underagentmodel",
   "stats.taskEffort": "underagenternes tænkeniveau",
+  "stats.usageLimitUntil": "grænse til {time}",
+  "stats.usageLimitTip": "Modellens forbrugsgrænse er brugt op; agenter på den afvises indtil nulstilling.",
   "stats.effortInherit": "som hovedmodellen",
   "stats.orchTooltip": "Om arbejde delegeres til underagenter.",
   "stats.taskModelTooltip": "Modellen, som underagenterne bruger.",

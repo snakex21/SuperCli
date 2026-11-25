@@ -337,6 +337,8 @@
   "stats.orchOff": "Asla",
   "stats.taskModel": "alt ajan modeli",
   "stats.taskEffort": "alt ajanların akıl yürütme düzeyi",
+  "stats.usageLimitUntil": "{time} tarihine kadar sınır",
+  "stats.usageLimitTip": "Bu modelin kullanım sınırı doldu; üzerindeki ajanlar sıfırlanana kadar reddedilir.",
   "stats.effortInherit": "ana modelle aynı",
   "stats.orchTooltip": "Görevin alt ajanlara devredilip devredilmediği.",
   "stats.taskModelTooltip": "Alt ajanların kullandığı model.",

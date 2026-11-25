@@ -337,6 +337,8 @@
   "stats.orchOff": "nikoli",
   "stats.taskModel": "modelov pomožnih agentov",
   "stats.taskEffort": "Razmišljanje pomožnih agentov",
+  "stats.usageLimitUntil": "omejitev do {time}",
+  "stats.usageLimitTip": "Omejitev tega modela je porabljena; agenti na njem so zavrnjeni do ponastavitve.",
   "stats.effortInherit": "kot glavni model",
   "stats.orchTooltip": "Ali delo predajam pomožnim agentom.",
   "stats.taskModelTooltip": "Model, ki ga uporabljajo pomožni agenti.",

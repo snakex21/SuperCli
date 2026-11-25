@@ -337,6 +337,8 @@
   "stats.orchOff": "mitte kunagi",
   "stats.taskModel": "alamagentide mudel",
   "stats.taskEffort": "alamagentide arutlustase",
+  "stats.usageLimitUntil": "limiit kuni {time}",
+  "stats.usageLimitTip": "Selle mudeli kasutuslimiit on täis; agente sellel keeldutakse kuni lähtestuseni.",
   "stats.effortInherit": "nagu põhimudelil",
   "stats.orchTooltip": "Kas töö delegeeritakse alamagentidele.",
   "stats.taskModelTooltip": "Alamagentide kasutatav mudel.",

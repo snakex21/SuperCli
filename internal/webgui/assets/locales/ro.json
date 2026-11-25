@@ -337,6 +337,8 @@
   "stats.orchOff": "nu",
   "stats.taskModel": "modelul subagenților",
   "stats.taskEffort": "nivelul de raționament al subagenților",
+  "stats.usageLimitUntil": "limită până la {time}",
+  "stats.usageLimitTip": "Limita de utilizare a acestui model este epuizată; agenții pe el sunt refuzați până la resetare.",
   "stats.effortInherit": "ca modelul principal",
   "stats.orchTooltip": "Dacă sarcinile sunt delegate subagenților.",
   "stats.taskModelTooltip": "Modelul folosit de subagenți.",

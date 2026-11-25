@@ -337,6 +337,8 @@
   "stats.orchOff": "niekada",
   "stats.taskModel": "subagentų modelis",
   "stats.taskEffort": "subagentų samprotavimo lygis",
+  "stats.usageLimitUntil": "riba iki {time}",
+  "stats.usageLimitTip": "Šio modelio naudojimo riba išnaudota; agentai su juo atmetami iki atstatymo.",
   "stats.effortInherit": "kaip pagrindinio modelio",
   "stats.orchTooltip": "Ar perduodu darbą DI subagentams.",
   "stats.taskModelTooltip": "Modelis, kurį naudoja subagentai.",

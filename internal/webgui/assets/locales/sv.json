@@ -337,6 +337,8 @@
   "stats.orchOff": "aldrig",
   "stats.taskModel": "hjälpagentsmodell",
   "stats.taskEffort": "hjälpagenter: tänkenivå",
+  "stats.usageLimitUntil": "gräns till {time}",
+  "stats.usageLimitTip": "Modellens användningsgräns är slut; agenter på den avvisas tills den återställs.",
   "stats.effortInherit": "som huvudmodellen",
   "stats.orchTooltip": "Om uppgifter delegeras till hjälpagenter.",
   "stats.taskModelTooltip": "Modellen som hjälpagenterna använder.",

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -127,4 +128,26 @@ func shortProviderError(text string) string {
 		return prefix + ": " + msg
 	}
 	return msg
+}
+
+// UsageLimit is one model blocked by a usage limit until Until.
+type UsageLimit struct {
+	Model string    `json:"model"`
+	Until time.Time `json:"until"`
+}
+
+// UsageLimits lists the models currently blocked by a usage limit (expired
+// entries are dropped), sorted by model.
+func UsageLimits(now time.Time) []UsageLimit {
+	var out []UsageLimit
+	usageCooldowns.Range(func(k, v any) bool {
+		if until := v.(time.Time); now.Before(until) {
+			out = append(out, UsageLimit{Model: k.(string), Until: until})
+		} else {
+			usageCooldowns.Delete(k)
+		}
+		return true
+	})
+	sort.Slice(out, func(i, j int) bool { return out[i].Model < out[j].Model })
+	return out
 }

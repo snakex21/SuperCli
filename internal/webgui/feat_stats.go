@@ -26,6 +26,8 @@ type statsView struct {
 	ActiveContext     statsActiveContextView  `json:"active_context"`
 	Cost              statsCostView           `json:"cost"`
 	SubscriptionUsage []subscriptionUsageView `json:"subscription_usage"`
+	// UsageLimits: worker models blocked by a usage limit until a reset.
+	UsageLimits []agent.UsageLimit `json:"usage_limits,omitempty"`
 	// Pricing is the current editable USD quote for this session's model.
 	// Cost keeps the immutable historical amounts and rates.
 	Pricing         statsCostView            `json:"pricing"`
@@ -209,6 +211,7 @@ func (e *Engine) statsWithTelemetry(ctx context.Context, sessionID string, withT
 	preview := e.usageIdentity(cfg, "model")
 	sv := statsView{
 		SubscriptionUsage: e.subscriptionUsage(),
+		UsageLimits:       agent.UsageLimits(time.Now()),
 		Model:             cfg.Model,
 		Context:           contextFromUsage(session.UsageRecord{ContextWindow: preview.ContextWindow}),
 		ActiveContext:     e.statsActiveContext(cfg),

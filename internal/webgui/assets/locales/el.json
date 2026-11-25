@@ -337,6 +337,8 @@
   "stats.orchOff": "ποτέ",
   "stats.taskModel": "μοντέλο υποπρακτόρων",
   "stats.taskEffort": "επίπεδο συλλογισμού υποπρακτόρων",
+  "stats.usageLimitUntil": "όριο έως {time}",
+  "stats.usageLimitTip": "Το όριο χρήσης αυτού του μοντέλου εξαντλήθηκε· οι πράκτορες σε αυτό απορρίπτονται έως την επαναφορά.",
   "stats.effortInherit": "όπως το κύριο μοντέλο",
   "stats.orchTooltip": "Αν ανατέθηκε εργασία σε υποπράκτορες.",
   "stats.taskModelTooltip": "Το μοντέλο που χρησιμοποιούν οι υποπράκτορες.",

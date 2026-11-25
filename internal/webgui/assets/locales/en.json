@@ -337,6 +337,8 @@
   "stats.orchOff": "never",
   "stats.taskModel": "worker model",
   "stats.taskEffort": "worker thinking",
+  "stats.usageLimitUntil": "limit until {time}",
+  "stats.usageLimitTip": "This model's usage limit is used up; workers on it are refused until the reset.",
   "stats.effortInherit": "same as main",
   "stats.orchTooltip": "Whether I hand work to workers.",
   "stats.taskModelTooltip": "The model workers run on.",

@@ -337,6 +337,8 @@
   "stats.orchOff": "Mai",
   "stats.taskModel": "Modello dei sottoagenti",
   "stats.taskEffort": "Livello di ragionamento dei sottoagenti",
+  "stats.usageLimitUntil": "limite fino a {time}",
+  "stats.usageLimitTip": "Il limite d’uso di questo modello è esaurito; gli agenti su di esso sono rifiutati fino al ripristino.",
   "stats.effortInherit": "come il principale",
   "stats.orchTooltip": "Indica se il lavoro viene delegato ai sottoagenti.",
   "stats.taskModelTooltip": "Il modello utilizzato dai sottoagenti.",

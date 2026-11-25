@@ -460,3 +460,20 @@ test('under pl the panel shows reasoning levels and off in Polish, never the sto
   const names = [...h.row('stats.taskEffort').querySelectorAll('.pname')].map(n => n.textContent);
   assert.deepEqual(names, [pl['stats.effortInherit'], ...['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].map(l => pl['model.level.' + l])]);
 });
+
+test('a worker model blocked by a usage limit shows its reset in the panel, and disappears once expired', async () => {
+  const pl = JSON.parse(readSource(sourcePath(assets, 'locales', 'pl.json'), 'utf8'));
+  const h = fixture();
+  h.w.t = key => pl[key] || key;
+  h.w.ui = {lang: 'pl'};
+  const stats = h.w.normalizeStats({usage_limits: [
+    {model: 'gpt-6.2-sol', until: new Date(Date.now() + 3600e3).toISOString()},
+    {model: 'old-model', until: new Date(Date.now() - 1000).toISOString()},
+  ]});
+  const box = h.document.createElement('div');
+  h.w.appendUsageLimits(box, stats.usageLimits);
+  const rows = [...box.querySelectorAll('.usage-limit-row')];
+  assert.equal(rows.length, 1);
+  assert.match(rows[0].textContent, /gpt-6\.2-sol/);
+  assert.match(rows[0].textContent, /limit do /);
+});

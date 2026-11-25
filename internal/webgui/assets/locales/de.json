@@ -337,6 +337,8 @@
   "stats.orchOff": "niemals",
   "stats.taskModel": "Unteragentenmodell",
   "stats.taskEffort": "Denkaufwand der Unteragenten",
+  "stats.usageLimitUntil": "Limit bis {time}",
+  "stats.usageLimitTip": "Das Nutzungslimit dieses Modells ist erschöpft; Agenten darauf sind bis zur Rücksetzung gesperrt.",
   "stats.effortInherit": "wie Hauptmodell",
   "stats.orchTooltip": "Legt fest, ob Arbeit an Unteragenten delegiert wird.",
   "stats.taskModelTooltip": "Das Modell, das die Unteragenten verwenden.",

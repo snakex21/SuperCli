@@ -337,6 +337,8 @@
   "stats.orchOff": "nikdy",
   "stats.taskModel": "model pomocných agentov",
   "stats.taskEffort": "Uvažovanie pomocných agentov",
+  "stats.usageLimitUntil": "limit do {time}",
+  "stats.usageLimitTip": "Limit použitia tohto modelu je vyčerpaný; agenti na ňom sú do obnovenia odmietnutí.",
   "stats.effortInherit": "ako hlavný model",
   "stats.orchTooltip": "Či odovzdávam prácu pomocným agentom.",
   "stats.taskModelTooltip": "Model používaný pomocnými agentmi.",

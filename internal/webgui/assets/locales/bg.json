@@ -337,6 +337,8 @@
   "stats.orchOff": "никога",
   "stats.taskModel": "модел на подагентите",
   "stats.taskEffort": "ниво на разсъждение на подагентите",
+  "stats.usageLimitUntil": "лимит до {time}",
+  "stats.usageLimitTip": "Лимитът на този модел е изчерпан; агентите на него се отказват до нулирането.",
   "stats.effortInherit": "като основния модел",
   "stats.orchTooltip": "Дали делегирам работа на подагентите.",
   "stats.taskModelTooltip": "Моделът, който използват подагентите.",

@@ -337,6 +337,8 @@
   "stats.orchOff": "nunca",
   "stats.taskModel": "modelo dos subagentes",
   "stats.taskEffort": "raciocínio dos subagentes",
+  "stats.usageLimitUntil": "limite até {time}",
+  "stats.usageLimitTip": "O limite de uso deste modelo acabou; agentes nele são recusados até a renovação.",
   "stats.effortInherit": "igual ao principal",
   "stats.orchTooltip": "Indica se o trabalho é delegado a subagentes.",
   "stats.taskModelTooltip": "O modelo usado pelos subagentes.",

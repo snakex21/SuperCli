@@ -337,6 +337,8 @@
   "stats.orchOff": "nunca",
   "stats.taskModel": "modelo de los agentes",
   "stats.taskEffort": "razonamiento de los agentes",
+  "stats.usageLimitUntil": "límite hasta {time}",
+  "stats.usageLimitTip": "El límite de uso de este modelo está agotado; los agentes en él se rechazan hasta el reinicio.",
   "stats.effortInherit": "como el principal",
   "stats.orchTooltip": "Si delego trabajo a los agentes.",
   "stats.taskModelTooltip": "El modelo que usan los workers.",

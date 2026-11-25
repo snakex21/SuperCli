@@ -337,6 +337,8 @@
   "stats.orchOff": "nooit",
   "stats.taskModel": "Subagentmodel",
   "stats.taskEffort": "Denkbudget van subagenten",
+  "stats.usageLimitUntil": "limiet tot {time}",
+  "stats.usageLimitTip": "Het gebruikslimiet van dit model is op; agents erop worden geweigerd tot de reset.",
   "stats.effortInherit": "zoals hoofdmodel",
   "stats.orchTooltip": "Geeft aan of werk aan subagenten wordt gedelegeerd.",
   "stats.taskModelTooltip": "Het model dat de subagenten gebruiken.",

@@ -337,6 +337,8 @@
   "stats.orchOff": "jamais",
   "stats.taskModel": "modèle des agents",
   "stats.taskEffort": "réflexion des agents",
+  "stats.usageLimitUntil": "limite jusqu’à {time}",
+  "stats.usageLimitTip": "La limite d’utilisation de ce modèle est épuisée ; les agents dessus sont refusés jusqu’à la remise à zéro.",
   "stats.effortInherit": "comme le modèle principal",
   "stats.orchTooltip": "Si je confie du travail aux agents.",
   "stats.taskModelTooltip": "Le modèle utilisé par les workers.",

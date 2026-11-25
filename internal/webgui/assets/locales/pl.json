@@ -337,6 +337,8 @@
   "stats.orchOff": "nigdy",
   "stats.taskModel": "model agentów pomocniczych",
   "stats.taskEffort": "Poziom rozumowania agentów pomocniczych",
+  "stats.usageLimitUntil": "limit do {time}",
+  "stats.usageLimitTip": "Limit użycia tego modelu jest wyczerpany; agenci na nim są blokowani do odnowienia.",
   "stats.effortInherit": "jak główny",
   "stats.orchTooltip": "Czy przekazuję pracę agentom pomocniczym.",
   "stats.taskModelTooltip": "Model używany przez agentów pomocniczych.",

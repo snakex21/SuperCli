@@ -337,6 +337,8 @@
   "stats.orchOff": "nekad",
   "stats.taskModel": "apakšaģentu modelis",
   "stats.taskEffort": "apakšaģentu spriešanas intensitāte",
+  "stats.usageLimitUntil": "limits līdz {time}",
+  "stats.usageLimitTip": "Šī modeļa lietojuma limits ir izsmelts; aģenti ar to tiek atteikti līdz atiestatīšanai.",
   "stats.effortInherit": "kā galvenajam modelim",
   "stats.orchTooltip": "Vai darbs tiek deleģēts apakšaģentiem.",
   "stats.taskModelTooltip": "Apakšaģentu izmantotais modelis.",

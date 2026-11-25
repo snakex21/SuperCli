@@ -337,6 +337,8 @@
   "stats.orchOff": "ніколи",
   "stats.taskModel": "модель субагентів",
   "stats.taskEffort": "рівень міркувань субагентів",
+  "stats.usageLimitUntil": "ліміт до {time}",
+  "stats.usageLimitTip": "Ліміт цієї моделі вичерпано; агенти на ній блокуються до скидання.",
   "stats.effortInherit": "як в основної моделі",
   "stats.orchTooltip": "Чи доручаю я роботу ШІ-субагентам.",
   "stats.taskModelTooltip": "Модель, якою користуються субагенти.",

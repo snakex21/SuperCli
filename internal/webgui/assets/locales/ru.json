@@ -337,6 +337,8 @@
   "stats.orchOff": "никогда",
   "stats.taskModel": "модель исполнителей",
   "stats.taskEffort": "рассуждение исполнителей",
+  "stats.usageLimitUntil": "лимит до {time}",
+  "stats.usageLimitTip": "Лимит этой модели исчерпан; агенты на ней блокируются до сброса.",
   "stats.effortInherit": "как у основной модели",
   "stats.orchTooltip": "Передаю ли я работу исполнителям.",
   "stats.taskModelTooltip": "Модель, на которой работают исполнители.",

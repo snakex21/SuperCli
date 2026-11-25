@@ -97,3 +97,21 @@ func TestSteerOnStoppedWorkerInAutomaticTurnIsRefused(t *testing.T) {
 		t.Fatalf("steering a running worker was refused: %q", r)
 	}
 }
+
+// The panel lists only limits that have not reset yet.
+func TestUsageLimitsListsActiveOnly(t *testing.T) {
+	now := time.Now()
+	usageCooldowns.Store("panel-active", now.Add(time.Hour))
+	usageCooldowns.Store("panel-expired", now.Add(-time.Minute))
+	defer usageCooldowns.Delete("panel-active")
+	found := map[string]bool{}
+	for _, l := range UsageLimits(now) {
+		found[l.Model] = true
+	}
+	if !found["panel-active"] || found["panel-expired"] {
+		t.Fatalf("limits = %v", found)
+	}
+	if _, ok := usageCooldowns.Load("panel-expired"); ok {
+		t.Fatal("an expired limit was kept")
+	}
+}
