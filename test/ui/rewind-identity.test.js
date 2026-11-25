@@ -106,3 +106,35 @@ test('live rewind requires the successful current receipt and does not query by 
   assert.equal(await c.rewindSession('original', 3, 'same prompt', '', false, null), false);
   assert.equal(h.posts.length, 0);
 });
+
+// Another running conversation changes files this rewind would restore: the
+// GUI asks, and each answer sends the matching request (no silent refusal).
+for (const [choice, want] of [
+  ['conversation', [{rewind_files: true, force: false}, {rewind_files: false, force: false}]],
+  ['force', [{rewind_files: true, force: false}, {rewind_files: true, force: true}]],
+  [null, [{rewind_files: true, force: false}]],
+]) {
+  test('file overlap with a running session asks first: ' + choice, async () => {
+    const h = harness(), c = h.c, asked = [];
+    const overlap = JSON.stringify({error: 'rewind_overlap', overlaps: [{file: 'src/Mod.java', session: 'a', title: 'minecraft'}]});
+    c.jpost = async (url, body) => {
+      h.posts.push({url, body});
+      if (h.posts.length === 1) throw new Error(overlap);
+      return {};
+    };
+    c.showAppDialog = async options => {asked.push(options); return choice;};
+    const ok = await c.rewindSession('b', 3, 'text', '', true, null, '9', []);
+    assert.equal(ok, choice !== null);
+    assert.equal(asked.length, 1);
+    assert.match(asked[0].message, /src\/Mod\.java — minecraft/);
+    assert.deepEqual(asked[0].choices.map(x => x.value), ['conversation', 'force']);
+    assert.deepEqual(h.posts.map(p => ({rewind_files: p.body.rewind_files, force: p.body.force})), want);
+  });
+}
+
+test('a rewind without overlap asks nothing', async () => {
+  const h = harness(), c = h.c;
+  c.showAppDialog = async () => {throw new Error('no dialog expected');};
+  assert.equal(await c.rewindSession('b', 3, 'text', '', true, null, '9', []), true);
+  assert.equal(h.posts.length, 1);
+});

@@ -74,11 +74,24 @@ func (m *Manager) PreviewFromContext(ctx context.Context, sessionID string, seq 
 // optional file restore and the exact SQL truncation. The callback must only
 // truncate the selected immutable message and must not reenter checkpoint APIs.
 func (m *Manager) RewindTranscript(ctx context.Context, sessionID string, seq int, id int64, rewindFiles bool, truncate func(context.Context) error) (out BatchResult, err error) {
+	return m.RewindTranscriptWith(ctx, sessionID, seq, id, rewindFiles, false, truncate)
+}
+
+// RewindTranscriptWith is RewindTranscript with force: restore the files even
+// when another running conversation holds some of them (the user chose
+// "rewind anyway"). Without force such a rewind returns *RewindOverlapError.
+func (m *Manager) RewindTranscriptWith(ctx context.Context, sessionID string, seq int, id int64, rewindFiles, force bool, truncate func(context.Context) error) (out BatchResult, err error) {
 	if truncate == nil {
 		return BatchResult{}, errors.New("transcript truncate callback is required")
 	}
 	if err := m.RetryRecordedCompletions(ctx); err != nil {
 		return BatchResult{}, err
+	}
+	var holders []turnHolder
+	var ownTurn bool
+	var inProcess int
+	if rewindFiles {
+		holders, ownTurn, inProcess = m.liveTurnHolders(sessionID) // before the store lock
 	}
 	unlock, err := m.lockStore(ctx)
 	if err != nil {
@@ -97,9 +110,6 @@ func (m *Manager) RewindTranscript(ctx context.Context, sessionID string, seq in
 		return BatchResult{}, err
 	}
 	if rewindFiles {
-		if err := m.requireNoActiveTurnLocked(ctx); err != nil {
-			return BatchResult{}, err
-		}
 		if err := m.requireRetentionHistoryFromLocked(sessionID, seq); err != nil {
 			return BatchResult{}, err
 		}
@@ -107,6 +117,12 @@ func (m *Manager) RewindTranscript(ctx context.Context, sessionID string, seq in
 		if previewErr != nil {
 			return BatchResult{}, previewErr
 		}
+		// Other conversations' runs block only on an actual file overlap.
+		if err := m.requireNoConflictingTurnLocked(ctx, preview.Files, holders, ownTurn, inProcess, force); err != nil {
+			return BatchResult{}, err
+		}
+		m.liveTurnsChecked = true
+		defer func() { m.liveTurnsChecked = false }()
 		out, err = m.undoPreviewLocked(ctx, preview)
 		if err != nil {
 			return out, err

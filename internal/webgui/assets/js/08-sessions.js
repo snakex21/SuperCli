@@ -181,7 +181,29 @@ function resumeLastSessionOnStart() {
   if (id) resumeSession(id, sessionByID[id] || null);
 }
 
-async function rewindSession(id, selectedSeq, text, reason, rewindFiles, button, messageID, attachments) {
+// rewindOverlapChoice asks what to do when the files a rewind would restore
+// are being changed by another running conversation: rewind only the
+// conversation ("conversation"), restore the files anyway ("force") or cancel
+// (null).
+function rewindOverlapChoice(overlaps) {
+  var shown = (overlaps || []).slice(0, 8).map(function (o) {
+    var holder = o.title || (o.session ? String(o.session).slice(0, 8) : t("workflow.rewindOverlapUnknown"));
+    return "• " + o.file + " — " + holder;
+  });
+  var more = (overlaps || []).length - shown.length;
+  if (more > 0) shown.push(t("workflow.rewindOverlapMore").replace("{n}", fmtInteger(more)));
+  return showAppDialog({
+    className: "rewind-overlap",
+    title: t("workflow.rewindOverlapTitle"),
+    message: t("workflow.rewindOverlapMessage") + "\n" + shown.join("\n"),
+    choices: [
+      { label: t("workflow.rewindOverlapConversation"), value: "conversation", primary: true },
+      { label: t("workflow.rewindOverlapForce"), value: "force" },
+    ],
+  });
+}
+
+async function rewindSession(id, selectedSeq, text, reason, rewindFiles, button, messageID, attachments, force) {
   if (!id || !selectedSeq || !/^[1-9][0-9]*$/.test(String(messageID || "")) || streaming) return false;
   if (button) button.disabled = true;
   try {
@@ -190,6 +212,7 @@ async function rewindSession(id, selectedSeq, text, reason, rewindFiles, button,
       selected_seq: selectedSeq,
       selected_message_id: String(messageID),
       rewind_files: !!rewindFiles,
+      force: !!(rewindFiles && force),
       reason: reason || "",
     });
 		forgetSentAttachments(id, selectedSeq);
@@ -213,9 +236,18 @@ async function rewindSession(id, selectedSeq, text, reason, rewindFiles, button,
     return true;
   } catch (e) {
     var message = e.message;
+    var detail = null;
+    try { detail = JSON.parse(e.message); } catch (ignore) {}
+    if (detail && detail.error === "rewind_overlap" && rewindFiles && !force) {
+      // Another running conversation is changing some of these files.
+      var choice = await rewindOverlapChoice(detail.overlaps);
+      if (choice === "conversation") return rewindSession(id, selectedSeq, text, reason, false, button, messageID, attachments);
+      if (choice === "force") return rewindSession(id, selectedSeq, text, reason, true, button, messageID, attachments, true);
+      if (button && button.isConnected) button.disabled = false;
+      return false;
+    }
     try {
-      var detail = JSON.parse(e.message);
-      if (detail.conflicts && detail.conflicts.length) {
+      if (detail && detail.conflicts && detail.conflicts.length) {
         message = t("workflow.rewindConflict") + ": " + detail.conflicts.join(", ");
       }
     } catch (ignore) {}

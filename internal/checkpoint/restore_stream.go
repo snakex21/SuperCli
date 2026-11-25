@@ -57,8 +57,10 @@ func (m *Manager) restoreLockedWithRename(ctx context.Context, id string, redo b
 		return Result{}, os.ErrNotExist
 	}
 	record := m.records[idx]
-	if err := m.requireNoActiveTurnLocked(ctx); err != nil {
-		return Result{Record: record}, err
+	if !m.liveTurnsChecked {
+		if err := m.requireNoActiveTurnLocked(ctx); err != nil {
+			return Result{Record: record}, err
+		}
 	}
 	if redo && !record.Undone {
 		return Result{}, errors.New("checkpoint is not undone")

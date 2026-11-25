@@ -83,6 +83,10 @@ type Manager struct {
 	usageCounter         *StoreUsageCounter
 	usageTransaction     *checkpointUsageTransaction
 	userReceiptValidator UserReceiptValidator
+	// liveTurnsChecked is set (under the store gate) while a conversation
+	// rewind restores files it already checked against other conversations'
+	// live turns, so the per-record restore does not refuse them again.
+	liveTurnsChecked bool
 }
 
 func Open(home, dataDir string) (*Manager, error) {

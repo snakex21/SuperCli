@@ -2079,6 +2079,7 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
 .app-dialog.danger .app-dialog-kicker { color: var(--danger); }
 .app-dialog-title { margin: 7px 0 0; color: var(--text); font-size: var(--fs-lg); font-weight: 650; letter-spacing: -.01em; }
 .app-dialog-message { margin: 8px 0 0; color: var(--muted); font-size: var(--fs-sm); line-height: 1.55; }
+.app-dialog.rewind-overlap .app-dialog-message { white-space: pre-line; overflow-wrap: anywhere; }
 .app-dialog-input {
   width: 100%; margin-top: 17px; padding: 9px 10px; outline: none;
   color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);

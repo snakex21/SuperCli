@@ -230,7 +230,10 @@ func (s *Server) handleSessionRewind(w http.ResponseWriter, r *http.Request) {
 		SelectedSeq       int    `json:"selected_seq"`
 		SelectedMessageID string `json:"selected_message_id"`
 		RewindFiles       bool   `json:"rewind_files"`
-		Reason            string `json:"reason"`
+		// Force restores the files even where another running conversation
+		// holds some of them (the user chose "rewind anyway").
+		Force  bool   `json:"force"`
+		Reason string `json:"reason"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
 		http.Error(w, "bad request: "+err.Error(), 400)
@@ -244,9 +247,11 @@ func (s *Server) handleSessionRewind(w http.ResponseWriter, r *http.Request) {
 	}
 	// Browser AbortController closes the SSE stream immediately, while the
 	// canceled agent goroutine may need a brief moment to flush persistence and
-	// release activeRuns. Let a rewind clicked directly after Stop wait for that
-	// cleanup instead of failing a race the user cannot resolve.
-	if !waitForActiveWorkToFinish(r.Context(), s.eng, 3*time.Second) {
+	// release its run. Let a rewind clicked directly after Stop wait for that
+	// cleanup instead of failing a race the user cannot resolve. Only this
+	// conversation's own run and workers count: other conversations (in this
+	// project or another) never block it; their files are checked below.
+	if !waitForSessionWorkToFinish(r.Context(), s.eng, b.SessionID, 3*time.Second) {
 		http.Error(w, "stop the active task before rewinding this conversation", http.StatusConflict)
 		return
 	}
@@ -315,7 +320,7 @@ func (s *Server) handleSessionRewind(w http.ResponseWriter, r *http.Request) {
 	undone := checkpoint.BatchResult{}
 	manager, managerErr := s.eng.checkpointManager(s.eng.Home())
 	if managerErr == nil {
-		undone, err = manager.RewindTranscript(ctx, b.SessionID, b.SelectedSeq, messageID, b.RewindFiles, truncate)
+		undone, err = manager.RewindTranscriptWith(ctx, b.SessionID, b.SelectedSeq, messageID, b.RewindFiles, b.Force, truncate)
 	} else if !b.RewindFiles && errors.Is(managerErr, checkpoint.ErrUnavailable) {
 		// Conversation-only rewind remains available without Git; SQL exact
 		// identity validation still participates in the shared portable gate.
@@ -324,8 +329,11 @@ func (s *Server) handleSessionRewind(w http.ResponseWriter, r *http.Request) {
 		err = managerErr
 	}
 	if err != nil && removed == 0 {
+		var overlap *checkpoint.RewindOverlapError
 		if errors.Is(err, checkpoint.ErrUserMessageChanged) || errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "selected message changed; reload the conversation", http.StatusConflict)
+		} else if errors.As(err, &overlap) {
+			writeJSONStatus(w, http.StatusConflict, s.rewindOverlapView(overlap))
 		} else if b.RewindFiles && len(undone.Conflicts) > 0 {
 			writeJSONStatus(w, http.StatusConflict, checkpointRewindView{
 				Available: len(undone.Records) > 0, Checkpoints: len(undone.Records),
@@ -366,6 +374,74 @@ func (s *Server) handleSessionRewind(w http.ResponseWriter, r *http.Request) {
 		out.Warning += "rewind marker could not be saved: " + appendErr.Error()
 	}
 	writeJSON(w, out)
+}
+
+// rewindOverlapView answers a file rewind refused because another running
+// conversation holds some of the files: the GUI asks the user to rewind only
+// the conversation, rewind anyway, or cancel.
+func (s *Server) rewindOverlapView(e *checkpoint.RewindOverlapError) map[string]any {
+	type item struct {
+		File    string `json:"file"`
+		Session string `json:"session"`
+		Title   string `json:"title"`
+	}
+	titles := map[string]string{}
+	store, _ := s.eng.sessionStore()
+	out := make([]item, 0, len(e.Overlaps))
+	for _, o := range e.Overlaps {
+		title, ok := titles[o.Session]
+		if !ok && o.Session != "" && store != nil {
+			if meta, err := store.Get(o.Session); err == nil {
+				title = strings.TrimSpace(meta.Title)
+			}
+			titles[o.Session] = title
+		}
+		out = append(out, item{File: o.File, Session: o.Session, Title: title})
+	}
+	return map[string]any{"error": "rewind_overlap", "overlaps": out}
+}
+
+// sessionWorkActive reports this conversation's own foreground run or a
+// running worker of it.
+func (e *Engine) sessionWorkActive(id string) bool {
+	if e == nil {
+		return false
+	}
+	if e.sessionRunActive(id) {
+		return true
+	}
+	if e.workers == nil {
+		return false
+	}
+	for _, w := range e.workers.List() {
+		snap := w.Snapshot()
+		if snap.SessionID == id && (snap.Status == "running" || snap.Status == "created") {
+			return true
+		}
+	}
+	return false
+}
+
+// waitForSessionWorkToFinish waits briefly for the conversation's own run to
+// release after Stop; other conversations are never waited for.
+func waitForSessionWorkToFinish(ctx context.Context, eng *Engine, id string, timeout time.Duration) bool {
+	if !eng.sessionWorkActive(id) {
+		return true
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	tick := time.NewTicker(25 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-waitCtx.Done():
+			return !eng.sessionWorkActive(id)
+		case <-tick.C:
+			if !eng.sessionWorkActive(id) {
+				return true
+			}
+		}
+	}
 }
 
 func waitForActiveWorkToFinish(ctx context.Context, eng *Engine, timeout time.Duration) bool {

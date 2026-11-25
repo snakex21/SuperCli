@@ -140,7 +140,7 @@ function showAppDialog(options) {
     var previousFocus = document.activeElement;
     var overlay = el("div", "app-dialog-overlay");
     overlay.setAttribute("role", "presentation");
-    var panel = el("form", "app-dialog" + (options.danger ? " danger" : ""));
+    var panel = el("form", "app-dialog" + (options.danger ? " danger" : "") + (options.className ? " " + options.className : ""));
     panel.setAttribute("role", "dialog");
     panel.setAttribute("aria-modal", "true");
     var titleID = "app-dialog-title-" + Date.now();
