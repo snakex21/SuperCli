@@ -3,6 +3,8 @@ package session
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+	"unicode/utf8"
 
 	"supercli/internal/llm"
 )
@@ -26,7 +28,7 @@ type Encoded struct {
 func (e Encoded) ToMessage() (llm.Message, error) {
 	m := llm.Message{
 		Role:       llm.Role(e.Role),
-		Content:    e.Content,
+		Content:    validText(e.Content),
 		Name:       e.Name,
 		ToolCallID: e.ToolCallID,
 	}
@@ -104,4 +106,13 @@ func (e Encoded) Validate() error {
 		return fmt.Errorf("session.Encoded: tool role needs ToolCallID")
 	}
 	return nil
+}
+
+// validText repairs rows saved with invalid UTF-8 (an older goal tool cut
+// text by bytes) so readers and providers always get valid text.
+func validText(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	return strings.ToValidUTF8(s, "�")
 }

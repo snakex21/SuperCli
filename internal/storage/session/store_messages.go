@@ -76,7 +76,10 @@ func (s *Store) truncateFrom(ctx context.Context, sessionID string, fromSeq int,
 	if _, err := tx.ExecContext(ctx, `DELETE FROM message_attachments WHERE session_id = ? AND user_seq >= ?`, sessionID, fromSeq); err != nil {
 		return 0, fmt.Errorf("truncate message attachments: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM session_context_projections WHERE session_id = ?`, sessionID); err != nil {
+	// A compacted projection that ends before the rewind point still describes
+	// exactly the kept messages (later rows are read after it): keep it, so a
+	// rewind does not force a full recompaction of a long session.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM session_context_projections WHERE session_id = ? AND through_seq >= ?`, sessionID, fromSeq); err != nil {
 		return 0, fmt.Errorf("invalidate context projection: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM session_tool_discovery WHERE session_id = ?`, sessionID); err != nil {

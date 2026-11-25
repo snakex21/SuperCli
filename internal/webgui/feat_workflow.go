@@ -347,7 +347,7 @@ func (s *Server) handleSessionRewind(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		out.Warning = "conversation was rewound, but checkpoint cleanup could not finish: " + err.Error()
 	}
-	marker := "[conversation rewind] The user permanently removed the selected message and the later conversation. Do not rely on the discarded attempt."
+	marker := rewindMarkerPrefix + " The user permanently removed the selected message and the later conversation. Do not rely on the discarded attempt."
 	if b.RewindFiles {
 		marker += " The associated checkpointed file changes were also restored."
 	} else {
@@ -356,6 +356,9 @@ func (s *Server) handleSessionRewind(w http.ResponseWriter, r *http.Request) {
 	if b.Reason != "" {
 		marker += " User reason: " + b.Reason
 	}
+	// Several rewinds in a row leave one marker, not a stack of identical
+	// notices sent to the model with every request.
+	dropTrailingRewindMarker(r.Context(), store, b.SessionID)
 	if appendErr := session.NewWriter(store, b.SessionID).AppendMessage(r.Context(), llm.Message{Role: llm.RoleSystem, Content: marker}); appendErr != nil {
 		if out.Warning != "" {
 			out.Warning += "; "
@@ -405,4 +408,16 @@ func writeWorkflowError(w http.ResponseWriter, err error) {
 		return
 	}
 	http.Error(w, err.Error(), 400)
+}
+
+// rewindMarkerPrefix opens the system note a rewind leaves for the model.
+const rewindMarkerPrefix = "[conversation rewind]"
+
+// dropTrailingRewindMarker removes the previous rewind note when it is still
+// the last message, so the next one replaces it.
+func dropTrailingRewindMarker(ctx context.Context, store *session.Store, sessionID string) {
+	last, _, err := store.ReadMessagesBefore(ctx, sessionID, 0, 1)
+	if err == nil && len(last) == 1 && last[0].Role == string(llm.RoleSystem) && strings.HasPrefix(last[0].Content, rewindMarkerPrefix) {
+		_, _ = store.TruncateFrom(ctx, sessionID, last[0].Seq)
+	}
 }

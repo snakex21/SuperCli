@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"supercli/internal/storage/goal"
 	"supercli/internal/tools/core"
@@ -522,11 +523,14 @@ func statusMark(s goal.Status) string {
 	}
 }
 
+// shorten keeps at most n runes; a byte cut could split a multi-byte rune
+// and store invalid UTF-8 (an audited goal row did).
 func shorten(s string, n int) string {
-	if len(s) <= n {
+	if utf8.RuneCountInString(s) <= n {
 		return s
 	}
-	return s[:n-1] + "…"
+	runes := []rune(s)
+	return string(runes[:n-1]) + "…"
 }
 
 func formatRel(t time.Time, now time.Time) string {
