@@ -22,6 +22,9 @@ func (l *Loop) estimateNextRequestTokensRaw() int {
 	} else {
 		est = llm.EstimateTokens(projected)
 	}
+	if l.pinnedTask != "" {
+		est += llm.EstimateMessageTokens(llm.Message{Role: llm.RoleSystem, Content: l.pinnedTask})
+	}
 	// Images sent as pixels on the next request count toward the trigger.
 	est += llm.EstimateActiveImageTokens(projected)
 	if l.registry == nil {

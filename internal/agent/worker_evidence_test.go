@@ -71,8 +71,11 @@ func TestWorkerEvidenceAvailableWithoutWorkerInference(t *testing.T) {
 			if !strings.Contains(res.RetainedText, "AuditValue = 731") || strings.Contains(res.Text, "AuditValue") {
 				t.Fatalf("snapshot missing or inline: %+v", res)
 			}
+			// The summary names the task by its title (since 1.0.40); nothing
+			// else of the worker's conversation may be retained.
+			retained := strings.ReplaceAll(res.RetainedText, "task: "+workerTaskTitle("PRIVATE_PROMPT inspect config.go"), "")
 			for _, private := range []string{"PRIVATE_PROMPT", "PRIVATE_COMMENTARY"} {
-				if strings.Contains(res.RetainedText, private) {
+				if strings.Contains(retained, private) {
 					t.Fatalf("private worker conversation included: %s", private)
 				}
 			}

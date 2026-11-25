@@ -36,6 +36,9 @@ func workerFailureHandoffCaptured(s Snapshot, canContinue bool, report string, c
 	var b strings.Builder
 	fmt.Fprintf(&b, "worker %s (%s), status=%s; call failed: %s",
 		s.ID, s.Agent, s.Status, core.HeadTail(cause.Error(), 384, 128))
+	if title := workerTaskTitle(s.Description); title != "" {
+		fmt.Fprintf(&b, "\nTask: %s", title)
+	}
 	if canContinue && !errors.Is(cause, context.Canceled) {
 		fmt.Fprintf(&b, "\nContext retained; send_message to %s continues this worker.", s.ID)
 	}

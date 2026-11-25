@@ -126,6 +126,7 @@ func (l *Loop) prepareProviderMessages(estimate bool) ([]llm.Message, int) {
 		// Per-request freshness stamp: appended at the END so the stable
 		// prompt prefix stays cacheable by the provider.
 		visible := sourceEvidenceProjection(l.resolvedToolProviderView(llm.ProjectReasoningHistory(l.provider, l.reasoningHistoryView(l.VisibleMessages()))), l.baseDir)
+		visible = withPinnedTask(visible, l.pinnedTask)
 		tokens := 0
 		cachedHistory := estimate && l.hidden == nil && len(visible) == len(l.Messages) &&
 			(len(visible) == 0 || &visible[0] == &l.Messages[0])

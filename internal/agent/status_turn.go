@@ -197,8 +197,9 @@ func renderStatusWorkers(snaps []Snapshot) string {
 		if e := strings.TrimSpace(s.LastError); e != "" {
 			fmt.Fprintf(&b, ", last error: %s", statusClip(e, 160))
 		}
-		if d := strings.TrimSpace(s.Description); d != "" {
-			fmt.Fprintf(&b, " — %s", statusClip(d, 120))
+		if title := workerTaskTitle(s.Description); title != "" {
+			// The task, not the shared project preamble most briefs open with.
+			fmt.Fprintf(&b, " — %s", title)
 		}
 	}
 	return b.String()

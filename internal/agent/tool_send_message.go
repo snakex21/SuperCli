@@ -173,9 +173,9 @@ func backgroundRunningNotice(w *Worker, what string) string {
 <task-id>%s</task-id>
 <agent>%s</agent>
 <status>running</status>
-<summary>%s %s</summary>
+<summary>%s %s - task: %s</summary>
 <continuation>Results arrive automatically. Continue independent work, or end this response to wait. Do not restart this task or use its worker ID with read_output; use send_message only for new instructions.</continuation>
-</task-notification>`, w.ID, w.Agent, w.Agent, what)
+</task-notification>`, w.ID, w.Agent, w.Agent, what, workerTaskTitle(w.Description))
 }
 
 func runWorkerLoop(ctx context.Context, w *Worker, prompt string) (string, error) {
@@ -264,6 +264,10 @@ func runWorkerLoopLocked(ctx context.Context, w *Worker, prompt string, workers 
 	}
 	ctx = llm.WithPromptCacheScope(ctx, scope)
 	ctx = context.WithValue(ctx, workerRunKey{}, true)
+	if w.Loop != nil {
+		// The brief rides every request of this run (worker_brief.go).
+		w.Loop.pinnedTask = pinnedWorkerBrief(w.Description)
+	}
 	w.stateMu.RLock()
 	effort := w.reasoningEffort
 	w.stateMu.RUnlock()
@@ -571,6 +575,10 @@ func workerSummaryFromSnapshot(s Snapshot) string {
 	// resource cost (steps + tokens) so a run that hit a limit is legible.
 	summary := fmt.Sprintf("%s %s · %d steps · %d in/%d out tok",
 		s.Agent, status, s.Steps, s.TokensIn, s.TokensOut)
+	if title := workerTaskTitle(s.Description); title != "" {
+		// The coordinator maps reports to tasks by this, never by call order.
+		summary += " · task: " + title
+	}
 	// model-per-task telemetry: name the backend only when it differs
 	// from the coordinator's (Model is set by the task tool then), so
 	// the default single-model line keeps its historical format.

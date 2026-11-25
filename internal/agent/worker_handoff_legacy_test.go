@@ -47,6 +47,10 @@ func legacyHandoffworkerSummary(w *Worker) string {
 	// resource cost (steps + tokens) so a run that hit a limit is legible.
 	summary := fmt.Sprintf("%s %s · %d steps · %d in/%d out tok",
 		s.Agent, status, s.Steps, s.TokensIn, s.TokensOut)
+	// After 1.0.40 the summary names the worker's task.
+	if title := workerTaskTitle(s.Description); title != "" {
+		summary += " · task: " + title
+	}
 	// model-per-task telemetry: name the backend only when it differs
 	// from the coordinator's (Model is set by the task tool then), so
 	// the default single-model line keeps its historical format.
@@ -125,6 +129,9 @@ func legacyHandoffworkerFailureHandoff(w *Worker, report string, cause error, ob
 	var b strings.Builder
 	fmt.Fprintf(&b, "worker %s (%s), status=%s; call failed: %s",
 		s.ID, s.Agent, s.Status, core.HeadTail(cause.Error(), 384, 128))
+	if title := workerTaskTitle(s.Description); title != "" {
+		b.WriteString("\nTask: " + title)
+	}
 	canContinue := s.Status == "failed" && w.Loop != nil && !errors.Is(cause, context.Canceled)
 	if canContinue {
 		if budget, ok := w.Loop.creditTracker.(*tokenBudget); ok {

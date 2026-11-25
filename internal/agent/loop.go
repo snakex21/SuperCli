@@ -364,6 +364,10 @@ type Loop struct {
 	// (and remains persisted + searchable via F13).
 	// Reset on Run start.
 	hidden []bool
+	// pinnedTask is a worker's original brief, sent as a leading system
+	// block with every request (request-only: never stored, compacted or
+	// elided). See worker_brief.go.
+	pinnedTask string
 
 	// extOut is an optional channel for events
 	// that don't belong to a single Run (F12

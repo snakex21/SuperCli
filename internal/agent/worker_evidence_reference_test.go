@@ -80,7 +80,11 @@ func TestWorkerAutomaticallyHandsOffOriginalOutputReference(t *testing.T) {
 					if strings.Contains(result.Text, "ONLY_IN_ORIGINAL") || strings.Contains(result.RetainedText, "ONLY_IN_ORIGINAL") {
 						t.Fatal("fixture secret should be beyond the bounded observation excerpt")
 					}
-					if strings.Contains(result.RetainedText, "PRIVATE_BRIEF") || strings.Contains(result.Text, "PRIVATE_BRIEF") {
+					// The report's summary names the task (its title, since 1.0.40);
+					// the brief itself must not be copied into the evidence.
+					titled := "task: " + workerTaskTitle("PRIVATE_BRIEF inspect the evidence and report briefly.")
+					if strings.Contains(strings.ReplaceAll(result.RetainedText, titled, ""), "PRIVATE_BRIEF") ||
+						strings.Contains(strings.ReplaceAll(result.Text, titled, ""), "PRIVATE_BRIEF") {
 						t.Fatal("worker prompt was included in evidence")
 					}
 					saveCtx := ctx
