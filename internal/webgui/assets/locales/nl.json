@@ -1286,6 +1286,7 @@
   "task.blockedStatus": "Statusvraag: er zijn geen agents gestart, hervat of gestopt",
   "task.blockedNeedsWord": "Hervatten vraagt om je verzoek — schrijf „hervat” of klik op Hervatten",
   "task.blockedDuplicate": "Deze agent werkt al aan dezelfde taak",
+  "task.blockedUsageLimit": "Het gebruikslimiet van het agentmodel is op — wissel het model in de instellingen of wacht op de reset (tijd onder Details)",
   "task.resumeAll": "Alles hervatten ({n})",
   "task.resumeAllPrompt": "Hervat {ids} met send_message en ga verder met hun taken waar ze stopten; hun opgeslagen gesprekken worden hersteld.",
   "task.blockedStoppedByYou": "Op jouw verzoek gestopt — niet met de anderen hervat",

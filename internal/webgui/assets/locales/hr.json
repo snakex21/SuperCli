@@ -1286,6 +1286,7 @@
   "task.blockedStatus": "Pitanje o stanju: nijedan agent nije pokrenut, nastavljen ni zaustavljen",
   "task.blockedNeedsWord": "Nastavak traži tvoj zahtjev — napiši „nastavi” ili klikni Nastavi",
   "task.blockedDuplicate": "Ovaj agent već radi na istom zadatku",
+  "task.blockedUsageLimit": "Model agenata potrošio je ograničenje — promijeni model u postavkama ili pričekaj obnovu (vrijeme u detaljima)",
   "task.resumeAll": "Nastavi sve ({n})",
   "task.resumeAllPrompt": "Nastavi {ids} putem send_message i nastavi njihove zadatke od mjesta prekida; njihovi spremljeni razgovori se vraćaju.",
   "task.blockedStoppedByYou": "Zaustavljen na tvoj zahtjev — nije nastavljen s ostalima",

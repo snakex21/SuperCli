@@ -1286,6 +1286,7 @@
   "task.blockedStatus": "Durum sorusu: hiçbir ajan başlatılmadı, sürdürülmedi veya durdurulmadı",
   "task.blockedNeedsWord": "Sürdürmek için isteğin gerekiyor — “devam et” yaz ya da Sürdür düğmesine tıkla",
   "task.blockedDuplicate": "Bu ajan zaten aynı görev üzerinde çalışıyor",
+  "task.blockedUsageLimit": "Ajan modelinin kullanım sınırı doldu — ayarlardan modeli değiştir veya sıfırlanmayı bekle (saat Ayrıntılar'da)",
   "task.resumeAll": "Tümünü sürdür ({n})",
   "task.resumeAllPrompt": "{ids} ajanlarını send_message ile sürdür ve görevlerine kaldıkları yerden devam et; kayıtlı konuşmaları geri yüklenir.",
   "task.blockedStoppedByYou": "İsteğin üzerine durduruldu — diğerleriyle sürdürülmedi",

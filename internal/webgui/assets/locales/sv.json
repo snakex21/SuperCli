@@ -1286,6 +1286,7 @@
   "task.blockedStatus": "Statusfråga: inga agenter startades, återupptogs eller stoppades",
   "task.blockedNeedsWord": "Att återuppta kräver din begäran — skriv ”fortsätt” eller klicka på Återuppta",
   "task.blockedDuplicate": "Den här agenten arbetar redan med samma uppgift",
+  "task.blockedUsageLimit": "Agentmodellens användningsgräns är slut — byt modell i inställningarna eller vänta på återställning (tid under Detaljer)",
   "task.resumeAll": "Återuppta alla ({n})",
   "task.resumeAllPrompt": "Återuppta {ids} med send_message och fortsätt deras uppgifter där de stannade; deras sparade samtal återställs.",
   "task.blockedStoppedByYou": "Stoppad på din begäran — inte återupptagen med de andra",

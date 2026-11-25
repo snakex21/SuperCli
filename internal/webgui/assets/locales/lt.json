@@ -1286,6 +1286,7 @@
   "task.blockedStatus": "Klausimas apie būseną: agentai nepaleisti, netęsti ir nesustabdyti",
   "task.blockedNeedsWord": "Tęsimui reikia tavo prašymo — parašyk „tęsk“ arba spustelėk Tęsti",
   "task.blockedDuplicate": "Šis agentas jau dirba su ta pačia užduotimi",
+  "task.blockedUsageLimit": "Agentų modelio naudojimo riba išnaudota — pakeisk modelį nustatymuose arba palauk atstatymo (laikas detalėse)",
   "task.resumeAll": "Tęsti visus ({n})",
   "task.resumeAllPrompt": "Tęsk {ids} per send_message ir tęsk jų užduotis nuo sustojimo vietos; jų išsaugoti pokalbiai atkuriami.",
   "task.blockedStoppedByYou": "Sustabdytas tavo prašymu — netęstas kartu su kitais",

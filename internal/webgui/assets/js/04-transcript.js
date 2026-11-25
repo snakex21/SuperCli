@@ -3191,6 +3191,7 @@ function renderTaskResult(row, note, elapsed, prompt, err, history) {
 function refusedKey(toolName, reason) {
   var r = String(reason || "");
   if (/only asked for a status update/.test(r)) return "task.blockedStatus";
+  if (/refused: usage limit:/.test(r)) return "task.blockedUsageLimit";
   if (/already working on this exact task/.test(r)) return "task.blockedDuplicate";
   if (/must ask for it explicitly/.test(r)) return toolName === "task_stop" ? "task.blockedStop" : "task.blockedNeedsWord";
   if (/stopped on request, so a general resume/.test(r)) return "task.blockedStoppedByYou";

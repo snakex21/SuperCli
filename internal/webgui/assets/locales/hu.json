@@ -1286,6 +1286,7 @@
   "task.blockedStatus": "Állapotkérdés: nem indult, folytatódott vagy állt le ügynök",
   "task.blockedNeedsWord": "A folytatáshoz a kérésed kell — írd, hogy „folytasd”, vagy kattints a Folytatás gombra",
   "task.blockedDuplicate": "Ez az ügynök már ugyanazon a feladaton dolgozik",
+  "task.blockedUsageLimit": "Az ügynökmodell használati kerete elfogyott — válts modellt a beállításokban, vagy várd meg a visszaállást (idő a részletekben)",
   "task.resumeAll": "Összes folytatása ({n})",
   "task.resumeAllPrompt": "Folytasd a következőket send_message használatával: {ids}, onnan, ahol abbamaradtak; a mentett beszélgetéseik visszaállnak.",
   "task.blockedStoppedByYou": "A kérésedre leállítva — nem folytatva a többivel",

@@ -419,13 +419,15 @@ func TestSendMessageSteerRequiresAlreadyStartedWorker(t *testing.T) {
 	if _, err := runWorkerLoop(context.Background(), w, "original task"); err != nil {
 		t.Fatal(err)
 	}
-	if r := steerWorker(t, context.Background(), workers, w, "finished steer", "steer"); r.Err == nil || p.calls != 1 {
-		t.Fatalf("steer resumed finished worker: %+v", r)
+	// A steer to a worker that already finished continues it (the resume gate
+	// judges the turn before; automatic turns are refused there).
+	if r := steerWorker(t, context.Background(), workers, w, "finished steer", "steer"); r.Err != nil || p.calls != 2 {
+		t.Fatalf("steer on a finished worker did not continue it: %+v", r)
 	}
-	if r := steerWorker(t, context.Background(), workers, w, "normal follow-up", "continue"); r.Err != nil || p.calls != 2 {
+	if r := steerWorker(t, context.Background(), workers, w, "normal follow-up", "continue"); r.Err != nil || p.calls != 3 {
 		t.Fatalf("explicit default mode changed: %+v", r)
 	}
-	if r := steerWorker(t, context.Background(), workers, w, "invalid", "unknown"); r.Err == nil || p.calls != 2 {
+	if r := steerWorker(t, context.Background(), workers, w, "invalid", "unknown"); r.Err == nil || p.calls != 3 {
 		t.Fatalf("invalid mode triggered a run: %+v", r)
 	}
 }

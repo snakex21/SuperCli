@@ -246,7 +246,11 @@ func (l *Loop) wakeResumeRefusal(tc llm.ToolCall) string {
 	switch tc.Name {
 	case "send_message":
 		if strings.TrimSpace(args.Mode) == "steer" {
-			return "" // a correction for a running worker, not a restart
+			if status, _ := l.workerStatusOf(strings.TrimSpace(args.To)); status == "running" || status == "created" || status == "" {
+				return "" // a correction for a running worker, not a restart
+			}
+			// A steer to a stopped worker continues it (send_message falls
+			// back to a resume): the same rules as a resume apply.
 		}
 		target, action = strings.TrimSpace(args.To), "resume"
 	case "task_stop":

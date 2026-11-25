@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"supercli/internal/tools/core"
 )
@@ -34,15 +35,22 @@ func workerCanContinue(w *Worker, s Snapshot) bool {
 
 func workerFailureHandoffCaptured(s Snapshot, canContinue bool, report string, cause error, observation string) error {
 	var b strings.Builder
+	// A short reason, never a provider's raw JSON body; a usage limit says
+	// when it resets.
+	reason := shortProviderError(cause.Error())
+	if until, ok := usageLimitReset(cause.Error(), time.Now()); ok {
+		reason += "; usage limit resets at " + until.Local().Format("2006-01-02 15:04")
+	}
 	fmt.Fprintf(&b, "worker %s (%s), status=%s; call failed: %s",
-		s.ID, s.Agent, s.Status, core.HeadTail(cause.Error(), 384, 128))
+		s.ID, s.Agent, s.Status, core.HeadTail(reason, 384, 128))
 	if title := workerTaskTitle(s.Description); title != "" {
 		fmt.Fprintf(&b, "\nTask: %s", title)
 	}
 	if canContinue && !errors.Is(cause, context.Canceled) {
 		fmt.Fprintf(&b, "\nContext retained; send_message to %s continues this worker.", s.ID)
 	}
-	if report = strings.TrimSpace(report); report != "" {
+	if report = strings.TrimSpace(report); report != "" && !strings.Contains(report, cause.Error()) && !strings.Contains(cause.Error(), report) {
+		// (A "partial report" that only repeats the error is left out.)
 		b.WriteString("\nPartial report (incomplete):\n")
 		b.WriteString(core.HeadTail(report, 768, 256))
 	}

@@ -1286,6 +1286,7 @@
   "task.blockedStatus": "Olekuküsimus: agente ei käivitatud, jätkatud ega peatatud",
   "task.blockedNeedsWord": "Jätkamiseks on vaja sinu palvet — kirjuta „jätka” või klõpsa Jätka",
   "task.blockedDuplicate": "See agent töötab juba sama ülesandega",
+  "task.blockedUsageLimit": "Agentide mudeli kasutuslimiit on täis — vaheta seadetes mudelit või oota lähtestust (aeg üksikasjades)",
   "task.resumeAll": "Jätka kõiki ({n})",
   "task.resumeAllPrompt": "Jätka {ids} send_message abil ja jätka nende ülesandeid sealt, kus need peatusid; nende salvestatud vestlused taastatakse.",
   "task.blockedStoppedByYou": "Peatatud sinu soovil — ei jätkatud koos teistega",

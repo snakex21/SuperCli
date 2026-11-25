@@ -1286,6 +1286,7 @@
   "task.blockedStatus": "Statusspørsmål: ingen agenter ble startet, gjenopptatt eller stoppet",
   "task.blockedNeedsWord": "Fortsettelse krever ønsket ditt — skriv «fortsett» eller klikk Fortsett",
   "task.blockedDuplicate": "Denne agenten jobber allerede med samme oppgave",
+  "task.blockedUsageLimit": "Agentmodellens bruksgrense er brukt opp — bytt modell i innstillingene eller vent på nullstilling (tid under Detaljer)",
   "task.resumeAll": "Fortsett alle ({n})",
   "task.resumeAllPrompt": "Fortsett {ids} med send_message og fortsett oppgavene der de stoppet; de lagrede samtalene gjenopprettes.",
   "task.blockedStoppedByYou": "Stoppet etter ønske fra deg — ikke fortsatt med de andre",

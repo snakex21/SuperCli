@@ -1286,6 +1286,7 @@
   "task.blockedStatus": "Jautājums par stāvokli: neviens aģents netika palaists, atsākts vai apturēts",
   "task.blockedNeedsWord": "Turpināšanai vajag tavu lūgumu — uzraksti “turpini” vai noklikšķini Turpināt",
   "task.blockedDuplicate": "Šis aģents jau strādā pie tā paša uzdevuma",
+  "task.blockedUsageLimit": "Aģentu modeļa lietojuma limits ir izsmelts — nomaini modeli iestatījumos vai gaidi atiestatīšanu (laiks detaļās)",
   "task.resumeAll": "Turpināt visus ({n})",
   "task.resumeAllPrompt": "Turpini {ids} ar send_message un turpini to uzdevumus no vietas, kur tie apstājās; to saglabātās sarunas tiek atjaunotas.",
   "task.blockedStoppedByYou": "Apturēts pēc tava lūguma — netika turpināts kopā ar citiem",

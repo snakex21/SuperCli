@@ -49,7 +49,7 @@ outlook_mail [approval arg=confirm] desc=90919146c32c schema=37d4866eb922 fn=sup
 thunderbird_mail [approval arg=confirm] desc=3d0f8f503164 schema=b185f9386e20 fn=supercli/internal/tools/mail.(*ThunderbirdMail).execute-fm
 tool_search [on] desc=adb46caef9d4 schema=bec7ffe0edef fn=supercli/internal/tools/search.(*ToolSearcher).execute-fm
 read_output [on ro] desc=8cb657cdcc97 schema=0b5132aaf325 fn=supercli/internal/tools/core.(*Registry).EnsureReadOutput.(*OutputStore).ReadOutputTool.func1
-task [on] desc=f89e722eadce schema=cba01779811d fn=supercli/internal/checkpoint.(*Turn).Wrap.func1
+task [on] desc=f89e722eadce schema=aa956606d38f fn=supercli/internal/checkpoint.(*Turn).Wrap.func1
 send_message [on] desc=43f46f4818e5 schema=9275b6d43277 fn=supercli/internal/checkpoint.(*Turn).Wrap.func1
 task_stop [on] desc=5bf70a6bb1c7 schema=9f0fb0e23dea fn=supercli/internal/agent.(*TaskStopTool).execute-fm
 ##### loop visible tools

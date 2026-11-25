@@ -1286,6 +1286,7 @@
   "task.blockedStatus": "Statusfrage: Es wurden keine Agenten gestartet, fortgesetzt oder gestoppt",
   "task.blockedNeedsWord": "Fortsetzen braucht deine Bitte — schreibe „fortsetzen“ oder klicke auf Fortsetzen",
   "task.blockedDuplicate": "Dieser Agent arbeitet bereits an derselben Aufgabe",
+  "task.blockedUsageLimit": "Das Nutzungslimit des Unteragenten-Modells ist erschöpft — Modell in den Einstellungen wechseln oder auf die Rücksetzung warten (Zeit unter Details)",
   "task.resumeAll": "Alle fortsetzen ({n})",
   "task.resumeAllPrompt": "Setze {ids} mit send_message fort und führe ihre Aufgaben dort weiter, wo sie angehalten haben; ihre gespeicherten Unterhaltungen werden wiederhergestellt.",
   "task.blockedStoppedByYou": "Auf deinen Wunsch angehalten — nicht mit den anderen fortgesetzt",

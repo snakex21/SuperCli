@@ -1286,6 +1286,7 @@
   "task.blockedStatus": "Statusspørgsmål: ingen agenter blev startet, genoptaget eller stoppet",
   "task.blockedNeedsWord": "Genoptagelse kræver din anmodning — skriv „fortsæt“ eller klik på Genoptag",
   "task.blockedDuplicate": "Denne agent arbejder allerede på samme opgave",
+  "task.blockedUsageLimit": "Agentmodellens forbrugsgrænse er brugt op — skift model i indstillingerne eller vent på nulstilling (tid under Detaljer)",
   "task.resumeAll": "Genoptag alle ({n})",
   "task.resumeAllPrompt": "Genoptag {ids} med send_message og fortsæt deres opgaver, hvor de stoppede; deres gemte samtaler gendannes.",
   "task.blockedStoppedByYou": "Stoppet efter din anmodning — ikke genoptaget med de andre",

@@ -1286,6 +1286,7 @@
   "task.blockedStatus": "Dotaz na stav: žádní agenti nebyli spuštěni, obnoveni ani zastaveni",
   "task.blockedNeedsWord": "Obnovení potřebuje tvou žádost — napiš „pokračuj“ nebo klikni na Obnovit",
   "task.blockedDuplicate": "Tento agent už pracuje na stejném úkolu",
+  "task.blockedUsageLimit": "Model agentů vyčerpal limit použití — změň model v nastavení nebo počkej na obnovení (čas v podrobnostech)",
   "task.resumeAll": "Obnovit vše ({n})",
   "task.resumeAllPrompt": "Obnov {ids} přes send_message a pokračuj v jejich úkolech od místa přerušení; jejich uložené konverzace budou obnoveny.",
   "task.blockedStoppedByYou": "Zastaven na tvou žádost — neobnoven s ostatními",

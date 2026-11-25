@@ -116,9 +116,16 @@ func (s *SendMessageTool) execute(ctx context.Context, raw json.RawMessage) (too
 		if w.status() == "created" {
 			return tools.Result{Err: fmt.Errorf("worker %s is already running or has not started; its original task must start before steering", w.ID)}, nil
 		}
-		if w.status() != "running" || w.Loop == nil {
-			return tools.Result{Err: fmt.Errorf("send_message: worker %s is not running; use send_message without mode=steer to continue it", w.ID)}, nil
+		if w.Loop == nil {
+			return tools.Result{Err: fmt.Errorf("send_message: worker %s is not running and has no saved conversation; start a new task instead", w.ID)}, nil
 		}
+		if w.status() != "running" {
+			// The worker stopped meanwhile: the correction becomes a
+			// continuation (the resume gate already allowed it).
+			args.Mode = ""
+		}
+	}
+	if args.Mode == "steer" {
 		id, err := w.Loop.queueInterjection(args.Message, true)
 		if err != nil {
 			return tools.Result{Err: fmt.Errorf("send_message: worker %s: %w", w.ID, err)}, nil
@@ -126,6 +133,14 @@ func (s *SendMessageTool) execute(ctx context.Context, raw json.RawMessage) (too
 		return tools.Result{Text: fmt.Sprintf("Steering queued for worker %s in its current run (receipt %s). Delivery or rejection will be reported in worker progress; no new run was started.", w.ID, id)}, nil
 	}
 	message := args.Message
+	if s.Refresh != nil {
+		// The model this run would use: blocked by a usage limit, refuse now
+		// instead of failing within seconds.
+		refreshIfIdle(ctx, w, s.Refresh)
+	}
+	if until, blocked := usageCooldown(workerRunModel(w), time.Now()); blocked {
+		return tools.Result{Err: fmt.Errorf("send_message: %s", usageLimitRefusal(workerRunModel(w), until, time.Now()))}, nil
+	}
 	if snap := w.Snapshot(); snap.Runs == 0 && snap.Status == "failed" && strings.HasPrefix(snap.LastError, "did not start") && strings.TrimSpace(w.Description) != "" {
 		// A worker that failed before its first run has no saved conversation:
 		// retrying it must carry the original task, not only the follow-up.
@@ -264,11 +279,11 @@ func runWorkerLoopLocked(ctx context.Context, w *Worker, prompt string, workers 
 	}
 	ctx = llm.WithPromptCacheScope(ctx, scope)
 	ctx = context.WithValue(ctx, workerRunKey{}, true)
-	ctx = context.WithValue(ctx, workerSelfKey{}, w)
 	if w.Loop != nil {
 		// The brief rides every request of this run (worker_brief.go).
 		w.Loop.pinnedTask = pinnedWorkerBrief(w.Description)
 	}
+	ctx = context.WithValue(ctx, workerSelfKey{}, w)
 	w.stateMu.RLock()
 	effort := w.reasoningEffort
 	w.stateMu.RUnlock()
@@ -357,6 +372,7 @@ func runWorkerLoopLocked(ctx context.Context, w *Worker, prompt string, workers 
 			}
 			w.UpdatedAt = time.Now()
 			w.LastError = err.Error()
+			noteUsageLimit(workerRunModel(w), err, time.Now())
 			w.liveRunEnded()
 		})
 		return "", err
@@ -488,6 +504,7 @@ func runWorkerLoopLocked(ctx context.Context, w *Worker, prompt string, workers 
 			w.UpdatedAt = time.Now()
 			w.LastResult = result
 			w.LastError = runErr.Error()
+			noteUsageLimit(workerRunModel(w), runErr, time.Now())
 			if len(rejectedSteering) > 0 {
 				w.LastError += "; " + strings.Join(rejectedSteering, "; ")
 			}

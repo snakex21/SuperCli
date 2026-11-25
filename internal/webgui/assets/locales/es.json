@@ -1286,6 +1286,7 @@
   "task.blockedStatus": "Pregunta de estado: no se inició, reanudó ni detuvo ningún agente",
   "task.blockedNeedsWord": "Reanudar necesita tu petición — escribe «reanuda» o pulsa Reanudar",
   "task.blockedDuplicate": "Este agente ya trabaja en la misma tarea",
+  "task.blockedUsageLimit": "El modelo de los agentes agotó su límite de uso: cámbialo en ajustes o espera al reinicio (hora en Detalles)",
   "task.resumeAll": "Reanudar todos ({n})",
   "task.resumeAllPrompt": "Reanuda {ids} con send_message y continúa sus tareas desde donde se detuvieron; se restauran sus conversaciones guardadas.",
   "task.blockedStoppedByYou": "Detenido a petición tuya — no se reanudó con los demás",

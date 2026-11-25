@@ -1286,6 +1286,7 @@
   "task.blockedStatus": "Pergunta de status: nenhum agente foi iniciado, retomado ou parado",
   "task.blockedNeedsWord": "Retomar precisa do seu pedido — escreva “retome” ou clique em Retomar",
   "task.blockedDuplicate": "Este agente já está trabalhando na mesma tarefa",
+  "task.blockedUsageLimit": "O modelo dos agentes esgotou o limite de uso — troque-o nas configurações ou aguarde a renovação (horário em Detalhes)",
   "task.resumeAll": "Retomar todos ({n})",
   "task.resumeAllPrompt": "Retome {ids} com send_message e continue as tarefas de onde pararam; as conversas salvas são restauradas.",
   "task.blockedStoppedByYou": "Parado a seu pedido — não retomado com os outros",

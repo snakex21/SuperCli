@@ -49,6 +49,17 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	if err := a.Workers.checkActiveLimit(a.workerProviderName(ar)); err != nil {
 		return tools.Result{Err: fmt.Errorf("task: %w", err)}, nil
 	}
+	if !ar.Advise {
+		// The configured worker model, without probing the backend.
+		configured := a.WorkerProvider
+		if configured == nil {
+			configured = a.coordinatorProvider()
+		}
+		model := llm.ProviderModelName(configured)
+		if until, blocked := usageCooldown(model, time.Now()); blocked {
+			return tools.Result{Err: fmt.Errorf("task: %s", usageLimitRefusal(model, until, time.Now()))}, nil
+		}
+	}
 
 	// Fold the optional `expect` into the worker's briefing so its
 	// final report is shaped by what the coordinator asked for.

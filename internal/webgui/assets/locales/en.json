@@ -1286,6 +1286,7 @@
   "task.blockedStatus": "Status question: no agents were started, resumed or stopped",
   "task.blockedNeedsWord": "Resuming needs your request — write “resume” or click Resume",
   "task.blockedDuplicate": "This agent is already working on the same task",
+  "task.blockedUsageLimit": "The worker model's usage limit is used up — switch the worker model in settings or wait for the reset (time under Details)",
   "task.resumeAll": "Resume all ({n})",
   "task.resumeAllPrompt": "Resume {ids} with send_message and continue their tasks from where they stopped; their saved conversations are restored.",
   "task.blockedStoppedByYou": "Stopped at your request — not resumed with the others",

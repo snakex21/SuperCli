@@ -1286,6 +1286,7 @@
   "task.blockedStatus": "Vprašanje o stanju: noben agent ni bil zagnan, nadaljevan ali ustavljen",
   "task.blockedNeedsWord": "Nadaljevanje potrebuje tvojo zahtevo — napiši »nadaljuj« ali klikni Nadaljuj",
   "task.blockedDuplicate": "Ta agent že dela na isti nalogi",
+  "task.blockedUsageLimit": "Model agentov je porabil omejitev — zamenjaj model v nastavitvah ali počakaj na ponastavitev (čas v podrobnostih)",
   "task.resumeAll": "Nadaljuj vse ({n})",
   "task.resumeAllPrompt": "Nadaljuj {ids} prek send_message in nadaljuj njihove naloge tam, kjer so se ustavile; njihovi shranjeni pogovori se obnovijo.",
   "task.blockedStoppedByYou": "Ustavljen na tvojo zahtevo — ni nadaljevan z drugimi",

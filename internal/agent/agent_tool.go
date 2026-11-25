@@ -333,11 +333,11 @@ func (a *AgentTool) Spec() tools.Tool {
 			"properties": {
 				"prompt": {"type": "string", "description": "self-contained briefing for the worker"},
 				"expect": {"type": "string", "description": "optional: what the report must contain"},
-				"agent":  {"type": "string", "enum": %s, "description": "optional worker kind; omit for a general worker"},%s
+				"agent":  {"type": "string", "enum": %s, "description": %s},%s
 				"async": {"type": "boolean", "description": "optional: run in the background and return a worker ID; completion arrives as a task notification"}
 			},
 			"required": ["prompt"]
-		}`, string(enumJSON), adviseProp),
+		}`, string(enumJSON), workerKindsDescription(a.Registry), adviseProp),
 		Fn: a.execute,
 	}
 }
@@ -359,3 +359,44 @@ type agentArgs struct {
 // restricted child registry, runs the child loop, and returns
 // the final assistant text. Errors include both protocol
 // problems (unknown agent) and child-loop failures.
+
+// workerKindsDescription tells the coordinator what each worker kind can do,
+// so a job that needs commands or edits never goes to a read-only kind (an
+// audited explore worker was asked to run a build it had no tool for).
+func workerKindsDescription(reg *SubAgentRegistry) string {
+	parts := []string{"optional worker kind; omit for a general worker (all tools)."}
+	for _, name := range reg.Names() {
+		spec, ok := reg.Get(name)
+		if !ok || spec.AllowedTools == nil {
+			continue
+		}
+		var can []string
+		has := func(tool string) bool {
+			for _, t := range spec.AllowedTools {
+				if t == tool {
+					return true
+				}
+			}
+			return false
+		}
+		if has("patch_file") || has("write_file") || has("edit_files") {
+			can = append(can, "edits files")
+		}
+		if has("ctx_execute") {
+			can = append(can, "runs commands")
+		}
+		if has("web_fetch") || has("web_search") || has("web_lookup") {
+			can = append(can, "web")
+		}
+		desc := "read-only: reads and searches files, no commands"
+		if has("ctx_execute") || has("patch_file") {
+			desc = "reads, " + strings.Join(can, ", ")
+		} else if len(can) > 0 {
+			desc += ", " + strings.Join(can, ", ")
+		}
+		parts = append(parts, name+": "+desc+".")
+	}
+	raw, _ := json.Marshal(strings.Join(parts, " "))
+	return string(raw)
+}
+

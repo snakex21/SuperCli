@@ -1286,6 +1286,7 @@
   "task.blockedStatus": "Question d’état : aucun agent n’a été lancé, repris ni arrêté",
   "task.blockedNeedsWord": "La reprise nécessite ta demande — écris « reprends » ou clique sur Reprendre",
   "task.blockedDuplicate": "Cet agent travaille déjà sur la même tâche",
+  "task.blockedUsageLimit": "Le modèle des agents a épuisé sa limite d’utilisation — change-le dans les réglages ou attends la remise à zéro (heure dans Détails)",
   "task.resumeAll": "Tout reprendre ({n})",
   "task.resumeAllPrompt": "Reprends {ids} avec send_message et continue leurs tâches là où elles se sont arrêtées ; leurs conversations enregistrées sont restaurées.",
   "task.blockedStoppedByYou": "Arrêté à ta demande — non repris avec les autres",

@@ -1286,6 +1286,7 @@
   "task.blockedStatus": "Tilakysymys: agentteja ei käynnistetty, jatkettu eikä pysäytetty",
   "task.blockedNeedsWord": "Jatkaminen vaatii pyyntösi — kirjoita ”jatka” tai napsauta Jatka",
   "task.blockedDuplicate": "Tämä agentti työskentelee jo saman tehtävän parissa",
+  "task.blockedUsageLimit": "Agenttimallin käyttöraja on täynnä — vaihda malli asetuksista tai odota nollausta (aika lisätiedoissa)",
   "task.resumeAll": "Jatka kaikkia ({n})",
   "task.resumeAllPrompt": "Jatka {ids} send_messagella ja jatka niiden tehtäviä siitä, mihin ne jäivät; niiden tallennetut keskustelut palautetaan.",
   "task.blockedStoppedByYou": "Pysäytetty pyynnöstäsi — ei jatkettu muiden kanssa",

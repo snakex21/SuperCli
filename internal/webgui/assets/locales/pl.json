@@ -1286,6 +1286,7 @@
   "task.blockedStatus": "Pytanie o stan: nie uruchomiono, nie wznowiono ani nie zatrzymano agentów",
   "task.blockedNeedsWord": "Wznowienie wymaga Twojej prośby — napisz „wznów” albo kliknij Wznów",
   "task.blockedDuplicate": "Ten agent już pracuje nad tym samym zadaniem",
+  "task.blockedUsageLimit": "Model agentów pomocniczych wyczerpał limit użycia — zmień model w ustawieniach albo poczekaj na odnowienie (czas w szczegółach)",
   "task.resumeAll": "Wznów wszystkie ({n})",
   "task.resumeAllPrompt": "Wznów {ids} przez send_message i kontynuuj ich zadania od miejsca przerwania; ich zapisane rozmowy zostaną przywrócone.",
   "task.blockedStoppedByYou": "Zatrzymany na Twoją prośbę — nie wznowiono go razem z innymi",

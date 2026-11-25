@@ -28,7 +28,7 @@ web_search [ro] desc=0c533126ac36 schema=fc56ec9599d1 fn=supercli/internal/tools
 web_lookup [on ro] desc=efe870122b33 schema=8acf7a96a129 fn=supercli/internal/tools/web.(*WebSearch).lookup-fm
 tool_search [on] desc=adb46caef9d4 schema=bec7ffe0edef fn=supercli/internal/tools/search.(*ToolSearcher).execute-fm
 read_output [on ro] desc=8cb657cdcc97 schema=0b5132aaf325 fn=supercli/internal/tools/core.(*Registry).EnsureReadOutput.(*OutputStore).ReadOutputTool.func1
-task [on] desc=f89e722eadce schema=cba01779811d fn=supercli/internal/agent.(*AgentTool).execute-fm
+task [on] desc=f89e722eadce schema=aa956606d38f fn=supercli/internal/agent.(*AgentTool).execute-fm
 send_message [on] desc=43f46f4818e5 schema=9275b6d43277 fn=supercli/internal/agent.(*SendMessageTool).execute-fm
 task_stop [on] desc=5bf70a6bb1c7 schema=9f0fb0e23dea fn=supercli/internal/agent.(*TaskStopTool).execute-fm
 hide_messages [] desc=f8d2204daba4 schema=fabcc71294d8 fn=supercli/internal/tools/workflow.(*HideMessages).run-fm
@@ -177,7 +177,7 @@ done steps=2
 done steps=1
 ##### transcript
 === request 1 ===
-tools: task(desc=f89e722eadce schema=cba01779811d) tool_search(desc=adb46caef9d4 schema=bec7ffe0edef) web_lookup(desc=efe870122b33 schema=8acf7a96a129) search_code(desc=37742248d322 schema=4fe96f18a70b) read_many(desc=a89be90c17af schema=e5b1ec6fc768) read_lines(desc=5fc6b5b1b048 schema=e72f18575d62) read_context(desc=1ea9091c87f7 schema=ab746c91670d) list_dir(desc=ba7b8378b065 schema=20c2659b0356) read_output(desc=8cb657cdcc97 schema=0b5132aaf325)
+tools: task(desc=f89e722eadce schema=aa956606d38f) tool_search(desc=adb46caef9d4 schema=bec7ffe0edef) web_lookup(desc=efe870122b33 schema=8acf7a96a129) search_code(desc=37742248d322 schema=4fe96f18a70b) read_many(desc=a89be90c17af schema=e5b1ec6fc768) read_lines(desc=5fc6b5b1b048 schema=e72f18575d62) read_context(desc=1ea9091c87f7 schema=ab746c91670d) list_dir(desc=ba7b8378b065 schema=20c2659b0356) read_output(desc=8cb657cdcc97 schema=0b5132aaf325)
 --- msg 0 role=system origin={"source":"instructions"}
 You are SuperCli, a portable AI assistant.
 
@@ -257,7 +257,7 @@ Use this exact path for file and directory operations. Relative paths resolve he
 
 Current local date/time: <WEEKDAY>, <DATE> <TZ>. It is <YEAR> — verify that libraries, APIs, and patterns you recommend are still current before advising.
 === request 2 ===
-tools: task(desc=f89e722eadce schema=cba01779811d) tool_search(desc=adb46caef9d4 schema=bec7ffe0edef) web_lookup(desc=efe870122b33 schema=8acf7a96a129) search_code(desc=37742248d322 schema=4fe96f18a70b) read_many(desc=a89be90c17af schema=e5b1ec6fc768) read_lines(desc=5fc6b5b1b048 schema=e72f18575d62) read_context(desc=1ea9091c87f7 schema=ab746c91670d) list_dir(desc=ba7b8378b065 schema=20c2659b0356) read_output(desc=8cb657cdcc97 schema=0b5132aaf325)
+tools: task(desc=f89e722eadce schema=aa956606d38f) tool_search(desc=adb46caef9d4 schema=bec7ffe0edef) web_lookup(desc=efe870122b33 schema=8acf7a96a129) search_code(desc=37742248d322 schema=4fe96f18a70b) read_many(desc=a89be90c17af schema=e5b1ec6fc768) read_lines(desc=5fc6b5b1b048 schema=e72f18575d62) read_context(desc=1ea9091c87f7 schema=ab746c91670d) list_dir(desc=ba7b8378b065 schema=20c2659b0356) read_output(desc=8cb657cdcc97 schema=0b5132aaf325)
 --- msg 0 role=system origin={"source":"instructions"}
 You are SuperCli, a portable AI assistant.
 

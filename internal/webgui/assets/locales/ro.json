@@ -1286,6 +1286,7 @@
   "task.blockedStatus": "Întrebare despre stare: niciun agent nu a fost pornit, reluat sau oprit",
   "task.blockedNeedsWord": "Reluarea are nevoie de cererea ta — scrie „continuă” sau apasă Reia",
   "task.blockedDuplicate": "Acest agent lucrează deja la aceeași sarcină",
+  "task.blockedUsageLimit": "Modelul agenților și-a epuizat limita — schimbă modelul în setări sau așteaptă resetarea (ora în Detalii)",
   "task.resumeAll": "Reia toți ({n})",
   "task.resumeAllPrompt": "Reia {ids} prin send_message și continuă sarcinile lor de unde s-au oprit; conversațiile lor salvate sunt restaurate.",
   "task.blockedStoppedByYou": "Oprit la cererea ta — nu a fost reluat cu ceilalți",
