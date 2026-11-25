@@ -1855,7 +1855,14 @@ function handleEvent(ev, current) {
       addFileChanges(ev.file_changes);
       return current;
     case "compact":
-      addEventLine(ev.text || "", "", "compact");
+      var compactLine = addEventLine(ev.text || "", "", "compact");
+      if (ev.output && compactLine) {
+        // The working-state note that replaced the older history, one click away.
+        var note = el("details", "event-detail compact-note");
+        note.appendChild(i18nEl("summary", "", "notice.compactNoteShow"));
+        note.appendChild(el("pre", "compact-note-text", ev.output));
+        compactLine.appendChild(note);
+      }
       return null;
     case "notice":
       addEventLine(ev.text || "", "", noticeTag(ev.text || ""));

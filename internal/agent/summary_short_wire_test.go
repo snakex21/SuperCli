@@ -14,8 +14,11 @@ import (
 )
 
 func TestAutoSummarizerUsesEvaluatedStatePrompt(t *testing.T) {
-	if compactionStatePrompt != shortSummaryExperimentPrompt || compactionStateTemplate != shortSummaryExperimentTemplate {
-		t.Fatal("production instruction differs from the evaluated candidate")
+	// The short-summary candidate below remains for A/B experiments; production
+	// now writes the structured working-state note (sections fixed, updated
+	// incrementally), so only its wiring is checked here.
+	if !strings.Contains(compactionStatePrompt, compactionStateTemplate) || !strings.Contains(compactionStatePrompt, "User decisions and constraints") {
+		t.Fatal("production instruction lost the state-note sections")
 	}
 	msgs := []llm.Message{{Role: llm.RoleUser, Content: "No new dependencies; keep my reasoning and all earlier requirements."}}
 	msgs = append(msgs, processReadinessFixturePair("checked", `{"id":"proc-1","status":"stopped","ready":false,"ready_at":"2026-10-19T10:30:00Z"}`)...)

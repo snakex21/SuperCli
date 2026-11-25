@@ -68,9 +68,23 @@ type stressProvider struct {
 	resumeIssued      bool
 	ratio             float64 // real tokens per estimated token
 	limit             int     // the provider's real window
+	parentRecall      bool
+	workerRecall      bool
 }
 
 func (*stressProvider) Name() string { return "stress-model" }
+
+// stressStateNote is what the fake model writes for a compaction, in the
+// state-note sections.
+const stressStateNote = `Goal: a playable first survival night; current request: "deleguj sprawdzenie reguł spawnu".
+User decisions and constraints: keep zombie spawn rules in SpawnRules; do not touch config.toml.
+Done: 300 spawn rules added; gradle build passes (last check turn 299).
+In progress and next: workers verify the spawn rules; then the night cycle.
+Bugs and open questions: none open.
+Workers: none running before this turn.
+Key facts and paths: dirs/d000-d199/rule.txt; build: gradlew build.`
+
+var stressNotes []string
 
 func lastUserText(msgs []llm.Message) string {
 	for i := len(msgs) - 1; i >= 0; i-- {
@@ -86,13 +100,19 @@ func (p *stressProvider) Complete(ctx context.Context, msgs []llm.Message, defs 
 	ratio := p.ratio
 	p.mu.Unlock()
 	real := int(float64(llm.EstimateTokens(msgs)+llm.EstimateActiveImageTokens(msgs)) * ratio)
-	parent := false
+	parent, recall := false, false
 	for _, def := range defs {
 		parent = parent || def.Name == "task"
+		recall = recall || def.Name == "session_recall"
 	}
-	summary := len(msgs) > 0 && msgs[0].Role == llm.RoleSystem && strings.Contains(msgs[0].Content, "Summarize the conversation")
+	summary := len(msgs) > 0 && msgs[0].Role == llm.RoleSystem && strings.Contains(msgs[0].Content, "working-state note")
 	p.mu.Lock()
 	p.calls++
+	if recall && parent {
+		p.parentRecall = true
+	} else if recall {
+		p.workerRecall = true
+	}
 	if real > p.limit {
 		p.rejected++
 		limit := p.limit
@@ -103,7 +123,7 @@ func (p *stressProvider) Complete(ctx context.Context, msgs []llm.Message, defs 
 	if summary {
 		p.summaries++
 		p.mu.Unlock()
-		return workerSteeringWireDeltas(llm.Delta{Content: "Goal: finish the survival night.\nDone: mobs and build.\nState: workers 1-3 active.\nPending: zombie spawn.", FinishReason: "stop"}), nil
+		return workerSteeringWireDeltas(llm.Delta{Content: stressStateNote, FinishReason: "stop"}), nil
 	}
 	if !parent {
 		// A worker: one list_dir step per call until its step count is
@@ -287,6 +307,10 @@ func TestLongSessionStress(t *testing.T) {
 			switch ev.Type {
 			case "message":
 				answer.WriteString(ev.Text)
+			case "compact":
+				if ev.Output != "" {
+					stressNotes = append(stressNotes, ev.Output)
+				}
 			case "error":
 				errs = append(errs, ev.Text+ev.Err)
 			}
@@ -306,6 +330,13 @@ func TestLongSessionStress(t *testing.T) {
 	if p.summaries == 0 {
 		t.Fatal("the oversized history was not compacted")
 	}
+	if len(stressNotes) == 0 || !strings.Contains(stressNotes[0], "User decisions and constraints") {
+		t.Fatalf("the compaction event carried no state note for the UI: %q", stressNotes)
+	}
+	if !p.parentRecall || !p.workerRecall {
+		t.Fatalf("session_recall not offered: coordinator=%v workers=%v", p.parentRecall, p.workerRecall)
+	}
+	t.Logf("state note shown in the chat:\n%s", stressNotes[0])
 	// 2. Three background workers run their steps; one stops on the usage
 	// limit (automatic wake turns report them meanwhile).
 	waitStress(t, "workers finish or stop", 3*time.Minute, func() bool {

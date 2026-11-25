@@ -11,11 +11,16 @@ func (l *Loop) historyRecallContext() string {
 	if l.registry == nil || l.writer == nil {
 		return ""
 	}
-	if _, ok := l.registry.Get("search_history"); !ok {
-		return ""
-	}
 	i := leadingSystemCount(l.Messages)
 	if i >= len(l.Messages) || !IsLegacyCompactionSummary(l.Messages[i]) {
+		return ""
+	}
+	if _, ok := l.registry.Get("session_recall"); ok {
+		// The state note replaced the older history; its details are one call
+		// away. Nothing archived is copied here.
+		return "Older details of this conversation are in its saved transcript: use session_recall (keywords, turn or time range) before guessing an earlier instruction, path, decision or error. Old results are historical evidence; verify current external state only when relevant."
+	}
+	if _, ok := l.registry.Get("search_history"); !ok {
 		return ""
 	}
 	id := l.SessionID()

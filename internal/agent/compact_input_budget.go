@@ -126,6 +126,9 @@ func parsePromptTooLong(err error) (real, limit int, ok bool) {
 
 type compactNoticeKey struct{}
 
+// compactNoteSinkKey receives the model-written state note of a compaction.
+type compactNoteSinkKey struct{}
+
 // withCompactNotice lets the summarizer report a chunked summary.
 func withCompactNotice(ctx context.Context, notice func(string)) context.Context {
 	return context.WithValue(ctx, compactNoticeKey{}, notice)
@@ -193,7 +196,7 @@ func summarizeWithinBudget(ctx context.Context, provider llm.Provider, msgs []ll
 	}
 	// Rolling summary: each chunk carries the summary of everything before
 	// it, so the last answer covers the whole history.
-	carry := estimateTranscriptTokens(strings.Repeat("x", compactSummaryMaxChars)) + 200
+	carry := estimateTranscriptTokens(strings.Repeat("x", compactNoteMaxChars(compactWindowFrom(ctx)))) + 200
 	chunks := compactChunks(msgs, split, elidedCompactCaps, max(room-carry, 500))
 	compactNotice(ctx, fmt.Sprintf(CompactChunkedNotice, len(chunks)))
 	summary := ""

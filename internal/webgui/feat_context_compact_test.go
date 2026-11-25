@@ -299,7 +299,7 @@ func (p *webCompactFailureProvider) Complete(ctx context.Context, messages []llm
 	}
 	stream := make(chan llm.Delta, 1)
 	stream <- llm.Delta{
-		Content: "Goal: preserve the coding task.\nDone: " + strings.Repeat("completed evidence ", 300) +
+		Content: "Goal: preserve the coding task.\nDone: " + strings.Repeat("completed evidence ", 3500) +
 			"\nState: the only earlier prohibition must survive.\nPending: finish the remaining check.",
 		FinishReason: "stop",
 		Usage:        &llm.Usage{Input: 120, Output: 1500},

@@ -18,53 +18,68 @@ import (
 	"supercli/internal/llm"
 )
 
+// Compaction writes a working-state note (after 1.0.40): the older history is
+// replaced by a structured note of what the work needs to continue, updated
+// on every later compaction instead of re-summarized from scratch, and the
+// full transcript stays searchable with session_recall. The sections are
+// fixed so a later update finds every part of the earlier note.
+//
 // Keep the placeholders shared with the narrow empty-template echo check.
-// Factoring this constant does not change the provider's instruction bytes.
-const compactionTemplate = `Goal: user's requests and intent; quote the key instruction verbatim.
-Done: completed files, fixes and checks supported by tool/task results.
-State: needed paths, decisions, values, defaults, open errors and ALL still-applicable user requirements/prohibitions, including earlier ones. Keep constraints as instructions, not just past compliance.
-Pending: unfinished work and immediate next step.`
+const compactionTemplate = `Goal: the overall goal and the user's current request (quote the key instruction).
+User decisions and constraints: every still-valid preference, prohibition and style rule, verbatim when short.
+Done: completed and verified work: files changed, commits, checks that passed.
+In progress and next: unfinished work and the immediate next step.
+Bugs and open questions: known failures, errors and unanswered questions.
+Workers: id, task, status and last result of each worker that still matters.
+Key facts and paths: paths, commands, values and names needed to continue.`
 
-// compactionPrompt is the shared summarization instruction. Exact file/tool
-// facts are appended by code (CompactFacts); the model supplies task state.
-const compactionPrompt = `Summarize the conversation to REPLACE older history and let work continue without it.
+const compactionNoteRules = `If the conversation starts with an earlier state note (or a summary), UPDATE it: keep every line that is still true, change only what newer messages change, add new items. Never drop a user decision or constraint unless the user withdrew it.
+Tool/task results are authoritative; intentions/promises are not Done. Process launch/exit is not server readiness; keep last observed status, readiness evidence and time distinct; old checks are not current health.
+A successful worker's returned investigation is not pending work. Keep failed worker IDs; continue them with send_message when useful instead of restarting.
+The full transcript stays searchable with session_recall: prefer exact pointers (paths, names, what to search for) over long excerpts.
+As long as the state needs and no longer: usually 300-3,000 tokens, up to 20,000 for long complex work, never more. TEXT ONLY - no tool calls.`
 
-Use EXACTLY this plain-text template, no code fences:
+// compactionPrompt is the standalone instruction (no verbatim carry).
+const compactionPrompt = `Write the working-state note that REPLACES the older history so the work continues without it.
+
+Use exactly these sections, plain text, no code fences:
 ` + compactionTemplate + `
 
-Tool/task results are authoritative. Assistant intentions/promises are not Done.
-Process launch/exit is not server readiness. Preserve last observed status, readiness evidence and time separately; old log/port checks are not current health. Detached shell launch success proves only the launcher ran.
-A successful worker's returned investigation is not Pending. Preserve failed worker IDs; continue them with send_message when useful instead of restarting.
-
-Hard limit: 500 tokens total. Prefer bare paths and short phrases. TEXT ONLY — no tool calls.`
+` + compactionNoteRules
 
 // The auto-summarizer appends an exact human/legacy instruction carry and
-// bounded tool facts. Its model output can focus on continuation state instead
-// of reproducing those catalogs. Standalone callers still need the full prompt.
-const compactionStateTemplate = `Goal: current user goal.
-Done: verified outcomes needed to continue.
-State: active values, decisions, errors and superseded requests.
-Pending: unfinished work and next step.`
+// bounded tool facts; the note keeps the decisions they imply without
+// copying those catalogs. Same sections as the standalone template.
+const compactionStateTemplate = compactionTemplate
 
-const compactionStatePrompt = `Summarize the conversation to REPLACE older history and let work continue without it.
+const compactionStatePrompt = `Write the working-state note that REPLACES the older history so the work continues without it.
 
-Use this plain-text template, no code fences:
+Use exactly these sections, plain text, no code fences:
 ` + compactionStateTemplate + `
 
-The caller separately retains the original user requests/restrictions and legacy state verbatim, plus a file/tool fact catalog. Do not repeat those quotations or catalogs. Preserve the current task state that cannot be recovered from them: completed versus planned work, active values/errors, changed decisions, cancellations and remaining work. User restrictions remain binding.
-Tool/task results are authoritative; intentions/promises are not Done. Launch/exit is not server readiness. Keep last observed status, readiness evidence and time distinct; old checks are not current health.
-A successful worker's returned investigation is not Pending. Preserve failed worker IDs; continue them with send_message when useful instead of restarting.
-
-Aim for 200 tokens using terse phrases. Exceed that target if necessary to preserve continuation-critical state. TEXT ONLY — no tool calls.`
+The caller separately keeps the original user requests verbatim and a file/tool fact catalog: do not copy those catalogs, but keep the decisions and constraints they set in the note.
+` + compactionNoteRules
 
 var errCompactionInstructionEcho = errors.New("compact: model repeated summarization instructions instead of conversation facts; history preserved")
 var errCompactionSummaryTooLong = errors.New("compact: model summary exceeds byte limit; history preserved")
 
-// compactSummaryMaxChars is the byte cap for the model-produced summary
-// (~1000 tokens). Small models overshoot instruction limits; the summary
-// is re-sent with every later request. Reject oversized new summaries
-// instead of cutting off the task state or outstanding requirements.
-const compactSummaryMaxChars = 4000
+// compactSummaryMaxChars is the hard byte cap of a state note (~20k tokens).
+// A note is re-sent with every later request; an oversized one is rejected
+// rather than cut, so its tail (pending work, constraints) is never lost.
+// compactNoteMaxChars lowers it for small windows.
+const compactSummaryMaxChars = 60000
+
+// compactLegacySummaryChars sizes the "small history" heuristics of manual
+// compaction (compactSplit), which predate the larger state note.
+const compactLegacySummaryChars = 4000
+
+// compactNoteMaxChars is the note cap for a window: at most ~1/8 of it.
+func compactNoteMaxChars(window int) int {
+	if window <= 0 {
+		return compactSummaryMaxChars
+	}
+	return max(min(compactSummaryMaxChars, window*3/8), compactLegacySummaryChars)
+}
 
 // compactSummaryWrapper frames the summary so the model resumes
 // seamlessly on the next turn.
@@ -352,8 +367,8 @@ readStream:
 	// A completed stream can still exceed the requested limit. Its tail may
 	// contain the only State/Pending instructions, so never accept a cut-off
 	// replacement for the original history. Usage has already been drained.
-	if len(out) > compactSummaryMaxChars {
-		return "", fmt.Errorf("%w: %d bytes, maximum %d", errCompactionSummaryTooLong, len(out), compactSummaryMaxChars)
+	if limit := compactNoteMaxChars(compactWindowFrom(ctx)); len(out) > limit {
+		return "", fmt.Errorf("%w: %d bytes, maximum %d", errCompactionSummaryTooLong, len(out), limit)
 	}
 	return out, nil
 }
@@ -460,6 +475,9 @@ func NewAutoSummarizerWithProviderResolver(resolve func(context.Context) (llm.Pr
 		}
 		if err != nil {
 			return "", err
+		}
+		if sink, ok := ctx.Value(compactNoteSinkKey{}).(*string); ok {
+			*sink = summary // the note as the model wrote it, for the UI
 		}
 		toolNames := activeTools
 		if scope, ok := ctx.Value(compactToolScopeKey{}).(compactToolScope); ok {

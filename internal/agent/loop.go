@@ -368,6 +368,8 @@ type Loop struct {
 	// block with every request (request-only: never stored, compacted or
 	// elided). See worker_brief.go.
 	pinnedTask string
+	// lastCompactNote is the state note of the latest compaction (UI only).
+	lastCompactNote string
 
 	// extOut is an optional channel for events
 	// that don't belong to a single Run (F12

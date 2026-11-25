@@ -132,6 +132,15 @@ func (e *Engine) buildLoopWithSession(initial []llm.Message, writer agent.Sessio
 			searchHistory.Scope = func(context.Context) (string, bool) { return runSessionID, true }
 		}
 		provided["search_history"] = searchHistory.Spec()
+		recallSessionID := ""
+		if bound, ok := writer.(interface{ SessionID() string }); ok {
+			recallSessionID = bound.SessionID()
+		}
+		provided["session_recall"] = (&tools.SessionRecall{
+			Store:   history,
+			Session: func(context.Context) string { return recallSessionID },
+			Worker:  agent.WorkerRecallTranscript,
+		}).Spec()
 	}
 	if !officeProfile && config.DarwinEnabled(tc) {
 		provided["darwin"] = e.darwinSpec(reg, prov, cfg, tc, home, systemPrompt)

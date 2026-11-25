@@ -110,7 +110,7 @@ func toWireEvent(ev agent.Event) (wireEvent, bool) {
 	case agent.SisyphusEvent:
 		return wireEvent{Type: "sisyphus", Step: e.Step, Text: e.Text}, true
 	case agent.AutoCompactEvent:
-		return wireEvent{Type: "compact", Text: fmt.Sprintf("context compacted (%s): removed %d, ~%d/%d tokens, trigger=%d/%s, estimate=%s, window=%s", e.Reason, e.Removed, e.Estimated, e.Window, e.Threshold, e.ThresholdSource, e.EstimateSource, e.WindowSource)}, true
+		return wireEvent{Type: "compact", Output: e.Note, Text: fmt.Sprintf("context compacted (%s): removed %d, ~%d/%d tokens, trigger=%d/%s, estimate=%s, window=%s", e.Reason, e.Removed, e.Estimated, e.Window, e.Threshold, e.ThresholdSource, e.EstimateSource, e.WindowSource)}, true
 	case agent.ToolResultsPrunedEvent:
 		return wireEvent{Type: "notice", Text: fmt.Sprintf("pruned %d old tool result(s), reclaimed ~%d tokens (trigger=%d/%s)", e.Pruned, e.Reclaimed, e.Threshold, e.ThresholdSource)}, true
 	case agent.NoticeEvent:

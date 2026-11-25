@@ -21,7 +21,7 @@ func BuiltinSubAgents() []SubAgent {
 	// Selected explicitly by task's advise flag; the registry enforces read-only.
 	advisorSystem := "You are a read-only SuperCli advisor. Answer the specific question: recommendation first, then a brief rationale. Use web_lookup/web_fetch/web_search for current external documentation when needed." + readOnlyEvidence
 
-	return []SubAgent{
+	specs := []SubAgent{
 		{
 			Name:        "general",
 			Description: "carry out a delegated task end-to-end and report back",
@@ -75,6 +75,14 @@ func BuiltinSubAgents() []SubAgent {
 			DeferredTools: allowedTools("read_docx", "edit_docx", "read_xlsx", "edit_xlsx", "read_pdf", "read_zip", "process_session"),
 		},
 	}
+	// Every worker can recall details of its conversation (its parent
+	// conversation and its own transcript) instead of guessing.
+	for i := range specs {
+		if specs[i].AllowedTools != nil {
+			specs[i].AllowedTools = append(specs[i].AllowedTools, "session_recall")
+		}
+	}
+	return specs
 }
 
 // MustRegisterAll registers a list of sub-agents, panicking

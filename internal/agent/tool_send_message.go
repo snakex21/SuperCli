@@ -264,6 +264,7 @@ func runWorkerLoopLocked(ctx context.Context, w *Worker, prompt string, workers 
 	}
 	ctx = llm.WithPromptCacheScope(ctx, scope)
 	ctx = context.WithValue(ctx, workerRunKey{}, true)
+	ctx = context.WithValue(ctx, workerSelfKey{}, w)
 	if w.Loop != nil {
 		// The brief rides every request of this run (worker_brief.go).
 		w.Loop.pinnedTask = pinnedWorkerBrief(w.Description)

@@ -26,7 +26,7 @@ import "supercli/internal/tools"
 // pure interaction. Anything doubtful is left out (worker territory).
 var orchestratorTools = []string{
 	"task", "send_message", "task_stop",
-	"tool_search", "web_lookup", "search_code", "read_many", "read_lines", "read_context", "list_dir", "recall", "search_history",
+	"tool_search", "web_lookup", "search_code", "read_many", "read_lines", "read_context", "list_dir", "recall", "search_history", "session_recall",
 	"apply_skill", "ask_user", "goal", "remember", "scratchpad",
 }
 
@@ -37,7 +37,7 @@ var orchestratorTools = []string{
 // loop's primary action, so (list_dir lesson) it has to be directly
 // callable with a full schema from turn 1, never buried in the tail.
 var orchestratorCoreTools = []string{
-	"task", "tool_search", "web_lookup", "search_code", "read_many", "read_lines", "read_context", "read_output", "list_dir", "recall",
+	"task", "tool_search", "web_lookup", "search_code", "read_many", "read_lines", "read_context", "read_output", "list_dir", "recall", "session_recall",
 }
 
 // isOrchestratorCore reports whether name is in the orchestrator thin-core.

@@ -133,6 +133,7 @@ func (l *Loop) maybeModelHandoff(ctx context.Context, out chan<- Event) bool {
 	if out != nil {
 		select {
 		case out <- AutoCompactEvent{
+			Note:    l.lastCompactNote,
 			Removed: removed, Window: window.Tokens, Estimated: estimate.Effective,
 			RawEstimated: estimate.Raw, EstimateSource: estimate.Source, ExactBase: estimate.ExactBase,
 			Threshold: threshold, ThresholdSource: source, WindowSource: window.Source, Reason: "model-switch",

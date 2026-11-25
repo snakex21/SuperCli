@@ -47,6 +47,9 @@ var thinCoreTools = []string{
 	"ctx_execute",
 	"ask_user",
 	"recall",
+	// The conversation behind the compaction state note: always one call
+	// away, so the model recalls instead of guessing.
+	"session_recall",
 	// list_dir is the "what's in this folder?" primitive. It must
 	// be schema-carrying core, not dormant tail.
 	"list_dir",

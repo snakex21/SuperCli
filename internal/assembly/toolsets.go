@@ -128,6 +128,9 @@ var Web = []Entry{
 	// Completed tool envelopes leave future prompts; their persisted rows
 	// stay retrievable through this discoverable FTS tool.
 	{Tool: "search_history"},
+	// The current conversation's full transcript behind the compaction
+	// state note: always available, so the model recalls instead of guessing.
+	{Tool: "session_recall", AlwaysOn: true},
 	{Tool: "code_intel"},
 	{Tool: "process_session"},
 	{Tool: "headless_control"},

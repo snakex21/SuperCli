@@ -148,6 +148,7 @@ func (l *Loop) maybeAutoCompact(ctx context.Context, out chan<- Event, reason st
 		reason = "context-limit"
 	}
 	ev := AutoCompactEvent{
+		Note:    l.lastCompactNote,
 		Removed: removed, Window: w, Estimated: est, RawEstimated: estimate.Raw,
 		EstimateSource: estimate.Source, ExactBase: estimate.ExactBase,
 		Threshold: threshold, ThresholdSource: thresholdSource, WindowSource: window.Source,
@@ -274,6 +275,7 @@ func (l *Loop) CompactNow(ctx context.Context) (AutoCompactEvent, error) {
 		return AutoCompactEvent{}, fmt.Errorf("nothing to compact")
 	}
 	return AutoCompactEvent{
+		Note:    l.lastCompactNote,
 		Removed: removed, Window: w, Estimated: est, RawEstimated: estimate.Raw,
 		EstimateSource: estimate.Source, ExactBase: estimate.ExactBase,
 		Threshold: autoCompactThreshold(w), ThresholdSource: window.Source, WindowSource: window.Source,
@@ -320,7 +322,7 @@ func compactionReduces(prefix []llm.Message, summary string) bool {
 // exceeds even the largest standard summary. Compute this fixed estimate once.
 var compactSmallHistoryTokens = llm.EstimateMessageTokens(llm.Message{
 	Role:    llm.RoleUser,
-	Content: WrapCompactSummary(strings.Repeat("x", compactSummaryMaxChars+compactFactsMaxBytes)),
+	Content: WrapCompactSummary(strings.Repeat("x", compactLegacySummaryChars+compactFactsMaxBytes)),
 })
 
 func compactSplit(all []llm.Message, window int) int {
@@ -464,7 +466,10 @@ func (l *Loop) summarizePrefix(ctx context.Context, prefix []llm.Message) (strin
 	}
 	ctx = withCompactWindow(context.WithValue(ctx, compactToolScopeKey{}, scope), l.windowResolution().Tokens)
 	ctx = withCompactNotice(ctx, func(text string) { l.Emit(NoticeEvent{Text: text}) })
+	var note string
+	ctx = context.WithValue(ctx, compactNoteSinkKey{}, &note)
 	summary, err := l.summarizer(llm.WithPurpose(ctx, llm.PurposeCompact), l.provider, prefix)
+	l.lastCompactNote = note
 	l.recordAuxWall(llm.PurposeCompact, time.Since(start))
 	return summary, err
 }

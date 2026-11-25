@@ -199,6 +199,7 @@ type (
 	SearchResult  = search.SearchResult
 	SearchCode    = search.SearchCode
 	SearchHistory = search.SearchHistory
+	SessionRecall = search.SessionRecall
 	ToolSearcher  = search.ToolSearcher
 )
 

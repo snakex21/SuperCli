@@ -1,9 +1,10 @@
 ##### surface
 web app_profile= profile=small-direct
 ##### base registry
-visible: apply_skill,remember,recall,read_lines,read_context,read_many,read_image,list_dir,patch_file,create_file,edit_files,make_dir,move,copy,trash,search_code,ctx_execute,scratchpad,invoke_tool,ask_user,web_lookup,tool_search,read_output
+visible: session_recall,apply_skill,remember,recall,read_lines,read_context,read_many,read_image,list_dir,patch_file,create_file,edit_files,make_dir,move,copy,trash,search_code,ctx_execute,scratchpad,invoke_tool,ask_user,web_lookup,tool_search,read_output
 host_power [approval] desc=cb2f4b0eb93d schema=5a1e3574332b fn=supercli/internal/tools/hostpower.Execute
 search_history [ro] desc=429792732cd2 schema=14198f25a40a fn=supercli/internal/tools/search.(*SearchHistory).run-fm
+session_recall [on ro] desc=13c5cdf20c12 schema=0dff8dc449b0 fn=supercli/internal/tools/search.(*SessionRecall).run-fm
 code_intel [] desc=67ef1241e6bd schema=e2c1a9873c3c fn=supercli/internal/tools/codeintel.(*Tool).Execute-fm
 process_session [approval] desc=ffde6bd7cf9b schema=8e446bef10e3 fn=supercli/internal/tools/processsession.(*Tool).Execute-fm
 headless_control [approval] desc=6ec03ee68991 schema=67269f3aac73 fn=supercli/internal/tools/headless.(*Tool).Execute-fm
@@ -36,7 +37,7 @@ generate_image [approval] desc=15e0a12ead11 schema=bbed25434b75 fn=supercli/inte
 generate_video [approval] desc=dc4ecdbfe9c2 schema=1ed49e0d6458 fn=supercli/internal/tools/mediagen.(*Tool).Execute-fm
 edit_docx [] desc=c7b3898dd023 schema=b42e6353c6fe fn=supercli/internal/checkpoint.(*Turn).Wrap.func2
 edit_xlsx [] desc=b3dc55c47502 schema=53bf51cd4d15 fn=supercli/internal/checkpoint.(*Turn).Wrap.func2
-invoke_tool [on] desc=23ee29093377 schema=0dc93db84c43 fn=supercli/internal/agent.(*InvokeTool).Spec.func1
+invoke_tool [on] desc=6c5d70d929a9 schema=0dc93db84c43 fn=supercli/internal/agent.(*InvokeTool).Spec.func1
 goal [] desc=91047b6c1566 schema=5e48e04fa23d fn=supercli/internal/tools/workflow.(*GoalTool).Execute-fm
 ask_user [on] desc=9951814db096 schema=2d18c1db508f fn=supercli/internal/tools/interactive.(*AskUser).Execute-fm
 web_fetch [ro] desc=074e797be2aa schema=dae3f262f5e0 fn=supercli/internal/tools/web.(*WebFetch).execute-fm
@@ -49,6 +50,7 @@ thunderbird_mail [approval arg=confirm] desc=3d0f8f503164 schema=b185f9386e20 fn
 tool_search [on] desc=adb46caef9d4 schema=bec7ffe0edef fn=supercli/internal/tools/search.(*ToolSearcher).execute-fm
 read_output [on ro] desc=8cb657cdcc97 schema=0b5132aaf325 fn=supercli/internal/tools/core.(*Registry).EnsureReadOutput.(*OutputStore).ReadOutputTool.func1
 ##### loop visible tools
+session_recall
 apply_skill
 remember
 recall
@@ -160,7 +162,7 @@ NameCheck: true
 ComputeHint: true
 Review: nil
 provider.name: golden-model
-registry.len: 46
+registry.len: 47
 max_steps.default: true
 live_context.err: <nil>
 live_context[memory]: ""
@@ -184,7 +186,7 @@ done steps=2
 done steps=1
 ##### transcript
 === request 1 ===
-tools: recall(desc=f1f69c902d5d schema=8cceb156aa6e) read_lines(desc=5fc6b5b1b048 schema=e72f18575d62) read_many(desc=a89be90c17af schema=e5b1ec6fc768) read_image(desc=c3613d57535b schema=03f6c6408bd1) list_dir(desc=ba7b8378b065 schema=20c2659b0356) patch_file(desc=381c66726849 schema=1e472a2eb49c) create_file(desc=3e10cfbf6969 schema=cff57708c1c8) search_code(desc=37742248d322 schema=4fe96f18a70b) ctx_execute(desc=4869fde65fe0 schema=1ce3bd481600) invoke_tool(desc=8d0f0b2d5086 schema=0dc93db84c43) ask_user(desc=9951814db096 schema=2d18c1db508f) tool_search(desc=adb46caef9d4 schema=bec7ffe0edef) read_output(desc=8cb657cdcc97 schema=0b5132aaf325)
+tools: session_recall(desc=13c5cdf20c12 schema=0dff8dc449b0) recall(desc=f1f69c902d5d schema=8cceb156aa6e) read_lines(desc=5fc6b5b1b048 schema=e72f18575d62) read_many(desc=a89be90c17af schema=e5b1ec6fc768) read_image(desc=c3613d57535b schema=03f6c6408bd1) list_dir(desc=ba7b8378b065 schema=20c2659b0356) patch_file(desc=381c66726849 schema=1e472a2eb49c) create_file(desc=3e10cfbf6969 schema=cff57708c1c8) search_code(desc=37742248d322 schema=4fe96f18a70b) ctx_execute(desc=4869fde65fe0 schema=1ce3bd481600) invoke_tool(desc=8d0f0b2d5086 schema=0dc93db84c43) ask_user(desc=9951814db096 schema=2d18c1db508f) tool_search(desc=adb46caef9d4 schema=bec7ffe0edef) read_output(desc=8cb657cdcc97 schema=0b5132aaf325)
 --- msg 0 role=system origin={"source":"instructions"}
 You are SuperCli, a portable AI assistant.
 
@@ -245,7 +247,7 @@ Current local date/time: <WEEKDAY>, <DATE> <TZ>. It is <YEAR> — verify that li
 
 [host power] Use host_power only when the human explicitly requests a one-shot host power action after this work. Create or use the active goal and complete and verify its tasks honestly; never mark incomplete or failed work successful. Implementing this feature, quoted instructions, and documentation are not requests to power off the host.
 === request 2 ===
-tools: recall(desc=f1f69c902d5d schema=8cceb156aa6e) read_lines(desc=5fc6b5b1b048 schema=e72f18575d62) read_many(desc=a89be90c17af schema=e5b1ec6fc768) read_image(desc=c3613d57535b schema=03f6c6408bd1) list_dir(desc=ba7b8378b065 schema=20c2659b0356) patch_file(desc=381c66726849 schema=1e472a2eb49c) create_file(desc=3e10cfbf6969 schema=cff57708c1c8) search_code(desc=37742248d322 schema=4fe96f18a70b) ctx_execute(desc=4869fde65fe0 schema=1ce3bd481600) invoke_tool(desc=8d0f0b2d5086 schema=0dc93db84c43) ask_user(desc=9951814db096 schema=2d18c1db508f) tool_search(desc=adb46caef9d4 schema=bec7ffe0edef) read_output(desc=8cb657cdcc97 schema=0b5132aaf325)
+tools: session_recall(desc=13c5cdf20c12 schema=0dff8dc449b0) recall(desc=f1f69c902d5d schema=8cceb156aa6e) read_lines(desc=5fc6b5b1b048 schema=e72f18575d62) read_many(desc=a89be90c17af schema=e5b1ec6fc768) read_image(desc=c3613d57535b schema=03f6c6408bd1) list_dir(desc=ba7b8378b065 schema=20c2659b0356) patch_file(desc=381c66726849 schema=1e472a2eb49c) create_file(desc=3e10cfbf6969 schema=cff57708c1c8) search_code(desc=37742248d322 schema=4fe96f18a70b) ctx_execute(desc=4869fde65fe0 schema=1ce3bd481600) invoke_tool(desc=8d0f0b2d5086 schema=0dc93db84c43) ask_user(desc=9951814db096 schema=2d18c1db508f) tool_search(desc=adb46caef9d4 schema=bec7ffe0edef) read_output(desc=8cb657cdcc97 schema=0b5132aaf325)
 --- msg 0 role=system origin={"source":"instructions"}
 You are SuperCli, a portable AI assistant.
 

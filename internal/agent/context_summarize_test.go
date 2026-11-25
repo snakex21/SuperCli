@@ -27,7 +27,7 @@ func TestClampSummary_ShortUntouched(t *testing.T) {
 
 func TestClampSummary_CutsAtLineBoundary(t *testing.T) {
 	line := strings.Repeat("a", 99) + "\n"
-	long := strings.Repeat(line, 60) // 6000 chars
+	long := strings.Repeat(line, compactSummaryMaxChars/100+60) // above the cap
 	got := ClampSummary(long)
 	if len(got) > compactSummaryMaxChars+len("\n[summary truncated]") {
 		t.Errorf("clamped summary too long: %d chars", len(got))

@@ -253,6 +253,7 @@ var catalog = map[string]builder{
 	"remember":       provided("remember"),
 	"recall":         provided("recall"),
 	"search_history": provided("search_history"),
+	"session_recall": provided("session_recall"),
 	"darwin":         provided("darwin"),
 	"task":           provided("task"),
 	"send_message":   provided("send_message"),

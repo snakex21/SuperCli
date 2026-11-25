@@ -314,6 +314,9 @@ type AutoCompactEvent struct {
 	ThresholdSource string // window source or "prefill-profile"
 	WindowSource    string // config/provider/catalog/learned/fallback
 	Reason          string // "auto" | "context-limit" | "manual"
+	// Note is the working-state note that replaced the older history (the
+	// model-written part; the verbatim carry and fact catalog are omitted).
+	Note string
 }
 
 func (AutoCompactEvent) event() {}

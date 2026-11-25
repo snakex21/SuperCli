@@ -23,6 +23,7 @@ type speculativeCompact struct {
 	cancel   context.CancelFunc
 	done     chan struct{}
 	summary  string
+	note     string // model-written state note (UI)
 	err      error
 }
 
@@ -92,6 +93,7 @@ func (l *Loop) maybeStartSpeculativeCompact(ctx context.Context) {
 	go func() {
 		defer close(job.done)
 		callCtx := withCompactWindow(context.WithValue(llm.WithPurpose(jobCtx, llm.PurposeCompact), compactToolScopeKey{}, scope), window)
+		callCtx = context.WithValue(callCtx, compactNoteSinkKey{}, &job.note)
 		job.summary, job.err = summarize(callCtx, job.provider, job.prefix)
 	}()
 }
@@ -140,6 +142,7 @@ func (l *Loop) takeSpeculativeCompact(ctx context.Context, prefix []llm.Message,
 	job.cancel()
 	l.recordAuxWall(llm.PurposeCompact, time.Since(start))
 	// A failed helper must not be paid for twice by an immediate retry.
+	l.lastCompactNote = job.note
 	return job.summary, job.err, len(job.prefix), true
 }
 

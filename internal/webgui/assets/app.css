@@ -2874,3 +2874,10 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
 .worker-resume-all[hidden] { display: none; }
 .worker-resume-all:hover { border-color: var(--status-running); color: var(--status-running); }
 .worker-resume-all:disabled { opacity: .55; cursor: default; }
+
+/* The working-state note of a compaction, expanded under its line. */
+.event-line .compact-note[open] { display: block; margin: 6px 0 0; }
+.event-line .compact-note-text {
+  margin: 6px 0 0; padding: 8px 10px; max-height: 50vh; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  font: var(--fs-xs) var(--mono); color: var(--text); background: var(--panel, transparent); border: 1px solid var(--line); border-radius: 6px;
+}

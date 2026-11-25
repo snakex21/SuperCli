@@ -38,7 +38,7 @@ func (p *windowProvider) Complete(ctx context.Context, msgs []llm.Message, _ []l
 		return nil, fmt.Errorf(`http 400: {"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long: %d tokens > %d maximum"}}`, real, p.limit)
 	}
 	p.maxAccepted = max(p.maxAccepted, real)
-	summary := len(msgs) > 0 && msgs[0].Role == llm.RoleSystem && strings.Contains(msgs[0].Content, "Summarize the conversation")
+	summary := len(msgs) > 0 && msgs[0].Role == llm.RoleSystem && strings.Contains(msgs[0].Content, "working-state note")
 	if summary {
 		p.summaries++
 	}
@@ -118,7 +118,7 @@ func TestCompactionElidesBeforeChunking(t *testing.T) {
 // learned and the summary is retried smaller until it fits.
 func TestPromptTooLongIsParsedAndRetriedSmaller(t *testing.T) {
 	const window = 40_000
-	p := &windowProvider{name: "test-window-retry", limit: window, ratio: 2.6}
+	p := &windowProvider{name: "test-window-retry", limit: window, ratio: 3.4}
 	summary, err := NewAutoSummarizer(nil)(WithCompactWindow(context.Background(), window), p, bigHistory(60))
 	if err != nil {
 		t.Fatalf("compaction failed after retries: %v", err)
@@ -127,7 +127,7 @@ func TestPromptTooLongIsParsedAndRetriedSmaller(t *testing.T) {
 		t.Fatalf("expected at least one rejected attempt before success: rejected=%d", p.rejected)
 	}
 	if r := learnedEstimateRatio("test-window-retry"); r < 2 {
-		t.Fatalf("learned estimate ratio = %.2f, want about 2.6", r)
+		t.Fatalf("learned estimate ratio = %.2f, want about 3.4", r)
 	}
 	real, limit, ok := parsePromptTooLong(fmt.Errorf(`http 400: {"message":"prompt is too long: 1295213 tokens > 1000000 maximum"}`))
 	if !ok || real != 1295213 || limit != 1000000 {
