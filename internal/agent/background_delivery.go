@@ -85,14 +85,16 @@ func (l *Loop) appendBackgroundMessages(ctx context.Context, pending []backgroun
 			continue
 		}
 		l.Messages = append(l.Messages, msg)
-		if message.scoped {
-			l.unseenNotices.Add(1)
-		}
 		l.recordContextAddition(msg)
 		l.liveContextDirty = true
 		l.recordWorkerContextAddition(msg)
 		message.run.acceptReport()
 		l.persist(ctx, transcript)
+		if message.scoped {
+			// Unseen only once saved: a run that loads the conversation and
+			// acknowledges must find every unseen report in what it loaded.
+			l.unseenNotices.Add(1)
+		}
 		changed = true
 	}
 	if changed {

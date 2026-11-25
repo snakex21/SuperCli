@@ -145,6 +145,12 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	if err != nil {
 		return err
 	}
+	if id := strings.TrimSpace(sessionID); id != "" {
+		// Reports saved between the acknowledgement above and this read are
+		// in this run's history too: no automatic turn for them afterwards
+		// (audited phantom wake turns with nothing new and a cold cache).
+		e.backgroundFor(id, home).acknowledge()
+	}
 	// "Approve similar in this session" grants are scoped to this conversation.
 	ctx = tools.WithApprovalSession(ctx, sid)
 	if strings.TrimSpace(sessionID) == "" {
