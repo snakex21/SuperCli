@@ -49,7 +49,7 @@ func (s *Server) handleSessionMessageEdit(w http.ResponseWriter, r *http.Request
 		http.Error(w, "editing AI replies is disabled (setting assistant_edit)", http.StatusForbidden)
 		return
 	}
-	if !waitForActiveWorkToFinish(r.Context(), s.eng, 3*time.Second) {
+	if !waitForSessionWorkToFinish(r.Context(), s.eng, b.SessionID, 3*time.Second) {
 		http.Error(w, "stop the active task before editing this conversation", http.StatusConflict)
 		return
 	}

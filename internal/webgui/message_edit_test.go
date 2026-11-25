@@ -42,7 +42,8 @@ func TestSessionMessageEditEndpoint(t *testing.T) {
 		t.Fatalf("enable: %d", rec.Code)
 	}
 
-	release := srv.eng.beginActiveRun()
+	// This conversation's own run blocks the edit.
+	release := markRunning(t, srv, sess.ID)
 	rec := postMessageEdit(t, srv, body(answer.MessageID, "edited", false))
 	release()
 	if rec.Code != http.StatusConflict {
@@ -103,4 +104,34 @@ func TestSessionMessageEditEndpoint(t *testing.T) {
 	if model[1].Content != "first answer" {
 		t.Fatalf("restore model: %+v", model[1])
 	}
+}
+
+// Another conversation running, in this project or another one, never
+// blocks editing an AI reply of an idle conversation.
+func TestSessionMessageEditWhileAnotherSessionRuns(t *testing.T) {
+	srv := newTestServer(t, false)
+	if rec := knobsPOST(t, srv, `{"key":"assistant_edit","value":"on"}`); rec.Code != http.StatusOK {
+		t.Fatalf("enable: %d", rec.Code)
+	}
+	homeX, homeY := t.TempDir(), t.TempDir()
+	srv.eng.setHome(homeX)
+	running, _ := createRewindSession(t, srv, "running")
+	stop := markRunning(t, srv, running.ID)
+	defer stop()
+	edit := func(name string) {
+		t.Helper()
+		sess, _ := createRewindSession(t, srv, name)
+		page, err := srv.eng.transcriptPage(context.Background(), sess.ID, 0, 20)
+		if err != nil || len(page.Messages) != 4 {
+			t.Fatalf("page=%+v err=%v", page, err)
+		}
+		answer := page.Messages[1]
+		body := fmt.Sprintf(`{"session_id":%q,"seq":%d,"message_id":%q,"content":"edited"}`, sess.ID, answer.Seq, answer.MessageID)
+		if rec := postMessageEdit(t, srv, body); rec.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", name, rec.Code, rec.Body.String())
+		}
+	}
+	edit("same project")
+	srv.eng.setHome(homeY)
+	edit("other project")
 }

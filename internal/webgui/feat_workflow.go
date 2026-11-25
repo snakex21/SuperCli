@@ -444,28 +444,6 @@ func waitForSessionWorkToFinish(ctx context.Context, eng *Engine, id string, tim
 	}
 }
 
-func waitForActiveWorkToFinish(ctx context.Context, eng *Engine, timeout time.Duration) bool {
-	if eng == nil || !eng.HasActiveWork() {
-		return true
-	}
-	eng.activeRunMu.Lock()
-	idle := eng.activeRunIdle
-	foreground := eng.activeRuns.Load() > 0
-	eng.activeRunMu.Unlock()
-	if foreground {
-		waitCtx, cancel := context.WithTimeout(ctx, timeout)
-		defer cancel()
-		select {
-		case <-waitCtx.Done():
-			return false
-		case <-idle:
-		}
-	}
-	// Worker activity has its own checkpoint lease. Do not poll it or hold up
-	// this HTTP handler waiting for unrelated model work.
-	return !eng.HasActiveWork()
-}
-
 func (e *Engine) truncateTranscriptWithoutCheckpoint(ctx context.Context, truncate func(context.Context) error) error {
 	gate, err := checkpoint.NewStoreGate(e.dataDir)
 	if err != nil {
