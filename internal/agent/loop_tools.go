@@ -494,6 +494,10 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) (r
 		}
 	}
 	raw := json.RawMessage(tc.Arguments)
+	if capped, ok := l.capCoordinatorCommand(tc.Name, raw); ok {
+		raw = capped
+		tc.Arguments = string(capped)
+	}
 	// Announce the call before execution. Long-running tools (most notably a
 	// synchronous task worker) must become visible to TUI/WebGUI while they are
 	// running, not only after Execute returns. ToolResultEvent remains the

@@ -110,3 +110,24 @@ func TestCtxExecuteLongCommandLive(t *testing.T) {
 		t.Fatalf("long command did not finish: %v / %v / %s", err, result.Err, result.Text)
 	}
 }
+
+// Audited #5020: a command killed because the call's time limit ended read
+// "context deadline exceeded ... file already closed". It says timeout now.
+func TestCtxExecuteDeadlineReadsAsTimeoutKill(t *testing.T) {
+	root := t.TempDir()
+	reg := NewRegistry()
+	reg.MustRegister(NewCtxExecuteTool(ctxexec.New(root), root).Spec())
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+	result, _ := reg.Execute(ctx, "ctx_execute", ctxTimeoutArgs(t, "wait", 0))
+	if result.Err == nil {
+		t.Fatal("the killed command reported success")
+	}
+	msg := result.Err.Error()
+	if !strings.Contains(msg, "command killed: timeout after") || strings.Contains(msg, "file already closed") {
+		t.Fatalf("message = %q", msg)
+	}
+	if !errors.Is(result.Err, context.DeadlineExceeded) {
+		t.Fatal("the deadline cause was lost")
+	}
+}

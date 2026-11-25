@@ -185,6 +185,12 @@ func (c *CtxExecuteTool) Execute(ctx context.Context, args json.RawMessage) (Res
 		// A command reaching its own timeout remains an ordinary tool failure.
 		if cause := ctx.Err(); cause != nil && (res.ExitCode == ctxexec.ExitTimeout || res.Error == cause.Error()) {
 			failure = fmt.Errorf("%s: %w", res.FailureSummary(), cause)
+			if errors.Is(cause, context.DeadlineExceeded) {
+				// Audited #5020: "context deadline exceeded ... file already
+				// closed" read like an I/O fault; it was a timeout kill.
+				failure = fmt.Errorf("command killed: timeout after %s (the time limit of this call ended); output so far is in the result: %w",
+					(time.Duration(res.DurationMS) * time.Millisecond).Round(time.Second), cause)
+			}
 		}
 		result.Err = core.SelfContainedErr(failure)
 		return result, nil
