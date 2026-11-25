@@ -218,3 +218,30 @@ func TestUnfinishedReplyPattern(t *testing.T) {
 		}
 	}
 }
+
+// Audited #5136: the unfinished-work phrase was only in the hidden reasoning;
+// the visible answer was complete. No completion check, no duplicate answer.
+func TestCompletionCheck_IgnoresHiddenReasoning(t *testing.T) {
+	l, main := completionLoop(t, true, 0, "<thinking>the remaining files still need it, not done yet</thinking>Done: all files have the header.")
+	runCompletionLoop(t, l, "add the header")
+	if got := atomic.LoadInt32(&main.calls); got != 1 {
+		t.Fatalf("main calls = %d, want 1 (no completion pass)", got)
+	}
+	if msgs := completionMessages(l); len(msgs) != 0 {
+		t.Fatalf("completion check fired on hidden reasoning: %q", msgs)
+	}
+}
+
+// When SuperCli itself refused the unfinished part in this turn, asking the
+// model to finish it cannot help.
+func TestCompletionCheck_SkipsWorkRefusedByTheGate(t *testing.T) {
+	l := &Loop{completionCheck: true, registry: tools.NewRegistry()}
+	l.Messages = []llm.Message{
+		{Role: llm.RoleUser, Content: "wznów workery", Origin: &llm.ContextOrigin{Source: llm.SourceHuman}},
+		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "s1", Name: "send_message", Arguments: "{}"}}},
+		{Role: llm.RoleTool, ToolCallID: "s1", Name: "send_message", Content: "refused: this is an automatic turn without a user message"},
+	}
+	if l.runCompletionCheck(context.Background(), nil, "Nie wznowiłem worker-3, praca nie jest skończona.", true) {
+		t.Fatal("completion check fired on work SuperCli refused")
+	}
+}

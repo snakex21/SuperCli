@@ -128,8 +128,17 @@ func (l *Loop) runCompletionCheck(ctx context.Context, out chan<- Event, text st
 	if haveEditFiles {
 		manyFiles = " (edit_files applies one change to many files)"
 	}
+	// Only the visible answer counts: hidden reasoning often mentions what is
+	// "not done yet" while planning (4 of 13 audited triggers matched only
+	// inside <thinking> and produced a duplicate answer).
+	text = stripThinking(text)
 	// Models often write typographic apostrophes (couldn’t, didn’t).
 	text = strings.ReplaceAll(text, "’", "'")
+	if l.runHadGateRefusal() {
+		// The unfinished part is what SuperCli itself refused in this turn
+		// (an automatic resume, a repeated task): asking again cannot finish it.
+		return false
+	}
 	if !unfinishedReply.MatchString(text) || (files > 0 && missingTargetReply.MatchString(text)) {
 		return false
 	}
@@ -148,4 +157,19 @@ func (l *Loop) runCompletionCheck(ctx context.Context, out chan<- Event, text st
 		out <- NoticeEvent{Text: notice}
 	}
 	return true
+}
+
+// runHadGateRefusal reports a tool result of the current user turn that
+// SuperCli's own gate refused ("refused: ...").
+func (l *Loop) runHadGateRefusal() bool {
+	for i := len(l.Messages) - 1; i >= 0; i-- {
+		m := l.Messages[i]
+		if isConversationUserTurn(m) {
+			return false
+		}
+		if m.Role == llm.RoleTool && (strings.HasPrefix(m.Content, "refused:") || strings.Contains(m.Content, ": refused:")) {
+			return true
+		}
+	}
+	return false
 }
