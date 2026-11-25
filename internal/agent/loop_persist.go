@@ -25,7 +25,14 @@ func (l *Loop) persist(ctx context.Context, msg llm.Message) bool {
 	// step, some from worker goroutines), so statsEndStep keeps it
 	// out of the next_turn_prepare remainder math.
 	t := time.Now()
-	written := l.persistAppend(ctx, canonicalWorkerReportMessage(msg).DormantImages())
+	stored := canonicalWorkerReportMessage(msg).DormantImages()
+	if l.deferWhileOtherBatchOpen(ctx, stored) {
+		// Another loop is between its tool calls and their results in this
+		// conversation: written right after that batch (persist_tool_batch_gate.go).
+		l.recordPhase(stats.PhaseSessionPersist, time.Since(t))
+		return true
+	}
+	written := l.persistAppend(ctx, stored)
 	l.recordPhase(stats.PhaseSessionPersist, time.Since(t))
 	return written
 }

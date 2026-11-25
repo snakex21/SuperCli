@@ -180,7 +180,7 @@ func buildCodexRequestWithEffort(model string, msgs []Message, tools []ToolDef, 
 }
 
 func assembleCodexRequestWithEffort(model string, msgs []Message, tools []ToolDef, vision bool, effort string) (codexRequest, error) {
-	msgs = repairToolCallIDs(demoteMidConversationSystemMessages(msgs))
+	msgs = pairToolHistory(demoteMidConversationSystemMessages(msgs))
 	req := codexRequest{
 		Model:      model,
 		ToolChoice: "auto",

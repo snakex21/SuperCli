@@ -120,7 +120,7 @@ func TestToolPairCheckProviderRequestsUnchanged(t *testing.T) {
 		}
 		// An already repaired projection and the original history must encode
 		// to the same body at all three transport boundaries.
-		repaired := repairToolCallIDs(messages)
+		repaired := pairToolHistory(messages)
 		for name, build := range pairingRequestBuilders() {
 			original, err := build(messages)
 			if err != nil {

@@ -129,6 +129,11 @@ func anthropicNativeContent(m Message, model string) ([]anthropicContentBlock, b
 		if json.Unmarshal(b.Data, &native) != nil || native.Type != "assistant" {
 			continue
 		}
+		if !nativeToolUseIDsMatch(native.Content, m.ToolCalls) {
+			// The repaired message dropped or renamed a call: rebuild the
+			// blocks from the message instead of replaying a stale tool_use.
+			return nil, false
+		}
 		out := make([]anthropicContentBlock, 0, len(native.Content))
 		for _, raw := range native.Content {
 			out = append(out, anthropicContentBlock{Raw: raw, Prefix: b.Prefix})

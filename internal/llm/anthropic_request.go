@@ -110,7 +110,7 @@ func buildAnthropicRequestWithCaching(model string, msgs []Message, tools []Tool
 		cacheEnd--
 	}
 	hasReminders := cacheEnd < len(msgs)
-	msgs = repairToolCallIDs(demoteMidConversationSystemMessages(msgs))
+	msgs = pairToolHistory(demoteMidConversationSystemMessages(msgs))
 	var system []string
 	for _, m := range msgs {
 		switch m.Role {

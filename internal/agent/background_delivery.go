@@ -108,6 +108,9 @@ func (l *Loop) appendBackgroundMessages(ctx context.Context, pending []backgroun
 // model itself; unseen reports signal the host's WakeScheduler, which may
 // start an automatic turn (background_wake.go).
 func (l *Loop) releaseConversation() {
+	// A run that ended between a tool batch and its results (abort, error)
+	// must not hold other writers back.
+	l.closeToolBatchGate()
 	var ctx context.Context
 	for {
 		l.backgroundMu.Lock()

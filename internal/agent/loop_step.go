@@ -290,6 +290,11 @@ func (l *Loop) runStep(
 			ID: tc.ID, Name: tc.Name, Arguments: args,
 		})
 	}
+	if len(assistant.ToolCalls) > 0 {
+		// Other loops' reports to this conversation wait until the results
+		// below are saved (closed after the batch and at the end of the run).
+		l.openToolBatchGate()
+	}
 	l.persist(ctx, assistant)
 	// The full UI copy is already persisted. Only explicit legacy opt-in
 	// retains reasoning separately for the next request tail.
@@ -537,6 +542,7 @@ func (l *Loop) runStep(
 
 	toolStart := time.Now()
 	toolsOK, toolOutcomes := l.invokeToolCalls(ctx, toolCalls, out)
+	l.closeToolBatchGate()
 	l.markLiveContextAfterTools(toolCalls, toolOutcomes)
 	l.recordWallPhase(stats.PhaseToolExecution, time.Since(toolStart))
 	if !toolsOK {
