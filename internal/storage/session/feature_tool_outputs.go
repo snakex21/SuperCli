@@ -51,6 +51,7 @@ func (w *Writer) SaveToolOutput(ctx context.Context, handle, text string) error 
   SELECT id FROM (
    SELECT id, ROW_NUMBER() OVER (PARTITION BY substr(handle,1,10) = 'worker_ui_' ORDER BY id DESC) AS position,
     SUM(bytes) OVER (PARTITION BY substr(handle,1,10) = 'worker_ui_' ORDER BY id DESC) AS total_bytes FROM tool_outputs
+    WHERE substr(handle,1,11) != 'worker_act_'
   ) WHERE position > ? OR total_bytes > ?
  )`, maxSavedOutputs, maxSavedOutputBytes); err != nil {
 		return err

@@ -36,7 +36,17 @@ func (s *Store) readTranscriptMessages(ctx context.Context, capacity int, query 
 }
 
 func (s *Store) ReadTranscriptMessages(ctx context.Context, sessionID string) ([]TranscriptMessage, error) {
-	return s.readTranscriptMessages(ctx, 0, transcriptSelect+` ORDER BY seq ASC`, sessionID)
+	out, err := s.readTranscriptMessages(ctx, 0, transcriptSelect+` ORDER BY seq ASC`, sessionID)
+	s.rehydrateTranscript(ctx, out)
+	return out, err
+}
+
+func (s *Store) rehydrateTranscript(ctx context.Context, rows []TranscriptMessage) {
+	for i := range rows {
+		one := []Encoded{rows[i].Encoded}
+		s.rehydrateWorkerActivity(ctx, one)
+		rows[i].Encoded = one[0]
+	}
 }
 
 func (s *Store) ReadTranscriptMessageAt(ctx context.Context, sessionID string, seq int) (TranscriptMessage, error) {
@@ -47,6 +57,7 @@ func (s *Store) ReadTranscriptMessageAt(ctx context.Context, sessionID string, s
 	if len(rows) == 0 {
 		return TranscriptMessage{}, sql.ErrNoRows
 	}
+	s.rehydrateTranscript(ctx, rows)
 	return rows[0], nil
 }
 
@@ -75,5 +86,6 @@ func (s *Store) ReadTranscriptMessagesBefore(ctx context.Context, sessionID stri
 	for left, right := 0, len(out)-1; left < right; left, right = left+1, right-1 {
 		out[left], out[right] = out[right], out[left]
 	}
+	s.rehydrateTranscript(ctx, out)
 	return out, hasMore, nil
 }

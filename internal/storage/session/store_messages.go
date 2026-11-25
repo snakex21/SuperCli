@@ -170,6 +170,10 @@ func (s *Store) AppendMessageWithReceipt(ctx context.Context, sessionID string, 
 		return MessageReceipt{}, err
 	}
 	defer tx.Rollback()
+	// Large worker tool snapshots are stored once by handle (slim.go).
+	if msg.OriginJSON, err = externalizeWorkerActivity(ctx, tx, sessionID, msg.OriginJSON); err != nil {
+		return MessageReceipt{}, err
+	}
 	now := time.Now().UTC()
 	// Updating metadata first reserves the writer before reading the next
 	// sequence. Rollback restores the count if the following insert fails.
@@ -327,7 +331,9 @@ func (s *Store) ReadMessageAt(ctx context.Context, sessionID string, seq int) (E
 	if err != nil {
 		return Encoded{}, err
 	}
-	return m, nil
+	one := []Encoded{m}
+	s.rehydrateWorkerActivity(ctx, one)
+	return one[0], nil
 }
 
 // ReadMessages returns all messages for a session, in seq order.
@@ -351,6 +357,8 @@ func (s *Store) ReadMessages(ctx context.Context, sessionID string) ([]Encoded, 
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	rows.Close()
+	s.rehydrateWorkerActivity(ctx, out)
 	return out, nil
 }
 
@@ -401,6 +409,8 @@ func (s *Store) ReadMessagesBefore(ctx context.Context, sessionID string, before
 	for left, right := 0, len(out)-1; left < right; left, right = left+1, right-1 {
 		out[left], out[right] = out[right], out[left]
 	}
+	rows.Close()
+	s.rehydrateWorkerActivity(ctx, out)
 	return out, hasMore, nil
 }
 

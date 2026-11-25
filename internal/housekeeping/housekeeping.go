@@ -85,6 +85,14 @@ func Run(ctx context.Context, s *session.Store, c config.HousekeepingConfig, now
 			return err
 		}
 	}
+	// Worker snapshots by handle and finished-worker history prune; the first
+	// pass migrates existing rows after a backup copy (session/slim.go).
+	if rep, err := s.Slim(ctx, session.DefaultSlimPolicy, now); err != nil {
+		log.Printf("housekeeping: slim: %v", err)
+	} else if rep.ActivityRows > 0 || rep.PrunedWorkers > 0 {
+		log.Printf("housekeeping: slim: backup=%q snapshots=%d workers=%d size %d -> %d bytes in %s",
+			rep.Backup, rep.ActivityRows, rep.PrunedWorkers, rep.BytesBefore, rep.BytesAfter, rep.Elapsed.Round(time.Millisecond))
+	}
 	_, err = s.VacuumIfNeeded(ctx, c, now)
 	return err
 }
