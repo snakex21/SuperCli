@@ -1260,6 +1260,7 @@
   "notice.cutOffContinue": "Antwort durch das Längenlimit abgeschnitten — wird automatisch fortgesetzt ({attempt}/{max})",
   "notice.emptyReplyContinue": "Das Modell gab keine Antwort — es wird gebeten fortzufahren",
   "error.contextCompact": "Kontextverdichtung fehlgeschlagen ({detail}); der Durchgang endete ohne Antwort.",
+  "notice.compactChunked": "Der Verlauf ist größer als das Modellfenster — fasse ihn in {n} Teilen zusammen",
   "chat.continue": "Fortsetzen",
   "notice.emptyReply": "Das Modell hat keine Antwort geliefert. Frag erneut oder wähle ein anderes Modell.",
   "task.doneNotChecked": "fertig · Änderungen nicht geprüft",

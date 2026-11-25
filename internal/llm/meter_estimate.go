@@ -26,6 +26,8 @@ import (
 const (
 	estBytesPerToken  = 3
 	estPerMessageCost = 16
+	// EstImageTokens is the estimated prompt cost of one image part.
+	EstImageTokens = 1600
 )
 
 // The classifier is only read. Every non-ASCII byte and other control byte
@@ -102,6 +104,23 @@ func estimateMessageTokens(m Message) (tokens, toolTokens int) {
 		toolBytes += nonWhitespaceLen(tc.Name) + nonWhitespaceLen(tc.Arguments)
 	}
 	return (b+toolBytes)/estBytesPerToken + estPerMessageCost + reasoning, toolBytes / estBytesPerToken
+}
+
+// EstimateActiveImageTokens prices the images msgs send as pixels on the next
+// request (dormant images travel as short text markers, priced as text). The
+// message estimator leaves them out so chat windows and pruning stay stable;
+// the compaction trigger adds them, since a screenshot-heavy turn can
+// otherwise overflow the window before compacting.
+func EstimateActiveImageTokens(msgs []Message) int {
+	n := 0
+	for _, m := range msgs {
+		for _, p := range m.Parts {
+			if p.Type == PartTypeImage && p.Image != nil && p.Image.Active {
+				n += EstImageTokens
+			}
+		}
+	}
+	return n
 }
 
 // EstimateTokens sums EstimateMessageTokens over msgs.

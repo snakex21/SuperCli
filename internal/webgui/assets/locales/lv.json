@@ -1260,6 +1260,7 @@
   "notice.cutOffContinue": "Atbilde nogriezta garuma ierobežojuma dēļ — turpinu automātiski ({attempt}/{max})",
   "notice.emptyReplyContinue": "Modelis nesniedza atbildi — lūdzu turpināt",
   "error.contextCompact": "Konteksta saspiešana neizdevās ({detail}); gājiens apstājās bez atbildes.",
+  "notice.compactChunked": "Vēsture ir lielāka par modeļa logu — apkopoju to {n} daļās",
   "chat.continue": "Turpināt",
   "notice.emptyReply": "Modelis neatgrieza atbildi. Jautājiet vēlreiz vai izvēlieties citu modeli.",
   "task.doneNotChecked": "gatavs · izmaiņas nav pārbaudītas",

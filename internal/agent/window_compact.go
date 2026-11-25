@@ -367,6 +367,9 @@ var contextLimitPhrases = []string{
 	"context_length_exceeded",
 	"too many tokens",
 	"context length",
+	"prompt is too long",
+	"input is too long",
+	"exceeds the context window",
 }
 
 // isContextLimitErr reports whether err looks like a provider
@@ -392,6 +395,13 @@ var contextLimitRe = regexp.MustCompile(`(?i)context length (?:is |of (?:only )?
 // extractContextLimit pulls the numeric context limit out of a
 // provider error message. Returns 0 when absent.
 func extractContextLimit(msg string) int {
+	if m := promptTooLongRe.FindStringSubmatch(msg); m != nil {
+		n, err := strconv.Atoi(m[2])
+		if err != nil || n <= 0 {
+			return 0
+		}
+		return n
+	}
 	m := contextLimitRe.FindStringSubmatch(msg)
 	if m == nil {
 		return 0
@@ -428,6 +438,16 @@ func (l *Loop) handleContextOverflow(ctx context.Context, err error, out chan<- 
 	if lim := extractContextLimit(err.Error()); lim >= minLearnedContextLimit && l.learnLimit != nil {
 		l.learnLimit(l.modelID, lim)
 	}
+	// The provider measured the rejected request exactly: calibrate the next
+	// estimates with it, so a session the estimator undercounts compacts in
+	// time from now on.
+	if real, _, _ := parsePromptTooLong(err); real > 0 {
+		raw := l.estimateNextRequestTokensRaw()
+		recordEstimateRatio(l.modelID, real, raw)
+		l.sessUsageMu.Lock()
+		l.contextBaseExact, l.contextBaseEstimated, l.contextBaseRoute = real, raw, l.route
+		l.sessUsageMu.Unlock()
+	}
 	if compactErr := l.maybeAutoCompact(ctx, out, "context-limit"); compactErr != nil {
 		return false, compactErr
 	}
@@ -443,6 +463,7 @@ func (l *Loop) summarizePrefix(ctx context.Context, prefix []llm.Message) (strin
 		scope.activeTools = l.registry.ActiveNames
 	}
 	ctx = withCompactWindow(context.WithValue(ctx, compactToolScopeKey{}, scope), l.windowResolution().Tokens)
+	ctx = withCompactNotice(ctx, func(text string) { l.Emit(NoticeEvent{Text: text}) })
 	summary, err := l.summarizer(llm.WithPurpose(ctx, llm.PurposeCompact), l.provider, prefix)
 	l.recordAuxWall(llm.PurposeCompact, time.Since(start))
 	return summary, err

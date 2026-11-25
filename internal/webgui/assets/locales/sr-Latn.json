@@ -1260,6 +1260,7 @@
   "notice.cutOffContinue": "Odgovor prekinut ograničenjem dužine — automatski nastavljam ({attempt}/{max})",
   "notice.emptyReplyContinue": "Model nije vratio odgovor — tražim da nastavi",
   "error.contextCompact": "Sažimanje konteksta nije uspelo ({detail}); potez je stao bez odgovora.",
+  "notice.compactChunked": "Istorija je veća od prozora modela — sažimam je u {n} delova",
   "chat.continue": "Nastavi",
   "notice.emptyReply": "Model nije vratio odgovor. Pitajte ponovo ili izaberite drugi model.",
   "task.doneNotChecked": "gotovo · promene nisu proverene",

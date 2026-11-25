@@ -1260,6 +1260,7 @@
   "notice.cutOffContinue": "Vastaus katkesi pituusrajaan — jatketaan automaattisesti ({attempt}/{max})",
   "notice.emptyReplyContinue": "Malli ei antanut vastausta — pyydetään jatkamaan",
   "error.contextCompact": "Kontekstin tiivistys epäonnistui ({detail}); vuoro päättyi ilman vastausta.",
+  "notice.compactChunked": "Historia on mallin ikkunaa suurempi — tiivistän sen {n} osassa",
   "chat.continue": "Jatka",
   "notice.emptyReply": "Malli ei palauttanut vastausta. Kysy uudelleen tai valitse toinen malli.",
   "task.doneNotChecked": "valmis · muutoksia ei tarkistettu",

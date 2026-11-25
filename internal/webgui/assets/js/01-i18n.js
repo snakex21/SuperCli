@@ -98,6 +98,8 @@ var SYSTEM_TEXTS = [
   { key: "notice.cutOffContinue", re: /^reply cut off by the output limit: continuing automatically \((\d+)\/(\d+)\)$/, args: ["attempt", "max"] },
   { key: "notice.emptyReplyContinue", re: /^empty reply: asking the model to continue \(1\/1\)$/, args: [] },
   { key: "error.contextCompact", re: /^summarize context: ([\s\S]+)$/, args: ["detail"] },
+  // Keep in sync with agent.CompactChunkedNotice.
+  { key: "notice.compactChunked", re: /^context compaction: the history is larger than the model window, summarizing it in (\d+) parts$/, args: ["n"] },
   // Retry progress is "3/5" or "12/∞" (max_retries = -1); keep in sync with llm.rateLimitNotice and the TUI localizeNotice.
   { key: "notice.rateLimitRetry", re: /^(.+): rate limited \(HTTP 429\) — retrying in (\S+) \(retry (\d+)\/(\d+|∞)\)$/, args: ["model", "wait", "attempt", "max"] },
   { key: "notice.providerRetry", re: /^(.+): (?:temporary )?provider error \(HTTP (\d+)\) — retrying in (\S+) \(retry (\d+)\/(\d+|∞)\)$/, args: ["model", "status", "wait", "attempt", "max"] },

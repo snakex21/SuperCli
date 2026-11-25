@@ -1260,6 +1260,7 @@
   "notice.cutOffContinue": "Odpowiedź ucięta przez limit długości — automatycznie kontynuuję ({attempt}/{max})",
   "notice.emptyReplyContinue": "Model nie zwrócił odpowiedzi — proszę go o kontynuację",
   "error.contextCompact": "Nie udało się skompaktować kontekstu ({detail}); tura zatrzymała się bez odpowiedzi.",
+  "notice.compactChunked": "Historia jest większa niż okno modelu — streszczam ją w {n} częściach",
   "chat.continue": "Kontynuuj",
   "notice.emptyReply": "Model nie zwrócił odpowiedzi. Zapytaj ponownie albo wybierz inny model.",
   "task.doneNotChecked": "gotowe · zmian nie sprawdzono",

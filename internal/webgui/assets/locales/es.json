@@ -1260,6 +1260,7 @@
   "notice.cutOffContinue": "Respuesta cortada por el límite de longitud — continuando automáticamente ({attempt}/{max})",
   "notice.emptyReplyContinue": "El modelo no devolvió respuesta — se le pide que continúe",
   "error.contextCompact": "Falló la compactación del contexto ({detail}); el turno terminó sin respuesta.",
+  "notice.compactChunked": "El historial supera la ventana del modelo — lo resumo en {n} partes",
   "chat.continue": "Continuar",
   "notice.emptyReply": "El modelo no devolvió ninguna respuesta. Pregunta de nuevo o elige otro modelo.",
   "task.doneNotChecked": "hecho · cambios sin comprobar",

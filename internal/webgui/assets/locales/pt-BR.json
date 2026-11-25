@@ -1260,6 +1260,7 @@
   "notice.cutOffContinue": "Resposta cortada pelo limite de tamanho — continuando automaticamente ({attempt}/{max})",
   "notice.emptyReplyContinue": "O modelo não retornou resposta — pedindo para continuar",
   "error.contextCompact": "Falha ao compactar o contexto ({detail}); o turno parou sem resposta.",
+  "notice.compactChunked": "O histórico é maior que a janela do modelo — resumindo em {n} partes",
   "chat.continue": "Continuar",
   "notice.emptyReply": "O modelo não retornou resposta. Pergunte novamente ou escolha outro modelo.",
   "task.doneNotChecked": "concluído · alterações não verificadas",

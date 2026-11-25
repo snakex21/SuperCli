@@ -1260,6 +1260,7 @@
   "notice.cutOffContinue": "Odgovor odrezan zaradi omejitve dolžine — samodejno nadaljujem ({attempt}/{max})",
   "notice.emptyReplyContinue": "Model ni vrnil odgovora — prosim ga, naj nadaljuje",
   "error.contextCompact": "Stiskanje konteksta ni uspelo ({detail}); poteza se je ustavila brez odgovora.",
+  "notice.compactChunked": "Zgodovina je večja od okna modela — povzemam jo v {n} delih",
   "chat.continue": "Nadaljuj",
   "notice.emptyReply": "Model ni vrnil odgovora. Vprašajte znova ali izberite drug model.",
   "task.doneNotChecked": "končano · spremembe niso preverjene",

@@ -22,6 +22,8 @@ func (l *Loop) estimateNextRequestTokensRaw() int {
 	} else {
 		est = llm.EstimateTokens(projected)
 	}
+	// Images sent as pixels on the next request count toward the trigger.
+	est += llm.EstimateActiveImageTokens(projected)
 	if l.registry == nil {
 		return est
 	}
@@ -75,6 +77,12 @@ type requestTokenEstimate struct {
 func (l *Loop) nextRequestTokenEstimate() requestTokenEstimate {
 	raw := l.estimateNextRequestTokensRaw()
 	out := requestTokenEstimate{Effective: raw, Raw: raw, Source: "estimate"}
+	if ratio := learnedEstimateRatio(l.modelID); ratio > 1 {
+		// The provider measured a request of this model larger than its
+		// estimate: compact earlier rather than overflow again.
+		out.Effective = int(float64(raw) * ratio)
+		out.Source = "estimate*learned"
+	}
 	l.sessUsageMu.Lock()
 	exact, base, baseRoute := l.contextBaseExact, l.contextBaseEstimated, l.contextBaseRoute
 	l.sessUsageMu.Unlock()

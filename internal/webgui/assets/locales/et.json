@@ -1260,6 +1260,7 @@
   "notice.cutOffContinue": "Vastus lõigati pikkuse piiri tõttu — jätkan automaatselt ({attempt}/{max})",
   "notice.emptyReplyContinue": "Mudel ei andnud vastust — palun tal jätkata",
   "error.contextCompact": "Konteksti tihendamine ebaõnnestus ({detail}); käik peatus vastuseta.",
+  "notice.compactChunked": "Ajalugu on mudeli aknast suurem — teen kokkuvõtte {n} osas",
   "chat.continue": "Jätka",
   "notice.emptyReply": "Mudel ei andnud vastust. Küsi uuesti või vali teine mudel.",
   "task.doneNotChecked": "valmis · muudatusi ei kontrollitud",

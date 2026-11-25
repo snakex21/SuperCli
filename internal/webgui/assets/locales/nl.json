@@ -1260,6 +1260,7 @@
   "notice.cutOffContinue": "Antwoord afgekapt door de lengtelimiet — automatisch verder ({attempt}/{max})",
   "notice.emptyReplyContinue": "Het model gaf geen antwoord — er wordt gevraagd verder te gaan",
   "error.contextCompact": "Context comprimeren mislukt ({detail}); de beurt stopte zonder antwoord.",
+  "notice.compactChunked": "De geschiedenis is groter dan het modelvenster — samenvatten in {n} delen",
   "chat.continue": "Doorgaan",
   "notice.emptyReply": "Het model gaf geen antwoord. Vraag het opnieuw of kies een ander model.",
   "task.doneNotChecked": "klaar · wijzigingen niet gecontroleerd",

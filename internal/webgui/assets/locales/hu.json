@@ -1260,6 +1260,7 @@
   "notice.cutOffContinue": "A választ levágta a hosszkorlát — automatikus folytatás ({attempt}/{max})",
   "notice.emptyReplyContinue": "A modell nem adott választ — folytatásra kérjük",
   "error.contextCompact": "A környezet tömörítése sikertelen ({detail}); a kör válasz nélkül állt le.",
+  "notice.compactChunked": "Az előzmény nagyobb a modell ablakánál — {n} részben foglalom össze",
   "chat.continue": "Folytatás",
   "notice.emptyReply": "A modell nem adott választ. Kérdezzen újra, vagy válasszon másik modellt.",
   "task.doneNotChecked": "kész · a változások nincsenek ellenőrizve",

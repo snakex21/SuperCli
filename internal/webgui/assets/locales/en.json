@@ -1260,6 +1260,7 @@
   "notice.cutOffContinue": "Reply cut off by the output limit — continuing automatically ({attempt}/{max})",
   "notice.emptyReplyContinue": "The model returned no answer — asking it to continue",
   "error.contextCompact": "Context compaction failed ({detail}); the turn stopped without an answer.",
+  "notice.compactChunked": "The history is larger than the model's window — summarizing it in {n} parts",
   "chat.continue": "Continue",
   "notice.emptyReply": "The model returned no answer. Ask again or choose another model.",
   "task.doneNotChecked": "done · changes not checked",

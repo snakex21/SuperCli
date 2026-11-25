@@ -1260,6 +1260,7 @@
   "notice.cutOffContinue": "Svaret kapades av längdgränsen — fortsätter automatiskt ({attempt}/{max})",
   "notice.emptyReplyContinue": "Modellen gav inget svar — ber den fortsätta",
   "error.contextCompact": "Komprimering av kontexten misslyckades ({detail}); turen stoppade utan svar.",
+  "notice.compactChunked": "Historiken är större än modellens fönster — sammanfattar den i {n} delar",
   "chat.continue": "Fortsätt",
   "notice.emptyReply": "Modellen gav inget svar. Fråga igen eller välj en annan modell.",
   "task.doneNotChecked": "klar · ändringar inte kontrollerade",

@@ -1260,6 +1260,7 @@
   "notice.cutOffContinue": "Yanıt uzunluk sınırında kesildi — otomatik devam ediliyor ({attempt}/{max})",
   "notice.emptyReplyContinue": "Model yanıt vermedi — devam etmesi isteniyor",
   "error.contextCompact": "Bağlam sıkıştırma başarısız oldu ({detail}); tur yanıtsız durdu.",
+  "notice.compactChunked": "Geçmiş model penceresinden büyük — {n} parçada özetleniyor",
   "chat.continue": "Devam et",
   "notice.emptyReply": "Model yanıt döndürmedi. Yeniden sorun veya başka bir model seçin.",
   "task.doneNotChecked": "bitti · değişiklikler kontrol edilmedi",

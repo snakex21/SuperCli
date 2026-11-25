@@ -1260,6 +1260,7 @@
   "notice.cutOffContinue": "Atsakymas nukirptas ilgio ribos — tęsiu automatiškai ({attempt}/{max})",
   "notice.emptyReplyContinue": "Modelis negrąžino atsakymo — prašau tęsti",
   "error.contextCompact": "Konteksto suspaudimas nepavyko ({detail}); ėjimas sustojo be atsakymo.",
+  "notice.compactChunked": "Istorija didesnė už modelio langą — apibendrinu ją {n} dalimis",
   "chat.continue": "Tęsti",
   "notice.emptyReply": "Modelis negrąžino atsakymo. Paklauskite dar kartą arba pasirinkite kitą modelį.",
   "task.doneNotChecked": "atlikta · pakeitimai netikrinti",

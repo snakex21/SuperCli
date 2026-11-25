@@ -102,8 +102,20 @@ func compactSummaryInput(msgs []llm.Message) string {
 	return renderCompactTranscript(msgs, autoCompactSplit(msgs))
 }
 
+// compactCaps bound one message in the summary input: older user/assistant
+// texts (head and tail kept) and tool results and call arguments (excerpt).
+type compactCaps struct{ older, tool int }
+
+// defaultCompactCaps is the normal summary input; tighter caps are used only
+// when that input would not fit the summarizing model's window.
+var defaultCompactCaps = compactCaps{older: compactOlderTextCap, tool: compactToolResultCap}
+
 // capBefore: user/assistant texts at indices below it are capped.
 func renderCompactTranscript(msgs []llm.Message, capBefore int) string {
+	return renderCompactTranscriptCaps(msgs, capBefore, defaultCompactCaps)
+}
+
+func renderCompactTranscriptCaps(msgs []llm.Message, capBefore int, caps compactCaps) string {
 	if len(msgs) == 0 {
 		return ""
 	}
@@ -117,9 +129,9 @@ func renderCompactTranscript(msgs []llm.Message, capBefore int) string {
 			continue
 		}
 		if i < capBefore {
-			m = capCompactText(m, compactOlderTextCap)
+			m = capCompactText(m, caps.older)
 		}
-		content := compactTranscriptContent(m)
+		content := compactTranscriptContentCap(m, caps.tool)
 		if strings.TrimSpace(content) == "" {
 			continue
 		}
@@ -191,7 +203,14 @@ func compactHeadTail(s string, budget int) string {
 // A single text string can be reused; fragmented text and tool calls require
 // only one assembly buffer instead of copying every preceding fragment.
 func compactTranscriptContent(m llm.Message) string {
-	const toolResultCap = 700
+	return compactTranscriptContentCap(m, compactToolResultCap)
+}
+
+// compactToolResultCap bounds one tool result or call argument in the
+// normal summary input.
+const compactToolResultCap = 700
+
+func compactTranscriptContentCap(m llm.Message, toolResultCap int) string {
 	if IsLegacyCompactionSummary(m) {
 		// Resume framing controls the following main request, not this helper.
 		// Re-summarize every saved fact verbatim without repeating that framing.
@@ -259,8 +278,9 @@ func SummarizeForCompaction(ctx context.Context, provider llm.Provider, msgs []l
 	return summarizeForCompaction(ctx, provider, msgs, compactionPrompt)
 }
 
-func summarizeForCompaction(ctx context.Context, provider llm.Provider, msgs []llm.Message, instruction string) (string, error) {
-	transcript := compactSummaryInput(msgs)
+// summarizeTranscript makes one summary request for an already rendered
+// transcript (see summarizeForCompaction for the window-bounded input).
+func summarizeTranscript(ctx context.Context, provider llm.Provider, transcript, instruction string) (string, error) {
 	if strings.TrimSpace(transcript) == "" {
 		return "", fmt.Errorf("nothing to summarize")
 	}

@@ -1260,6 +1260,7 @@
   "notice.cutOffContinue": "Odpověď useknuta limitem délky — automaticky pokračuji ({attempt}/{max})",
   "notice.emptyReplyContinue": "Model nevrátil odpověď — žádám ho o pokračování",
   "error.contextCompact": "Zhuštění kontextu selhalo ({detail}); tah skončil bez odpovědi.",
+  "notice.compactChunked": "Historie je větší než okno modelu — shrnuji ji v {n} částech",
   "chat.continue": "Pokračovat",
   "notice.emptyReply": "Model nevrátil žádnou odpověď. Zeptejte se znovu nebo zvolte jiný model.",
   "task.doneNotChecked": "hotovo · změny nezkontrolovány",

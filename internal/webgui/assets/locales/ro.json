@@ -1260,6 +1260,7 @@
   "notice.cutOffContinue": "Răspuns tăiat de limita de lungime — continui automat ({attempt}/{max})",
   "notice.emptyReplyContinue": "Modelul nu a returnat niciun răspuns — îi cer să continue",
   "error.contextCompact": "Compactarea contextului a eșuat ({detail}); tura s-a oprit fără răspuns.",
+  "notice.compactChunked": "Istoricul depășește fereastra modelului — îl rezum în {n} părți",
   "chat.continue": "Continuă",
   "notice.emptyReply": "Modelul nu a returnat niciun răspuns. Întreabă din nou sau alege alt model.",
   "task.doneNotChecked": "gata · modificările nu au fost verificate",
