@@ -260,9 +260,9 @@ func (l *Loop) wakeResumeRefusal(tc llm.ToolCall) string {
 	if target == "" {
 		return ""
 	}
-	var status, lastError string
+	var status string
 	if action == "resume" {
-		status, lastError = l.workerStatusOf(target)
+		status, _ = l.workerStatusOf(target)
 		switch status {
 		case "failed", "stopped", WorkerStatusInterrupted:
 		default:
@@ -278,7 +278,7 @@ func (l *Loop) wakeResumeRefusal(tc llm.ToolCall) string {
 		return ""
 	}
 	if action == "resume" {
-		return resumeRefusal(l.userPromptForRun, target, status, lastError, l.conversationWorkerNumbers())
+		return resumeRefusal(l.userPromptForRun, target, status, l.conversationWorkerNumbers())
 	}
 	if namesWorkerWithoutNegation(l.userPromptForRun, target, action) {
 		return ""

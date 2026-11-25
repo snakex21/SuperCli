@@ -1494,12 +1494,17 @@ function addWorkerResumeAction(row, id) {
 // Several workers stopped by a limit, a lost connection or a restart: one
 // "Resume all (N)" button under the worker panel resumes them together.
 // Workers the user stopped keep only their own card button.
+// Every worker the panel shows as failed or interrupted counts (the same
+// set the coordinator lists), not only cards that kept a Resume button.
+// A resume already sent hides a worker until its state changes.
+var workerResumeAllSent = Object.create(null);
 function workerResumeAllIDs() {
   var ids = [];
   Object.keys(typeof workerOverview === "object" && workerOverview || {}).forEach(function (id) {
     var w = workerOverview[id], row = w && w.row, button = row && row._resumeButton;
     if (!w || (w.status !== "failed" && w.status !== "interrupted")) return;
-    if (!button || button.disabled || workerRows[id] !== row) return;
+    if ((button && button.disabled) || (row && workerRows[id] && workerRows[id] !== row)) return;
+    if (workerResumeAllSent[id] === w.status + ":" + (w.run || 0)) return;
     ids.push(id);
   });
   return ids.sort(function (a, b) { return a.localeCompare(b, undefined, { numeric: true }); });
@@ -1526,6 +1531,10 @@ function refreshWorkerResumeAll() {
       list.forEach(function (id) {
         var row = workerRows[id];
         if (row && row._resumeButton) row._resumeButton.disabled = true;
+      });
+      list.forEach(function (id) {
+        var w = workerOverview[id];
+        if (w) workerResumeAllSent[id] = w.status + ":" + (w.run || 0);
       });
       resumeWorkersFromPanel(list);
       button.hidden = true;

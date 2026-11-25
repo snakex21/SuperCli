@@ -114,7 +114,7 @@ test('several workers stopped by a limit or a lost connection get one Resume all
   h.context.sendPrompt = text => { sent.push(text); };
   const wrap = h.context.el('div');
   wrap.appendChild(h.$('#worker-overview'));
-  const rows = Object.fromEntries(['worker-3', 'worker-1', 'worker-2', 'worker-4'].map(id => [id, h.start(id)]));
+  const rows = Object.fromEntries(['worker-3', 'worker-1', 'worker-2', 'worker-4', 'worker-5'].map(id => [id, h.start(id)]));
   const stop = (id, status) => {
     h.context.addWorkerResumeAction(rows[id], id);
     h.context.updateWorkerOverview(id, 'code', status, '', rows[id]);
@@ -125,12 +125,15 @@ test('several workers stopped by a limit or a lost connection get one Resume all
   stop('worker-2', 'interrupted');
   stop('worker-3', 'failed');
   stop('worker-4', 'stopped'); // stopped by the user: not part of "resume all"
+  // Failed without a card button (no saved conversation shown): still listed,
+  // so the count matches the panel and the coordinator's list.
+  h.context.updateWorkerOverview('worker-5', 'code', 'failed', '', rows['worker-5']);
   h.context.renderWorkerOverview();
   assert.equal(button().hidden, false);
-  assert.equal(button().textContent, 'Resume all (3)');
+  assert.equal(button().textContent, 'Resume all (4)');
   button().click();
   assert.equal(sent.length, 1);
-  assert.match(sent[0], /^Resume worker-1, worker-2, worker-3 with send_message/);
+  assert.match(sent[0], /^Resume worker-1, worker-2, worker-3, worker-5 with send_message/);
   for (const id of ['worker-1', 'worker-2', 'worker-3']) assert.equal(rows[id]._resumeButton.disabled, true, id + ' card button');
   assert.ok(!rows['worker-4']._resumeButton.disabled, 'the user-stopped worker keeps its own button');
   assert.equal(button().hidden, true);

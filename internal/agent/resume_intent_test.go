@@ -39,34 +39,35 @@ func resumed(t *testing.T, prompt string, workers map[string][2]string) []string
 
 const usageLimitError = "anthropic: usage limit reached (HTTP 429): usage_limit_error"
 
-// The five workers of the reported session, all stopped by the usage limit.
-func limitedFive() map[string][2]string {
-	w := map[string][2]string{}
-	for _, id := range []string{"worker-363", "worker-376", "worker-379", "worker-380", "worker-381"} {
-		w[id] = [2]string{"failed", usageLimitError}
-	}
-	return w
+// The reported session: three workers interrupted by a restart and two that
+// failed on a model-not-found error, all listed by the coordinator as waiting.
+func reportedFive() map[string][2]string {
+	interrupted := [2]string{WorkerStatusInterrupted, "runner ended without a final report (app closed or crashed); resume to continue"}
+	notFound := [2]string{"failed", `http 404: {"type":"error","error":{"type":"not_found_error","message":"model: ja/google/gemini-4-neon"}}`}
+	return map[string][2]string{"worker-374": interrupted, "worker-377": notFound, "worker-378": notFound, "worker-379": interrupted, "worker-380": interrupted}
 }
 
-func TestResumeAfterUsageLimitFollowsThePlainRequest(t *testing.T) {
-	all := []string{"worker-363", "worker-376", "worker-379", "worker-380", "worker-381"}
+func TestUserTurnResumesWhatTheMessageRefersTo(t *testing.T) {
+	all := []string{"worker-374", "worker-377", "worker-378", "worker-379", "worker-380"}
 	for _, tc := range []struct {
 		name, prompt string
 		want         []string
 	}{
-		{"reported Polish sentence", "dobra możesz wznowić ponownie tam te modele skończył mi się użycie skończyło się teraz jest git", all},
-		{"short plural", "wznów je", all},
-		{"continue the workers", "kontynuuj workery", all},
-		{"English plural", "the limit reset, please resume them", all},
-		{"English can-you", "can you continue the workers now", all},
+		{"reported sentence", "możesz je wznowić a ogólnie da się to poscalać i potem pousuwać bo te 200 gb z kądź tam jest przecież nie?", all},
+		{"polite question", "możesz je wznowić?", all},
+		{"conditional politeness", "mógłbyś wznowić te workery", all},
+		{"tag question", "wznów je, ok?", all},
+		{"English question", "can you resume them?", all},
+		{"earlier limit sentence", "dobra możesz wznowić ponownie tam te modele skończył mi się użycie skończyło się teraz jest git", all},
 		{"negation", "nie wznawiaj ich", nil},
 		{"negation English", "don't resume them yet", nil},
-		{"one bare number", "wznów 363", []string{"worker-363"}},
-		{"named list", "wznów worker-363, 376 i 381", []string{"worker-363", "worker-376", "worker-381"}},
-		{"all but one", "wznów je, ale nie 376", []string{"worker-363", "worker-379", "worker-380", "worker-381"}},
+		{"leave them", "zostaw je na razie", nil},
+		{"one bare number", "wznów 377", []string{"worker-377"}},
+		{"named list", "wznów worker-374, 379 i 380", []string{"worker-374", "worker-379", "worker-380"}},
+		{"all but one", "wznów je, ale nie 378", []string{"worker-374", "worker-377", "worker-379", "worker-380"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := resumed(t, tc.prompt, limitedFive())
+			got := resumed(t, tc.prompt, reportedFive())
 			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
 				t.Fatalf("%q resumed %v, want %v", tc.prompt, got, tc.want)
 			}
@@ -74,59 +75,33 @@ func TestResumeAfterUsageLimitFollowsThePlainRequest(t *testing.T) {
 	}
 }
 
-// A general request covers limit, connection and restart stops, not a worker
-// the user stopped or a genuine task failure; naming one includes it.
-func TestPluralResumeLeavesUserStoppedAndFailedTasks(t *testing.T) {
+// A worker the user stopped is resumed only when named; the refusal tells
+// the coordinator to ask.
+func TestUserStoppedWorkerMustBeNamed(t *testing.T) {
 	workers := map[string][2]string{
 		"worker-1": {"failed", usageLimitError},
-		"worker-2": {"failed", "sse: stream error: INTERNAL_ERROR: connection reset by peer"},
-		"worker-3": {WorkerStatusInterrupted, "process restarted"},
 		"worker-4": {"stopped", "worker worker-4 stopped by request: context canceled"},
-		"worker-5": {"failed", "tests still fail after 5 attempts: assertion mismatch in mobs_test.go"},
 	}
-	if got := resumed(t, "wznów je", workers); strings.Join(got, ",") != "worker-1,worker-2,worker-3" {
-		t.Fatalf("plural resume = %v, want the limit, connection and restart stops only", got)
+	if got := resumed(t, "wznów je", workers); strings.Join(got, ",") != "worker-1" {
+		t.Fatalf("general resume = %v, want only worker-1", got)
 	}
-	if got := resumed(t, "resume them all and also worker-4", workers); strings.Join(got, ",") != "worker-4" {
-		// Naming narrows: the user named only worker-4 here.
-		t.Fatalf("named resume = %v, want worker-4", got)
+	if got := resumed(t, "wznów też worker-4", workers); strings.Join(got, ",") != "worker-4" {
+		t.Fatalf("named stopped worker = %v, want worker-4", got)
 	}
-	if got := resumed(t, "wznów 4 i 5", workers); strings.Join(got, ",") != "worker-4,worker-5" {
-		t.Fatalf("named user-stopped and failed workers = %v, want both", got)
-	}
-	l := resumeLoop("wznów je", workers)
-	r := l.wakeResumeRefusal(llm.ToolCall{Name: "send_message", Arguments: `{"to":"worker-4","message":"continue"}`})
+	r := resumeLoop("wznów je", workers).wakeResumeRefusal(llm.ToolCall{Name: "send_message", Arguments: `{"to":"worker-4","message":"continue"}`})
 	if !strings.Contains(r, "stopped on request") || !strings.Contains(r, "ask the user") {
-		t.Fatalf("user-stopped worker refusal = %q", r)
-	}
-	r = l.wakeResumeRefusal(llm.ToolCall{Name: "send_message", Arguments: `{"to":"worker-5","message":"continue"}`})
-	if !strings.Contains(r, "failed on its task") || !strings.Contains(r, "assertion mismatch") {
-		t.Fatalf("genuine failure refusal = %q", r)
+		t.Fatalf("refusal = %q", r)
 	}
 }
 
-// A usage-limit stop needs no special words in a user turn; a question or an
-// unrelated message does not resume other stops; automatic turns never do.
-func TestUsageLimitStopNeedsNoSpecialWords(t *testing.T) {
-	workers := map[string][2]string{
-		"worker-1": {"failed", usageLimitError},
-		"worker-2": {"failed", "rate limited (HTTP 429): too many requests"},
-		"worker-3": {"stopped", "stopped by request"},
-		"worker-4": {WorkerStatusInterrupted, ""},
-	}
-	if got := resumed(t, "ok, limit już jest", workers); strings.Join(got, ",") != "worker-1,worker-2" {
-		t.Fatalf("plain message = %v, want the usage-limited workers", got)
-	}
-	if got := resumed(t, "dlaczego nie wznowiłeś worker-4?", workers); strings.Join(got, ",") != "worker-1,worker-2" {
-		t.Fatalf("question = %v, want only the usage-limited workers", got)
-	}
-	if got := resumed(t, "nie wznawiaj nic", workers); len(got) != 0 {
-		t.Fatalf("negation = %v, want none", got)
-	}
-	l := resumeLoop("wznów je", workers)
+// Automatic and wake turns never resume, whatever the workers' state.
+func TestAutomaticTurnNeverResumes(t *testing.T) {
+	l := resumeLoop("wznów je", reportedFive())
 	l.wakeTurnForRun = true
-	if r := l.wakeResumeRefusal(llm.ToolCall{Name: "send_message", Arguments: `{"to":"worker-1","message":"continue"}`}); !strings.Contains(r, "automatic turn") {
-		t.Fatalf("automatic turn resumed a usage-limited worker: %q", r)
+	for id := range reportedFive() {
+		if r := l.wakeResumeRefusal(llm.ToolCall{Name: "send_message", Arguments: fmt.Sprintf(`{"to":%q,"message":"continue"}`, id)}); !strings.Contains(r, "automatic turn") {
+			t.Fatalf("automatic turn resumed %s: %q", id, r)
+		}
 	}
 }
 
@@ -145,27 +120,6 @@ func TestResumeAllButtonPromptIsAccepted(t *testing.T) {
 	} {
 		if got := resumed(t, prompt, workers); strings.Join(got, ",") != "worker-7,worker-8" {
 			t.Errorf("%s button prompt resumed %v", lang, got)
-		}
-	}
-}
-
-func TestClassifyStop(t *testing.T) {
-	for _, tc := range []struct {
-		status, err string
-		want        stopKind
-	}{
-		{"failed", usageLimitError, stopLimit},
-		{"failed", "openai: 429 Too Many Requests", stopLimit},
-		{"failed", "You have reached your subscription limit", stopLimit},
-		{"failed", "dial tcp: i/o timeout", stopTransient},
-		{"failed", "overloaded_error (529)", stopTransient},
-		{WorkerStatusInterrupted, "", stopTransient},
-		{"stopped", "stopped by request", stopByUser},
-		{"failed", "dead end: 5 identical file-tool failures", stopTaskFailure},
-		{"failed", "context canceled", stopTaskFailure},
-	} {
-		if got := classifyStop(tc.status, tc.err); got != tc.want {
-			t.Errorf("classifyStop(%q, %q) = %v, want %v", tc.status, tc.err, got, tc.want)
 		}
 	}
 }
