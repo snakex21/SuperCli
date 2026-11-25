@@ -439,3 +439,24 @@ test('detached filtered model options cannot submit even when the picker row is 
   assert.equal(option.isConnected, false);
   h.click(option); assert.equal(h.posts.length, 1);
 });
+
+test('under pl the panel shows reasoning levels and off in Polish, never the stored English values', async () => {
+  const pl = JSON.parse(readSource(sourcePath(assets, 'locales', 'pl.json'), 'utf8'));
+  const h = fixture();
+  h.w.t = key => pl[key] || key;
+  await h.load(config({task_reasoning_effort: 'xhigh', advisor_model: 'off', review_model: 'small',
+    review_reasoning_effort: 'max', darwin: 'on', darwin_reasoning_effort: 'minimal'}));
+  const button = label => h.row(label).querySelector('.orch-btn').textContent;
+  assert.equal(button('stats.taskEffort'), pl['model.level.xhigh']);
+  assert.equal(button('effort.review'), pl['model.level.max']);
+  assert.equal(button('effort.darwin'), pl['model.level.minimal']);
+  assert.equal(button('stats.advModel'), pl['set.value.off']);
+  const raw = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'off', 'on', 'default']);
+  for (const node of h.box.querySelectorAll('.orch-btn, .pname, .pid, .seg button')) {
+    assert.ok(!raw.has(node.textContent.trim()), 'raw value shown: ' + node.textContent);
+  }
+  // Opening the effort list: every option reads in Polish too.
+  h.click(h.row('stats.taskEffort').querySelector('.orch-btn'));
+  const names = [...h.row('stats.taskEffort').querySelectorAll('.pname')].map(n => n.textContent);
+  assert.deepEqual(names, [pl['stats.effortInherit'], ...['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].map(l => pl['model.level.' + l])]);
+});

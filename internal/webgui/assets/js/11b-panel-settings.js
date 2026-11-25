@@ -101,7 +101,9 @@ function knobDisplayValue(k) {
   var state = String(k.value || "").match(/^default \((auto|on|off)\)$/);
   if (state) return t("setting.value.number").replace("{n}", t(state[1] === "auto" ? "set.state.auto" : "set.value." + state[1]));
   var number = String(k.value || "").match(/^default \((\d+|∞)\)$/);
-  return number ? t("setting.value.number").replace("{n}", number[1]) : k.value;
+  if (number) return t("setting.value.number").replace("{n}", number[1]);
+  // Reasoning levels and on/off in the UI language; other values as stored.
+  return typeof knobValueLabel === "function" ? knobValueLabel(k.value) : k.value;
 }
 function knobSourceLabel(k) {
   var key = ({"set via model picker":"set.source.modelPicker", "set via providers":"set.source.providers"})[k.source];
@@ -224,6 +226,19 @@ function knobRow(k, currencyCodes, section) {
     var wrap = el("span", "k-edit-wrap");
     supercliOrchPicker(wrap, k, function (v) { post(v); });
     row.appendChild(wrap);
+  } else if (/_reasoning_effort$/.test(k.key)) {
+    // A reasoning level is picked from the same levels as the main model
+    // selector, never typed; the stored value stays the English level.
+    var effort = el("select", "field-select k-effort");
+    effort.setAttribute("aria-label", copy[0]);
+    ["", "none", "minimal", "low", "medium", "high", "xhigh", "max"].forEach(function (level) {
+      var option = el("option", "", level ? (typeof knobValueLabel === "function" ? knobValueLabel(level) : level) : t("stats.effortInherit"));
+      option.value = level;
+      effort.appendChild(option);
+    });
+    effort.value = k.raw || "";
+    effort.addEventListener("change", function () { post(effort.value); });
+    row.appendChild(effort);
   } else if (k.kind === "int" || k.kind === "text") {
     var input = el("input", "k-edit");
     input.value = k.raw || "";

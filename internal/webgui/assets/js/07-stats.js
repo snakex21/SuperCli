@@ -1248,12 +1248,25 @@ function appendEffortRow(box, knob, labelKey, tipKey) {
 
 // Short, searchable-model-picker styled list. Save failures leave the old value.
 // values/emptyKey optionally replace the effort levels and the label of "".
+// A stored enum value in the UI language (reasoning levels as in the main
+// model selector, on/off as states). The stored value never changes; model
+// ids and numbers are shown as they are.
+function knobValueLabel(raw) {
+  var value = String(raw == null ? "" : raw).trim();
+  if (!value) return value;
+  var lower = value.toLowerCase();
+  if (lower === "off" || lower === "on") return t("set.value." + lower);
+  var key = "model.level." + lower;
+  var label = t(key);
+  return label === key ? value : label;
+}
+
 function supercliEffortPicker(container, knob, onSave, values, emptyKey) {
   values = values || ["", "none", "minimal", "low", "medium", "high", "xhigh", "max"];
   emptyKey = emptyKey || "stats.effortInherit";
   var current = knob.raw || "";
   var wrap = el("span", "orch-pick effort-pick");
-  var btn = el("button", "orch-btn", current || t(emptyKey));
+  var btn = el("button", "orch-btn", current ? knobValueLabel(current) : t(emptyKey));
   btn.type = "button";
   btn.setAttribute("aria-label", container.firstChild ? container.firstChild.textContent : t(emptyKey));
   btn.setAttribute("aria-haspopup", "listbox");
@@ -1268,7 +1281,7 @@ function supercliEffortPicker(container, knob, onSave, values, emptyKey) {
     row.setAttribute("role", "option");
     row.setAttribute("aria-selected", effort === current ? "true" : "false");
     row.appendChild(el("span", "state-dot"));
-    row.appendChild(el("span", "pname", effort || t(emptyKey)));
+    row.appendChild(el("span", "pname", effort ? knobValueLabel(effort) : t(emptyKey)));
     row.addEventListener("click", function () {
       if (!row.isConnected || !container.contains(row)) return;
       close(); btn.focus();
@@ -1278,7 +1291,7 @@ function supercliEffortPicker(container, knob, onSave, values, emptyKey) {
         .then(function (saved) {
           if (saved === false) return;
           current = effort;
-          btn.textContent = effort || t(emptyKey);
+          btn.textContent = effort ? knobValueLabel(effort) : t(emptyKey);
           Array.from(pop.children).forEach(function (item) {
             var active = item === row;
             item.classList.toggle("active", active);
@@ -1317,7 +1330,7 @@ function supercliEffortPicker(container, knob, onSave, values, emptyKey) {
 function supercliOrchPicker(container, knobM, onSave, defKey) {
   defKey = defKey || "stats.orchModelDef";
   var wrap = el("span", "orch-pick");
-  var btn = el("button", "orch-btn", knobM.raw || t(defKey));
+  var btn = el("button", "orch-btn", knobM.raw ? knobValueLabel(knobM.raw) : t(defKey));
   btn.type = "button";
   var pop = el("div", "orch-pop");
   pop.hidden = true;
@@ -1346,7 +1359,7 @@ function supercliOrchPicker(container, knobM, onSave, defKey) {
       if (knobM.key === "advisor_model") {
         var offRow = el("div", "prow" + (cur.toLowerCase() === "off" ? " active" : ""));
         offRow.appendChild(el("span", "state-dot"));
-        offRow.appendChild(i18nEl("span", "pid", "set.state.off"));
+        offRow.appendChild(i18nEl("span", "pid", "set.value.off"));
         offRow.addEventListener("click", function () {
           if (!offRow.isConnected || !container.contains(offRow)) return;
           pop.hidden = true;

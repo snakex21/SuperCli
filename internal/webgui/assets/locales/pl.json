@@ -335,7 +335,7 @@
   "stats.orchOn": "zawsze",
   "stats.orchOff": "nigdy",
   "stats.taskModel": "model agentów pomocniczych",
-  "stats.taskEffort": "Rozumowanie agentów pomocniczych",
+  "stats.taskEffort": "Poziom rozumowania agentów pomocniczych",
   "stats.effortInherit": "jak główny",
   "stats.orchTooltip": "Czy przekazuję pracę agentom pomocniczym.",
   "stats.taskModelTooltip": "Model używany przez agentów pomocniczych.",
