@@ -494,9 +494,13 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) (r
 		}
 	}
 	raw := json.RawMessage(tc.Arguments)
+	backgroundCommand := false
 	if capped, ok := l.capCoordinatorCommand(tc.Name, raw); ok {
+		// A long coordinator command continues in the background after the
+		// foreground wait (coordinator_command_cap.go).
 		raw = capped
 		tc.Arguments = string(capped)
+		backgroundCommand = true
 	}
 	// Announce the call before execution. Long-running tools (most notably a
 	// synchronous task worker) must become visible to TUI/WebGUI while they are
@@ -697,7 +701,12 @@ func (l *Loop) invoke(ctx context.Context, tc llm.ToolCall, out chan<- Event) (r
 		dispatchCtx = core.WithModelWindow(dispatchCtx, l.window())
 		dispatchCtx, stopProgress := withToolProgress(dispatchCtx, tc.ID, out)
 		defer stopProgress()
-		if havePreparedInvocation {
+		if backgroundCommand {
+			execRaw := raw
+			res, err = l.executeWithBackgroundFallback(dispatchCtx, commandText(tc.Arguments), func(c context.Context) (tools.Result, error) {
+				return l.registry.Execute(c, tc.Name, execRaw)
+			})
+		} else if havePreparedInvocation {
 			// This invocation already accepted the arguments for its cache key.
 			// Reuse that preparation only; the current callback still performs
 			// permissions, checkpoint binding and other execution-time checks.
