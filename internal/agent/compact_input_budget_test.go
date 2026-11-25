@@ -226,3 +226,17 @@ func TestMainRequestPromptTooLongCompactsAndRetries(t *testing.T) {
 		t.Fatalf("learned ratio for %s = %.2f", l.modelID, r)
 	}
 }
+
+// The configured window can be far larger than the provider's real limit.
+// A rejection shrinks the next summary request relative to what was sent,
+// not to the (too large) window, so the retry fits.
+func TestCompactionRetryShrinksBelowTheRealLimit(t *testing.T) {
+	p := &windowProvider{name: "test-window-misconfigured", limit: 20_000, ratio: 1.2}
+	summary, err := NewAutoSummarizer(nil)(WithCompactWindow(context.Background(), 1_000_000), p, bigHistory(8))
+	if err != nil {
+		t.Fatalf("compaction failed: %v (calls=%d rejected=%d)", err, p.calls, p.rejected)
+	}
+	if summary == "" || p.rejected == 0 || p.maxAccepted > 20_000 {
+		t.Fatalf("rejected=%d maxAccepted=%d", p.rejected, p.maxAccepted)
+	}
+}

@@ -147,9 +147,12 @@ const CompactChunkedNotice = "context compaction: the history is larger than the
 func summarizeForCompaction(ctx context.Context, provider llm.Provider, msgs []llm.Message, instruction string) (string, error) {
 	window := compactWindowFrom(ctx)
 	model := llm.ProviderModelName(provider)
-	shrink := 1.0
+	limitCap := 0 // estimated-token cap learned from rejections in this call
 	for attempt := 0; ; attempt++ {
-		budget := max(int(float64(compactInputBudget(window, learnedEstimateRatio(model)))*shrink), 1000)
+		budget := compactInputBudget(window, learnedEstimateRatio(model))
+		if limitCap > 0 {
+			budget = min(budget, limitCap)
+		}
 		summary, err := summarizeWithinBudget(ctx, provider, msgs, instruction, budget)
 		if err == nil || ctx.Err() != nil {
 			return summary, err
@@ -161,11 +164,17 @@ func summarizeForCompaction(ctx context.Context, provider llm.Provider, msgs []l
 		if tooLong.real > 0 && tooLong.estimated > 0 {
 			recordEstimateRatio(model, tooLong.real, tooLong.estimated)
 		}
-		if tooLong.real > 0 && tooLong.limit > 0 && tooLong.real > tooLong.limit {
-			shrink *= float64(tooLong.limit) / float64(tooLong.real) * 0.85
-		} else {
-			shrink *= 0.5
+		// Shrink relative to what was actually sent: the window may be much
+		// larger than the provider's real limit (a misconfigured window).
+		sent := tooLong.estimated
+		if sent <= 0 || sent > budget {
+			sent = budget
 		}
+		next := sent / 2
+		if tooLong.real > 0 && tooLong.limit > 0 && tooLong.real > tooLong.limit {
+			next = int(float64(sent) * float64(tooLong.limit) / float64(tooLong.real) * 0.85)
+		}
+		limitCap = max(next, 1000)
 	}
 }
 
