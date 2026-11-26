@@ -115,7 +115,9 @@ func runSieveCommand(ctx context.Context, dir, command string, timeout time.Dura
 	cmd := exec.CommandContext(runCtx, fields[0], fields[1:]...)
 	childproc.HideWindow(cmd)
 	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
+	// A verify command (go test, gradle, npm) starts its own children: the
+	// timeout must end the whole tree, not only the first process.
+	out, err := childproc.CombinedOutput(cmd)
 	text := string(out)
 	if runCtx.Err() == context.DeadlineExceeded {
 		return 124, text + "\n[sieve: command timed out]"

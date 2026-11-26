@@ -287,7 +287,9 @@ func runCapped(cmd *exec.Cmd) (string, error) {
 	buf := core.NewHeadTailBuffer(outputHeadBytes, outputTailBytes)
 	cmd.Stdout = buf
 	cmd.Stderr = buf // same writer: os/exec serializes the streams
-	err := cmd.Run()
+	// Cancel/timeout ends the whole process tree (a user tool may start
+	// children that would otherwise outlive it).
+	err := childproc.Run(cmd)
 	return buf.String(), err
 }
 
