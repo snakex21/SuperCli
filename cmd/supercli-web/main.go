@@ -29,6 +29,7 @@ import (
 	"supercli/internal/agent"
 	"supercli/internal/storage"
 	"supercli/internal/storage/memory"
+	"supercli/internal/system/childproc"
 	"supercli/internal/system/config"
 	_ "supercli/internal/system/termux"
 	"supercli/internal/system/uilang"
@@ -144,6 +145,13 @@ func run(crashDataDir *string) {
 	if logFile := initWebLog(dataDir); logFile != nil {
 		defer logFile.Close()
 	}
+	// Checkpoint git processes an earlier SuperCli left behind (a cancelled
+	// launcher used to orphan the real git): only this install's store.
+	go func() {
+		if n := childproc.SweepOrphanedCheckpointGit(dataDir); n > 0 {
+			log.Printf("orphan sweep: ended %d leftover checkpoint git process(es)", n)
+		}
+	}()
 
 	// Match CLI project startup semantics: when no explicit --home or
 	// SUPERCLI_HOME is provided, the active named workspace becomes the web

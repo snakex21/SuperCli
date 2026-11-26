@@ -238,7 +238,7 @@ func workspaceFingerprint(ctx context.Context, dir string) string {
 	git := func(args ...string) (string, error) {
 		cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
 		childproc.HideWindow(cmd)
-		out, err := cmd.Output()
+		out, err := childproc.Output(cmd) // the timeout ends the whole git tree
 		return string(out), err
 	}
 	if inside, err := git("rev-parse", "--is-inside-work-tree"); err == nil && strings.TrimSpace(inside) == "true" {
@@ -267,7 +267,7 @@ func workspaceFingerprint(ctx context.Context, dir string) string {
 				cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
 				childproc.HideWindow(cmd)
 				cmd.Stdout = h
-				if err := cmd.Run(); err != nil {
+				if err := childproc.Run(cmd); err != nil {
 					return fingerprintUnchecked
 				}
 				h.Write([]byte{0})

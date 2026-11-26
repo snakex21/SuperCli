@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -199,6 +200,17 @@ func TestCheckpointCommandStreamHeldPipeWithoutProgressIsBounded(t *testing.T) {
 	stream, err := startCheckpointCommandStream(ctx, cmd)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if runtime.GOOS == "windows" {
+		// The kill-on-close job ends the grandchild with its parent: no pipe
+		// is held at all, and the stream ends right after the parent.
+		begin := time.Now()
+		data, _ := io.ReadAll(stream.Stdout)
+		_ = stream.Wait()
+		if string(data) != "PARENT_DONE\n" || time.Since(begin) > scaledTestTimeout(10*time.Second) {
+			t.Fatalf("stream after the parent exited: %q in %s", data, time.Since(begin))
+		}
+		return
 	}
 	conn, err := listener.Accept()
 	if err != nil {

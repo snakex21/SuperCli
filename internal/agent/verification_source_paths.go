@@ -90,7 +90,7 @@ func gitIgnored(baseDir string, rels []string) (ignored map[string]bool, isRepo 
 	cmd.Stdin = strings.NewReader(strings.Join(rels, "\n") + "\n")
 	childproc.HideWindow(cmd)
 	// Exit status 1 means "none ignored"; any other failure means unknown.
-	stdout, _ := cmd.Output()
+	stdout, _ := childproc.Output(cmd) // the timeout ends the whole git tree
 	for _, line := range strings.Split(strings.ReplaceAll(string(stdout), "\r\n", "\n"), "\n") {
 		if line = strings.TrimSpace(line); line != "" {
 			out[filepath.ToSlash(line)] = true

@@ -165,7 +165,7 @@ func gitCapture(ctx context.Context, dir string, args ...string) string {
 	cmd := exec.CommandContext(runCtx, "git", args...)
 	childproc.HideWindow(cmd)
 	cmd.Dir = dir
-	out, err := cmd.Output()
+	out, err := childproc.Output(cmd) // the timeout ends the whole git tree
 	if err != nil {
 		return ""
 	}

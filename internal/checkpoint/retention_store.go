@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"supercli/internal/system/childproc"
 )
 
 const (
@@ -442,7 +443,7 @@ func resumeRetentionJournalLocked(ctx context.Context, dataDir string) error {
 				input.WriteString("prepare\ncommit\n")
 				cmd := retentionGitCommand(ctx, repo, "-c", "core.fsync=reference", "update-ref", "--no-deref", "--stdin")
 				cmd.Stdin = strings.NewReader(input.String())
-				if err := cmd.Run(); err != nil {
+				if err := childproc.Run(cmd); err != nil {
 					return errors.Join(ErrStoreInventory, ctx.Err())
 				}
 			}

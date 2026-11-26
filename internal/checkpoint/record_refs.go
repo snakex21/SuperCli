@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"supercli/internal/system/childproc"
 )
 
 // Parentless snapshots must each be reachable. A latest-only ref does not
@@ -112,7 +114,7 @@ func (m *Manager) updateRecordRefsLocked(ctx context.Context, updates, operation
 	}
 	cmd := m.gitCommand(ctx, "-c", "core.fsync=reference", "update-ref", "--stdin")
 	cmd.Stdin = strings.NewReader("start\n" + updates + "prepare\ncommit\n")
-	if out, err := cmd.CombinedOutput(); err != nil {
+	if out, err := childproc.CombinedOutput(cmd); err != nil {
 		return fmt.Errorf("checkpoint %s: %w: %s", operation, errors.Join(ctx.Err(), err), strings.TrimSpace(string(out)))
 	}
 	return nil

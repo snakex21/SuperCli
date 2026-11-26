@@ -398,7 +398,7 @@ func realRunGitExecutable(ctx context.Context, executable, root string, args ...
 	childproc.HideWindow(cmd)
 	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
 	cmd.WaitDelay = 100 * time.Millisecond
-	out, err := cmd.Output()
+	out, err := childproc.Output(cmd) // cancel ends the whole git tree
 	if len(args) > 0 && args[0] == "status" {
 		// Porcelain's leading two columns are data. TrimSpace would remove
 		// the first column of a worktree-only modification and corrupt the

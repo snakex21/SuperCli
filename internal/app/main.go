@@ -122,6 +122,11 @@ func Main() {
 	if n := childproc.Sweep(); n > 0 {
 		log.Printf("orphan sweep: terminated %d leftover subprocess(es) from a previous run", n)
 	}
+	go func() {
+		if n := childproc.SweepOrphanedCheckpointGit(dataDir); n > 0 {
+			log.Printf("orphan sweep: ended %d leftover checkpoint git process(es)", n)
+		}
+	}()
 
 	db, err := storage.OpenAt(dataDir)
 	if err != nil {

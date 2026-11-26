@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"supercli/internal/system/childproc"
 )
 
 // Limits are checked before writing any blobs. Arbitrary commands need a full
@@ -447,7 +448,7 @@ func (m *Manager) ignoredFilesMissingFromBase(ctx context.Context, base string, 
 	cmd.Stdin = strings.NewReader(input.String())
 	var out, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &stderr
-	if err := cmd.Run(); err != nil {
+	if err := childproc.Run(cmd); err != nil {
 		var exit *exec.ExitError
 		if !errors.As(err, &exit) || exit.ExitCode() != 1 {
 			return nil, fmt.Errorf("checkpoint ignored paths: %w: %s", err, stderr.String())
@@ -522,7 +523,7 @@ func (m *Manager) gitIndex(ctx context.Context, index string, input io.Reader, a
 	cmd := m.gitCommand(ctx, args...)
 	cmd.Env = append(cmd.Env, "GIT_INDEX_FILE="+index)
 	cmd.Stdin = input
-	out, err := cmd.CombinedOutput()
+	out, err := childproc.CombinedOutput(cmd)
 	if err != nil {
 		return "", fmt.Errorf("checkpoint %s: %w: %s", args[0], errors.Join(ctx.Err(), err), strings.TrimSpace(string(out)))
 	}
@@ -533,7 +534,7 @@ func (m *Manager) commitTreeLocked(ctx context.Context, tree string) (string, er
 	cmd := m.gitCommand(ctx, "commit-tree", tree, "-m", "SuperCli checkpoint")
 	// Identical trees produce identical commits, including no-op turns.
 	cmd.Env = append(cmd.Env, "GIT_AUTHOR_NAME=SuperCli", "GIT_AUTHOR_EMAIL=checkpoint@local", "GIT_COMMITTER_NAME=SuperCli", "GIT_COMMITTER_EMAIL=checkpoint@local", "GIT_AUTHOR_DATE=1970-01-01T00:00:00+0000", "GIT_COMMITTER_DATE=1970-01-01T00:00:00+0000")
-	out, err := cmd.CombinedOutput()
+	out, err := childproc.CombinedOutput(cmd)
 	if err != nil {
 		return "", fmt.Errorf("checkpoint commit: %w: %s", errors.Join(ctx.Err(), err), out)
 	}

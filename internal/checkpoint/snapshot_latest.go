@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os/exec"
 	"strings"
+	"supercli/internal/system/childproc"
 )
 
 // Finalize only after a committed record or a fully drained verified no-op.
@@ -23,7 +24,7 @@ func (t *Turn) finishSnapshotLatestLocked(ctx context.Context) error {
 		return t.manager.accountRefsLocked(1)
 	}
 	cmd := t.manager.gitCommand(ctx, "rev-parse", "--verify", "--quiet", "refs/supercli/latest")
-	output, err := cmd.Output()
+	output, err := childproc.Output(cmd)
 	if err != nil {
 		if ctx.Err() != nil {
 			return errors.Join(ctx.Err(), err)

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"supercli/internal/system/childproc"
 )
 
 func (m *Manager) capture(ctx context.Context) (string, error) {
@@ -44,7 +45,7 @@ func (m *Manager) ensureRepoLocked(ctx context.Context) error {
 		cmd := exec.CommandContext(ctx, "git", "-c", "core.longpaths=true", "-c", "init.defaultRefFormat=files", "init", "--bare", "--object-format=sha1", m.repo)
 		configureCheckpointCommand(cmd)
 		cmd.Env = checkpointGitEnv()
-		if out, err := cmd.CombinedOutput(); err != nil {
+		if out, err := childproc.CombinedOutput(cmd); err != nil {
 			return fmt.Errorf("checkpoint init: %w: %s", errors.Join(ctx.Err(), err), out)
 		}
 	}
@@ -88,7 +89,7 @@ func (m *Manager) git(ctx context.Context, args ...string) (string, error) {
 		}
 	}
 	cmd := m.gitCommand(ctx, args...)
-	out, err := cmd.CombinedOutput()
+	out, err := childproc.CombinedOutput(cmd)
 	if err != nil {
 		return "", fmt.Errorf("git %s: %w: %s", args[0], errors.Join(ctx.Err(), err), strings.TrimSpace(string(out)))
 	}

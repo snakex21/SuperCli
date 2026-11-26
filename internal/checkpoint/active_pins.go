@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"supercli/internal/system/childproc"
 )
 
 // activePins uses the same command factory as Manager.gitCommand. Only trusted
@@ -69,7 +70,7 @@ func (p *activePins) update(ctx context.Context, commands string) error {
 	// Flush ref updates; object and metadata durability have separate guards.
 	cmd := p.command(ctx, "-c", "core.fsync=reference", "update-ref", "--stdin")
 	cmd.Stdin = strings.NewReader("start\n" + commands + "prepare\ncommit\n")
-	if out, err := cmd.CombinedOutput(); err != nil {
+	if out, err := childproc.CombinedOutput(cmd); err != nil {
 		// Native Git may exit with an ordinary status when cancellation races
 		// its shutdown. Retain the deadline/cancel cause as well as native
 		// diagnostics; admission must still fail without running the tool.

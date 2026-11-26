@@ -81,7 +81,10 @@ func startCheckpointCommandStream(ctx context.Context, cmd *exec.Cmd) (*checkpoi
 		return nil, err
 	}
 	cmd.Stdout = writer
-	if err := cmd.Start(); err != nil {
+	// The whole process tree ends with the context: on Windows "git" is a
+	// launcher whose real git child would otherwise keep running.
+	tree, err := childproc.StartTree(cmd)
+	if err != nil {
 		_ = writer.Close()
 		_ = file.Close()
 		return nil, err
@@ -92,7 +95,7 @@ func startCheckpointCommandStream(ctx context.Context, cmd *exec.Cmd) (*checkpoi
 	stream := &checkpointCommandStream{Stdout: stdout, ctx: ctx, readDone: make(chan struct{}), waited: make(chan error, 1)}
 	stream.stopCancel = context.AfterFunc(ctx, func() { _ = file.Close() })
 	go func() {
-		err := cmd.Wait() // Exactly one native waiter; stderr uses Cmd.WaitDelay.
+		err := tree.Wait() // Exactly one native waiter; stderr uses Cmd.WaitDelay.
 		exited := time.Now()
 		timer := time.NewTimer(grace)
 		defer timer.Stop()

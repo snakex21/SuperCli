@@ -23,3 +23,10 @@ func detachSession(cmd *exec.Cmd) {
 	cmd.SysProcAttr.Setsid = true
 	cmd.SysProcAttr.Setpgid = false
 }
+
+// killGroup ends the process group led by pid (detachSession made it one).
+func killGroup(pid int) {
+	if pid > 0 {
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+	}
+}

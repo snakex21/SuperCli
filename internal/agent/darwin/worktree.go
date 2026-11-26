@@ -23,7 +23,7 @@ var runGitCtx = func(ctx context.Context, dir string, args ...string) ([]byte, e
 	childproc.HideWindow(cmd)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	return cmd.CombinedOutput()
+	return childproc.CombinedOutput(cmd) // cancel ends the whole git tree
 }
 
 // WorktreeManager owns a single git repo's Darwin
