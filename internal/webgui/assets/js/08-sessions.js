@@ -344,9 +344,16 @@ async function restoreSessionRuntime(session) {
 }
 
 var transcriptAbortCtl = null;
+// Older pages have their own request: a live run starting, a background run
+// re-attaching or a sync rebuild must not cancel or retire the way back.
+var olderTranscriptAbortCtl = null;
 var loadedTranscriptMessages = [];
 var transcriptHasMore = false;
+// Oldest loaded message seq (the next older page ends before it).
 var transcriptBeforeSeq = 0;
+// Saved history shown in this view stops before this seq (0: no limit): a
+// background run re-attached here replays its own messages from its events.
+var transcriptHistoryEndSeq = 0;
 var transcriptSessionID = "";
 // Keep the initial DOM bounded. Tool outputs and reasoning can make one
 // persisted message very large; older pages remain available on demand.
@@ -485,7 +492,9 @@ function buildHistoryFragment(messages, pager, prepend) {
         }
       }
     }
-    (messages || []).forEach(function (m) {
+    // Each top-level row remembers the message it came from (_historySeq),
+    // so a rebuild can keep the reader on the same row.
+    var renderHistoryMessage = function (m) {
       if (m.role === "user") {
         if (m.tool_image_carrier === true) {
           addHistoryToolImages(m, historyResults, pendingImages);
@@ -614,6 +623,11 @@ function buildHistoryFragment(messages, pager, prepend) {
           historyResults[m.tool_call_id].push({seq: m.seq, row: row});
         }
       }
+    };
+    (messages || []).forEach(function (m) {
+      var mark = fragment.lastChild;
+      renderHistoryMessage(m);
+      for (var n = mark ? mark.nextSibling : fragment.firstChild; n; n = n.nextSibling) if (n._historySeq == null) n._historySeq = m.seq;
     });
     if (pendingImages) {
       for (var imageIndex = pendingImages.length - 1; imageIndex >= 0; imageIndex--) {
@@ -631,10 +645,47 @@ function buildHistoryFragment(messages, pager, prepend) {
   return fragment;
 }
 
-function renderLoadedTranscript(preserveScroll) {
+function transcriptViewAnchor() {
+  if (!stream.children || typeof stage.getBoundingClientRect !== "function") return null;
+  var top = stage.getBoundingClientRect().top, rows = stream.children;
+  for (var i = 0; i < rows.length; i++) {
+    var box = rows[i].getBoundingClientRect();
+    if (box.bottom > top && rows[i]._historySeq != null) {
+      // The n-th row of its message (an answer has its actions row, ...).
+      var nth = 0;
+      for (var k = i - 1; k >= 0 && rows[k]._historySeq === rows[i]._historySeq; k--) nth++;
+      return {seq: rows[i]._historySeq, nth: nth, offset: box.top - top, top: stage.scrollTop};
+    }
+  }
+  return {seq: null, offset: 0, top: stage.scrollTop};
+}
+// The rebuilt rows come from the same messages: the row the reader had at the
+// top of the view is found again by its message and keeps its offset.
+function applyTranscriptAnchor(anchor) {
+  if (!anchor) return;
+  var row = transcriptRowForSeq(anchor.seq, anchor.nth);
+  if (row) stage.scrollTop += row.getBoundingClientRect().top - stage.getBoundingClientRect().top - anchor.offset;
+  else stage.scrollTop = anchor.top;
+}
+function transcriptRowForSeq(seq, nth) {
+  if (seq == null) return null;
+  var rows = stream.children, best = null;
+  for (var i = 0; i < rows.length; i++) {
+    var at = rows[i]._historySeq;
+    if (at == null) continue;
+    if (at === seq) {
+      best = rows[i];
+      if (!(nth > 0)) return best;
+      nth--;
+    } else if (at < seq) best = rows[i];
+    else break;
+  }
+  return best;
+}
+// keepTop keeps the reader where they are: a rebuild of the same conversation
+// (live sync refresh) while they read older history.
+function renderLoadedTranscript(keepTop) {
   cancelInitialTranscriptTail();
-  var oldHeight = stage.scrollHeight;
-  var oldTop = stage.scrollTop;
   stream.innerHTML = "";
   toolRows = {}; workerRows = {}; openToolOrder = [];
   // Same conversation: the worker panel stays and is re-bound below.
@@ -651,31 +702,49 @@ function renderLoadedTranscript(preserveScroll) {
   // Rows own their complete lazy payloads and unresolved boundary messages.
   // The raw page wrappers are no longer read after this successful render.
   loadedTranscriptMessages = [];
-  if (preserveScroll) {
-    stage.scrollTop = oldTop + Math.max(0, stage.scrollHeight - oldHeight);
-  } else {
-    settleInitialTranscriptTail();
-  }
+  // keepTop: the caller puts the reader back with applyTranscriptAnchor.
+  if (!keepTop) settleInitialTranscriptTail();
   if (typeof resumeWorkerStatusSync === "function") resumeWorkerStatusSync();
 }
 
-async function loadOlderTranscript() {
+// One older page at a time; a second call while one loads waits for it.
+var olderTranscriptLoading = null;
+function loadOlderTranscript() {
+  if (olderTranscriptLoading) return olderTranscriptLoading;
+  var done = olderTranscriptLoading = loadOlderTranscriptPage();
+  done.then(function () { if (olderTranscriptLoading === done) olderTranscriptLoading = null; });
+  return done;
+}
+// Resolves true when a page was added.
+async function loadOlderTranscriptPage() {
   cancelInitialTranscriptTail();
-  if (!transcriptHasMore || !transcriptBeforeSeq || !transcriptSessionID) return;
+  if (!transcriptHasMore || !transcriptBeforeSeq || !transcriptSessionID) return false;
   var sessionID = transcriptSessionID;
   var button = stream.querySelector(".history-older");
   if (button) {
     button.disabled = true;
     button.textContent = t("session.loadingOlder");
   }
-  if (transcriptAbortCtl) transcriptAbortCtl.abort();
+  if (olderTranscriptAbortCtl) olderTranscriptAbortCtl.abort();
   var controller = new AbortController();
-  transcriptAbortCtl = controller;
+  olderTranscriptAbortCtl = controller;
   try {
     var page = await j("/api/transcript?id=" + encodeURIComponent(sessionID) +
       "&limit=" + transcriptPageSize + "&before=" + transcriptBeforeSeq, { signal: controller.signal });
-    if (sessionID !== transcriptSessionID || controller !== transcriptAbortCtl) return;
+    if (sessionID !== transcriptSessionID || controller !== olderTranscriptAbortCtl) return false;
+    // The view was rebuilt meanwhile: its own pager continues from its cursor.
+    if (button && !button.isConnected) return false;
     var olderMessages = page.messages || [];
+    // Messages of a re-attached background run are replayed from its events.
+    var endSeq = transcriptHistoryEndSeq;
+    if (endSeq > 0) olderMessages = olderMessages.filter(function (m) { return m.seq < endSeq; });
+    // A page made only of such messages is skipped, not shown as nothing.
+    while (!olderMessages.length && page.has_more && page.before_seq > 0) {
+      page = await j("/api/transcript?id=" + encodeURIComponent(sessionID) +
+        "&limit=" + transcriptPageSize + "&before=" + page.before_seq, { signal: controller.signal });
+      if (sessionID !== transcriptSessionID || controller !== olderTranscriptAbortCtl || (button && !button.isConnected)) return false;
+      olderMessages = (page.messages || []).filter(function (m) { return !(endSeq > 0) || m.seq < endSeq; });
+    }
     var oldHeight = stage.scrollHeight;
     var oldTop = stage.scrollTop;
     // An older page must not rebuild the existing transcript: it may contain
@@ -706,17 +775,33 @@ async function loadOlderTranscript() {
       } else button.remove();
     }
     stage.scrollTop = Math.max(0, oldTop + stage.scrollHeight - oldHeight);
+    return true;
   } catch (e) {
-    if (e.name !== "AbortError") {
-      toast(t("common.error") + ": " + e.message);
-      if (button && button.isConnected) {
-        button.disabled = false;
-        button.textContent = t("session.older");
-      }
+    if (e.name !== "AbortError") toast(t("common.error") + ": " + e.message);
+    // An aborted or failed page never leaves the pager stuck on "loading".
+    if (button && button.isConnected) {
+      button.disabled = false;
+      button.textContent = t("session.older");
     }
+    return false;
   } finally {
-    if (controller === transcriptAbortCtl) transcriptAbortCtl = null;
+    if (controller === olderTranscriptAbortCtl) olderTranscriptAbortCtl = null;
   }
+}
+
+// Loads older pages until find() returns something or the history ends.
+async function loadOlderTranscriptUntil(find, maxPages) {
+  var found = find();
+  var misses = 0;
+  for (var n = 0; !found && transcriptHasMore && n < (maxPages || 400); n++) {
+    var sessionID = transcriptSessionID;
+    var added = await loadOlderTranscript();
+    if (sessionID !== transcriptSessionID) return null;
+    found = find();
+    // A page lost to a rebuild is retried from the new pager a few times.
+    if (!added && ++misses > 3) break;
+  }
+  return found || null;
 }
 
 async function resumeSession(id, session, fromQueue, fromSync) {
@@ -737,6 +822,15 @@ async function resumeSession(id, session, fromQueue, fromSync) {
   if (transcriptAbortCtl) transcriptAbortCtl.abort();
   var controller = new AbortController();
   transcriptAbortCtl = controller;
+  // A rebuild of the conversation on screen keeps the older pages the reader
+  // already loaded and their scroll position; another conversation starts at
+  // its latest page.
+  var sameView = !!fromSync && transcriptSessionID === id && activeSessionID === id;
+  var keepFromSeq = sameView && transcriptBeforeSeq > 0 ? transcriptBeforeSeq : 0;
+  // (A position saved while the page was hidden is restored by its own code.)
+  var keepTop = sameView && typeof transcriptFollowTail === "boolean" && !transcriptFollowTail &&
+    !(typeof savedTranscriptScroll === "function" && savedTranscriptScroll());
+  if (!sameView && olderTranscriptAbortCtl) { olderTranscriptAbortCtl.abort(); olderTranscriptAbortCtl = null; }
   setSessionOpening(id);
   try {
     if (typeof syncWatchSession === "function") await syncWatchSession(id);
@@ -746,10 +840,23 @@ async function resumeSession(id, session, fromQueue, fromSync) {
       { signal: controller.signal });
     var msgs = page.messages || [];
     if (epoch !== projectEpoch || resumeSeq !== sessionResumeSeq) return false;
+    // Catch up to the oldest page this view already showed (bounded).
+    for (var catchUp = 0; keepFromSeq && page.has_more && page.before_seq > keepFromSeq && catchUp < 40; catchUp++) {
+      page = await j("/api/transcript?id=" + encodeURIComponent(id) + "&limit=500&before=" + page.before_seq,
+        { signal: controller.signal });
+      if (epoch !== projectEpoch || resumeSeq !== sessionResumeSeq) return false;
+      msgs = (page.messages || []).concat(msgs);
+    }
+    // Exactly the rows shown before (a 500-row page may reach further back).
+    if (keepFromSeq && msgs.length && msgs[0].seq < keepFromSeq) {
+      msgs = msgs.filter(function (m) { return m.seq >= keepFromSeq; });
+      page = {has_more: true, before_seq: keepFromSeq};
+    }
     // A background run of this conversation is replayed from its own events;
     // saved history stops before its first message to avoid duplicates.
     var liveRun = backgroundRunFor(id);
     if (liveRun) msgs = msgs.filter(function (m) { return m.seq < liveRun.userSeq; });
+    transcriptHistoryEndSeq = liveRun && liveRun.userSeq > 0 ? liveRun.userSeq : 0;
     activeSessionID = id;
     composerDraftStore.restore("session:" + id);
     transcriptSessionID = id;
@@ -761,10 +868,20 @@ async function resumeSession(id, session, fromQueue, fromSync) {
     loadedTranscriptMessages = msgs;
     transcriptHasMore = !!page.has_more;
     transcriptBeforeSeq = page.before_seq || 0;
-    renderLoadedTranscript(false);
+    var anchor = keepTop ? transcriptViewAnchor() : null;
+    renderLoadedTranscript(keepTop);
     if (liveRun) reattachDetachedRun(id);
     else showFailedRun(id);
     if (openBefore && typeof restoreOpenDisclosures === "function") restoreOpenDisclosures(openBefore);
+    if (anchor) {
+      applyTranscriptAnchor(anchor);
+      // Again once lazy content has its painted size, unless the reader
+      // scrolled meanwhile.
+      var placedTop = stage.scrollTop;
+      requestAnimationFrame(function () {
+        if (resumeSeq === sessionResumeSeq && !transcriptFollowTail && Math.abs(stage.scrollTop - placedTop) < 1) applyTranscriptAnchor(anchor);
+      });
+    }
     // A run that started elsewhere and is not shown yet keeps its message.
     if (typeof syncAfterHistoryRender === "function") syncAfterHistoryRender(id, fetchStartedAt);
     loadSessions();

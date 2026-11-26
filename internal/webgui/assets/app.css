@@ -2451,6 +2451,12 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
 .worker-overview-item { display: grid; grid-template-columns: 7px auto minmax(0, 1fr) minmax(0, max-content) auto; align-items: center; gap: 9px; width: 100%; text-align: left; border: 0; border-radius: 5px; background: transparent; color: var(--text); padding: 7px 6px; cursor: pointer; font: var(--fs-xs) var(--sans); }
 .worker-overview-item:hover, .worker-overview-item:focus-visible { background: var(--line-soft); }
 .worker-overview-item:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.worker-overview-item.loading { cursor: progress; opacity: .65; }
+.worker-overview-item.loading .worker-overview-dot { animation: worker-reveal-pulse .8s ease-in-out infinite alternate; }
+@keyframes worker-reveal-pulse { from { opacity: .35; } to { opacity: 1; } }
+.task-row.worker-card-flash { animation: worker-card-flash 1.6s ease-out; scroll-margin-top: 12px; }
+@keyframes worker-card-flash { 0%, 35% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent); } 100% { box-shadow: 0 0 0 2px transparent; } }
+@media (prefers-reduced-motion: reduce) { .task-row.worker-card-flash, .worker-overview-item.loading .worker-overview-dot { animation: none; } }
 .worker-overview-name { font-weight: 600; }
 .worker-overview-name, .worker-overview-activity { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .worker-overview-activity { color: var(--muted); }

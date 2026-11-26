@@ -1398,16 +1398,12 @@ async function sendPrompt(text, attachments, draft, queuedItem, dispatchScope) {
     return;
   }
   queueAutoDrain = null; // A new root turn supersedes any deferred old handoff.
-  // Once a live turn starts, the DOM becomes append-only again. Retire the
-  // history pager so a late older-page response cannot rebuild the transcript
-  // over messages currently arriving from SSE.
+  // Once a live turn starts, the DOM becomes append-only again: a late
+  // latest-page load must not rebuild it. The older-history pager stays: an
+  // older page is inserted above the loaded rows and never touches new ones.
   if (transcriptAbortCtl) transcriptAbortCtl.abort();
   transcriptAbortCtl = null;
-  transcriptHasMore = false;
-  transcriptBeforeSeq = 0;
   loadedTranscriptMessages = [];
-  var olderHistory = stream.querySelector(".history-older");
-  if (olderHistory) olderHistory.remove();
   streaming = true;
   var run = { detached: false, accepted: false, terminal: false, sessionID: activeSessionID, userSeq: 0, activity: null, events: [] };
   activeRun = run;
@@ -1537,13 +1533,10 @@ async function sendPrompt(text, attachments, draft, queuedItem, dispatchScope) {
   // Shows this background run in the current view again: the caller has
   // rendered saved history before its first message; the replay adds the rest.
   run.reattach = function () {
+    // Older history stays reachable while the run is shown (see sendPrompt).
     if (transcriptAbortCtl) transcriptAbortCtl.abort();
     transcriptAbortCtl = null;
-    transcriptHasMore = false;
-    transcriptBeforeSeq = 0;
     loadedTranscriptMessages = [];
-    var pager = stream.querySelector(".history-older");
-    if (pager) pager.remove();
     run.detached = false;
     activeRun = run;
     streaming = true;
@@ -2191,9 +2184,12 @@ function newSession() {
   clearAttachments();
   if (transcriptAbortCtl) transcriptAbortCtl.abort();
   transcriptAbortCtl = null;
+  if (olderTranscriptAbortCtl) olderTranscriptAbortCtl.abort();
+  olderTranscriptAbortCtl = null;
   loadedTranscriptMessages = [];
   transcriptHasMore = false;
   transcriptBeforeSeq = 0;
+  transcriptHistoryEndSeq = 0;
   transcriptSessionID = "";
   activeSessionID = "";
   if (typeof syncSelectSession === "function") syncSelectSession("");

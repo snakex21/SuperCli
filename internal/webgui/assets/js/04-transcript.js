@@ -199,8 +199,12 @@ function releaseLiveTranscriptBlocks() {
 }
 
 function nearBottom() { return stage.scrollHeight - stage.scrollTop - stage.clientHeight < 120; }
+// While a jump to a card scrolls smoothly, its first scroll events are still
+// near the bottom; they must not turn tail-following back on (live updates
+// would then pull the view down again mid-jump).
+var transcriptScrollHoldUntil = 0;
 stage.addEventListener("scroll", function () {
-  if (!initialTranscriptTail && !savedTranscriptScroll()) transcriptFollowTail = nearBottom();
+  if (!initialTranscriptTail && !savedTranscriptScroll() && Date.now() >= transcriptScrollHoldUntil) transcriptFollowTail = nearBottom();
   queueJumpLatestUpdate();
 }, { passive: true });
 
@@ -1369,12 +1373,7 @@ function updateWorkerOverview(id, agentName, status, activity, row) {
     item = workerOverview[id] = { id: id };
     item.button = el("button", "worker-overview-item");
     item.button.type = "button";
-    item.button.addEventListener("click", function () {
-      if (!item.row || !item.row.isConnected) return;
-      item.row.open = true;
-      item.row._body.hidden = false;
-      item.row.scrollIntoView({ block: "center", behavior: "smooth" });
-    });
+    item.button.addEventListener("click", function () { revealWorkerCard(id, item.button); });
     item.button.appendChild(el("span", "worker-overview-dot"));
     item.label = el("span", "worker-overview-name");
     item.detail = el("span", "worker-overview-activity");
@@ -1408,6 +1407,66 @@ function updateWorkerOverview(id, agentName, status, activity, row) {
   renderWorkerOverview();
   // A new or re-bound button shows its worker's liveness line at once.
   if (nextRow && nextRow._liveness) renderWorkerLiveness(nextRow);
+}
+// The worker's card in the chat: its bound row, else the latest card with
+// its id (a rebuild may have replaced the bound one).
+function workerCardFor(id) {
+  var row = workerRows[id];
+  if (row && row.isConnected) return row;
+  var item = workerOverview[id];
+  if (item && item.row && item.row.isConnected) return item.row;
+  var found = null;
+  if (typeof stream.querySelectorAll === "function") stream.querySelectorAll("details.task-row").forEach(function (r) { if (r._taskID === id) found = r; });
+  return found;
+}
+// A click on a worker in the panel above the chat: load older history until
+// its card is there (a short loading state, no jumping meanwhile), open it the
+// same way a click on the card does, scroll to it once and highlight it.
+var workerRevealSeq = 0;
+async function revealWorkerCard(id, button) {
+  var seq = ++workerRevealSeq;
+  var row = workerCardFor(id);
+  if (!row && typeof loadOlderTranscriptUntil === "function" && transcriptHasMore) {
+    if (button) { button.classList.add("loading"); button.setAttribute("aria-busy", "true"); }
+    try {
+      row = await loadOlderTranscriptUntil(function () { return workerCardFor(id); });
+    } finally {
+      if (button) { button.classList.remove("loading"); button.removeAttribute("aria-busy"); }
+    }
+    if (seq !== workerRevealSeq) return;
+    row = workerCardFor(id);
+  }
+  if (!row) return;
+  if (!row.open) toggleTaskRow(row);
+  else if (row._body) row._body.hidden = false;
+  // Reading this card: live output must not pull the view to the end.
+  transcriptFollowTail = false;
+  if (typeof cancelInitialTranscriptTail === "function") cancelInitialTranscriptTail();
+  var summary = row.querySelector("summary") || row;
+  var measurable = typeof stage.getBoundingClientRect === "function" && typeof summary.getBoundingClientRect === "function";
+  function offView() {
+    if (!measurable) return true;
+    var view = stage.getBoundingClientRect(), at = summary.getBoundingClientRect();
+    return at.top < view.top || at.bottom > view.bottom;
+  }
+  if (offView()) {
+    transcriptScrollHoldUntil = Date.now() + 1500;
+    // A far card: come within one screen at once, then glide the rest (a
+    // long smooth scroll over lazily sized rows overshoots or stops short).
+    var gap = measurable ? summary.getBoundingClientRect().top - stage.getBoundingClientRect().top : 0;
+    var reach = (stage.clientHeight || 0) * 0.75;
+    if (reach > 0 && Math.abs(gap) > reach * 2) stage.scrollTop += gap - (gap > 0 ? reach : -reach);
+    row.scrollIntoView({ block: "start", behavior: "smooth" });
+    // Rows that got their real size during the glide can leave it short.
+    setTimeout(function () {
+      if (seq === workerRevealSeq && row.isConnected && offView()) row.scrollIntoView({ block: "start" });
+    }, 700);
+  }
+  if (row.classList && row.classList.remove) row.classList.remove("worker-card-flash");
+  void row.offsetWidth;
+  if (row.classList && row.classList.add) row.classList.add("worker-card-flash");
+  clearTimeout(row._flashTimer);
+  row._flashTimer = setTimeout(function () { row.classList.remove("worker-card-flash"); }, 1600);
 }
 function renderWorkerTotal(item) {
   if (!item || !item.total) return;

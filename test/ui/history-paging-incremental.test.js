@@ -210,7 +210,7 @@ test('stale or failed requests leave current content intact and allow a retry', 
   const row = h.c.stream.querySelector('.tool-row'), imageCount = h.stats.imageSources;
   let finish; h.c.j = () => new Promise(resolve => { finish = resolve; });
   const pending = h.c.loadOlderTranscript();
-  h.c.transcriptAbortCtl = null;
+  h.c.olderTranscriptAbortCtl = null; // superseded (older pages have their own request)
   finish({messages: messages(1, 1), has_more: false}); await pending;
   assert.equal(h.c.stream.querySelector('.tool-row'), row); assert.equal(h.stats.imageSources, imageCount);
   h.c.j = async () => { throw Error('offline'); }; await h.c.loadOlderTranscript();
