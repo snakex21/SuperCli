@@ -4,9 +4,9 @@ tui profile=small-orchestrator
 visible: ask_user,tool_search,apply_skill,remember,recall,goal,read_output,task,send_message,task_stop,web_lookup
 read_image [ro] desc=c3613d57535b schema=03f6c6408bd1 fn=supercli/internal/tools/media.(*ReadImageTool).Execute-fm
 ask_user [on] desc=9951814db096 schema=2d18c1db508f fn=supercli/internal/tools/interactive.(*AskUser).Execute-fm
-search_code [ro] desc=37742248d322 schema=4fe96f18a70b fn=supercli/internal/tools/search.(*SearchCode).run-fm
+search_code [ro] desc=37742248d322 schema=4fe96f18a70b fn=supercli/internal/tools/search.(*SearchCode).runBounded-fm
 code_intel [] desc=67ef1241e6bd schema=e2c1a9873c3c fn=supercli/internal/tools/codeintel.(*Tool).Execute-fm
-process_session [approval] desc=ffde6bd7cf9b schema=8e446bef10e3 fn=supercli/internal/tools/processsession.(*Tool).Execute-fm
+process_session [approval] desc=e00fd0300c4d schema=87f94c43b468 fn=supercli/internal/tools/processsession.(*Tool).Execute-fm
 headless_control [approval] desc=6ec03ee68991 schema=67269f3aac73 fn=supercli/internal/tools/headless.(*Tool).Execute-fm
 read_zip [] desc=35e8dffa5506 schema=7d6d0f06ca7e fn=supercli/internal/tools/office.(*ReadZipTool).Execute-fm
 read_docx [] desc=a3cf0006a0c2 schema=f7ef85111b45 fn=supercli/internal/tools/office.(*ReadDocxTool).Execute-fm

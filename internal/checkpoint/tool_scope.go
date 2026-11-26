@@ -69,13 +69,21 @@ func (t *Turn) ensureBeforeForToolNotice(ctx context.Context, name string, args 
 		if name == "ctx_execute" {
 			workdir, _ := t.manager.commandWorkdirRoot(args)
 			t.manager.noteCommandCaches(args, workdir)
+			// A workspace known to be over the snapshot budget is not tried
+			// again on every command (see snapshot_budget_memo.go).
+			if limit := t.manager.overBudget(); limit != nil && !(t.touched && t.wholeWorkspace) {
+				notice, err := t.limitedCommandBeforeLocked(ctx, args, limit)
+				return t.onceNotice(notice), err
+			}
 			capture = func(ctx context.Context) error { return budgetedSnapshot(ctx, t.ensureWholeBeforeLocked) }
 		}
 		err := capture(ctx)
 		if err == nil || name != "ctx_execute" || !errors.Is(err, ErrSnapshotLimit) {
 			return "", err
 		}
-		return t.limitedCommandBeforeLocked(ctx, args, err)
+		t.manager.rememberOverBudget(err)
+		notice, err := t.limitedCommandBeforeLocked(ctx, args, err)
+		return t.onceNotice(notice), err
 	}
 	return "", t.ensureScopedBeforeLocked(ctx, roots)
 }
@@ -87,8 +95,11 @@ func (t *Turn) ensureBeforeForToolNotice(ctx context.Context, name string, args 
 // If the workdir baseline is still too large, the command runs without a new
 // baseline and the returned notice is appended to the visible tool result.
 func (t *Turn) limitedCommandBeforeLocked(ctx context.Context, args json.RawMessage, limitErr error) (string, error) {
-	if root, ok := t.manager.commandWorkdirRoot(args); ok {
+	if root, ok := t.manager.commandWorkdirRoot(args); ok && !t.manager.rootOverBudget(root) {
 		err := budgetedSnapshot(ctx, func(ctx context.Context) error { return t.ensureScopedBeforeLocked(ctx, []string{root}) })
+		if errors.Is(err, ErrSnapshotLimit) {
+			t.manager.rememberRootOverBudget(root)
+		}
 		if err == nil {
 			return fmt.Sprintf("[Checkpoint ograniczony do workdir %q: caly workspace przekracza limit snapshotu (%v). Zmiany tej komendy poza %q NIE zostana cofniete przez undo.]", root, limitErr, root), nil
 		}

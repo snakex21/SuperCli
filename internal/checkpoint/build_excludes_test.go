@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -148,4 +149,93 @@ func TestSlowWorkspaceSnapshotDoesNotBlockOtherAgentsWrite(t *testing.T) {
 		t.Fatalf("no visible note for the skipped snapshot: %q", r.notice)
 	}
 	t.Logf("write waited %s; command checkpoint took %s; note: %s", writeWait, r.took, r.notice)
+}
+
+// Audited: in a 224 GB workspace every command spent up to 8 s on a snapshot
+// that never fit, with a warning each time (1,170 of them). After the first
+// over-budget capture the workspace skips the attempt and a turn shows the
+// notice once; the attempt comes back after the recheck interval.
+func TestOverBudgetSnapshotIsRememberedAndNoticedOnce(t *testing.T) {
+	// Not parallel: package globals (scan hook, budgets).
+	home := t.TempDir()
+	var files []string
+	for i := 0; i < 200; i++ {
+		files = append(files, fmt.Sprintf("data/part-%03d.txt", i))
+	}
+	writeTree(t, home, files...)
+	m := openExcludeManager(t, home)
+	savedBudget, savedRecheck := WholeSnapshotBudget, SnapshotBudgetRecheck
+	WholeSnapshotBudget = 150 * time.Millisecond
+	var scans atomic.Int64
+	setSnapshotScanHook(func(string) { scans.Add(1); time.Sleep(5 * time.Millisecond) })
+	defer func() {
+		WholeSnapshotBudget, SnapshotBudgetRecheck = savedBudget, savedRecheck
+		setSnapshotScanHook(nil)
+	}()
+
+	turn := m.NewTurn("session-1", "build")
+	cmd := []byte(`{"command":["gradlew","build"]}`)
+	first, err := turn.ensureBeforeForToolNotice(context.Background(), "ctx_execute", cmd)
+	if err != nil || !strings.Contains(first, "UWAGA") {
+		t.Fatalf("first over-budget command: %q %v", first, err)
+	}
+	scansAfterFirst := scans.Load()
+	for i := 0; i < 3; i++ {
+		begin := time.Now()
+		notice, err := turn.ensureBeforeForToolNotice(context.Background(), "ctx_execute", cmd)
+		if err != nil || notice != "" {
+			t.Fatalf("command %d: notice %q err %v (want no repeated notice)", i+2, notice, err)
+		}
+		if took := time.Since(begin); took > 100*time.Millisecond {
+			t.Fatalf("command %d tried the snapshot again (%s)", i+2, took)
+		}
+	}
+	if scans.Load() != scansAfterFirst {
+		t.Fatal("the remembered over-budget workspace was scanned again")
+	}
+	// Another turn (another worker run) gets the notice once too.
+	other := m.NewTurn("session-1", "worker")
+	if notice, _ := other.ensureBeforeForToolNotice(context.Background(), "ctx_execute", cmd); !strings.Contains(notice, "UWAGA") {
+		t.Fatalf("a new turn must say once that undo is unavailable: %q", notice)
+	}
+	// After the recheck interval the snapshot is tried again.
+	budgetMemo.Lock()
+	budgetMemo.byStore[m.budgetStore()].Until = time.Now().Add(-time.Second)
+	budgetMemo.Unlock()
+	recheck := m.NewTurn("session-1", "later")
+	_, _ = recheck.ensureBeforeForToolNotice(context.Background(), "ctx_execute", cmd)
+	if scans.Load() == scansAfterFirst {
+		t.Fatal("the snapshot was never re-checked")
+	}
+}
+
+// The remembered limit is shared by every Manager of the workspace (each GUI
+// run opens its own) and survives a restart; forgetting it re-checks.
+func TestOverBudgetMemoIsSharedAndPersisted(t *testing.T) {
+	home := t.TempDir()
+	writeTree(t, home, "src/a.txt")
+	data := t.TempDir()
+	first, err := Open(home, data)
+	if err != nil {
+		t.Skip(err)
+	}
+	first.rememberOverBudget(snapshotLimit("workspace snapshot took longer than 8s"))
+	second, err := Open(home, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := second.overBudget(); err == nil || !errors.Is(err, ErrSnapshotLimit) || strings.Count(err.Error(), "Use file tools") != 1 {
+		t.Fatalf("another Manager of the workspace: %v", err)
+	}
+	// A restart: the in-memory memo is gone, the saved one is read.
+	budgetMemo.Lock()
+	delete(budgetMemo.byStore, second.budgetStore())
+	budgetMemo.Unlock()
+	if second.overBudget() == nil {
+		t.Fatal("the remembered limit did not survive a restart")
+	}
+	second.ForgetSnapshotBudget()
+	if first.overBudget() != nil {
+		t.Fatal("forgetting did not re-check")
+	}
 }

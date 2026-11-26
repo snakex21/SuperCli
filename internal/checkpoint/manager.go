@@ -144,6 +144,7 @@ func Open(home, dataDir string) (*Manager, error) {
 
 type Turn struct {
 	mu                        contextMutex
+	shownNotices              map[string]bool // snapshot-limit notices shown once per turn
 	manager                   *Manager
 	sessionID, prompt, before string
 	userSeq                   int

@@ -62,7 +62,7 @@ func (s *SearchCode) Spec() Tool {
 				"context": {"type": "integer", "minimum": 0, "description": "surrounding lines, capped at 20; default auto for up to 3 hits, 0 = locations"}
 			}
 		}`,
-		Fn: s.run,
+		Fn: s.runBounded,
 	}
 }
 

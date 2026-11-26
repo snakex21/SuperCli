@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -50,7 +51,40 @@ func (a *AgentTool) reviewSnapshot(ctx context.Context, w *Worker) string {
 	if w == nil || w.Loop == nil || !checkpoint.HasCheckpointMutators(w.Loop.registry) {
 		return ""
 	}
-	return workspaceFingerprint(ctx, a.reviewDir(w))
+	return recentFingerprint(ctx, a.reviewDir(w))
+}
+
+// Workers started together (one coordinator turn) share one "before"
+// fingerprint of the same directory instead of each scanning the workspace.
+var fingerprintCache = struct {
+	sync.Mutex
+	byDir map[string]fingerprintEntry
+}{byDir: map[string]fingerprintEntry{}}
+
+type fingerprintEntry struct {
+	at    time.Time
+	value string
+}
+
+const fingerprintReuse = 10 * time.Second
+
+func recentFingerprint(ctx context.Context, dir string) string {
+	fingerprintCache.Lock()
+	if e, ok := fingerprintCache.byDir[dir]; ok && time.Since(e.at) < fingerprintReuse {
+		fingerprintCache.Unlock()
+		return e.value
+	}
+	fingerprintCache.Unlock()
+	value := workspaceFingerprint(ctx, dir)
+	fingerprintCache.Lock()
+	for d, e := range fingerprintCache.byDir { // bounded: drop stale entries
+		if time.Since(e.at) >= fingerprintReuse {
+			delete(fingerprintCache.byDir, d)
+		}
+	}
+	fingerprintCache.byDir[dir] = fingerprintEntry{at: time.Now(), value: value}
+	fingerprintCache.Unlock()
+	return value
 }
 
 // reviewRun is the worker's reviewHook. before is the workspace fingerprint
@@ -63,6 +97,11 @@ func (a *AgentTool) reviewRun(ctx context.Context, w *Worker, before string) str
 	// File tools count directly; changes made by commands (git commit, go
 	// generate, sed) show in the workspace fingerprint (review 4).
 	changed := w.Loop.runMutations.Load() > 0
+	if !changed && before != "" && w.Snapshot().CommandsRun == 0 {
+		// No file tool and no command ran: nothing can have changed, and a
+		// second scan of a huge workspace is skipped.
+		return ReviewNoChanges
+	}
 	if !changed && before != "" {
 		after := workspaceFingerprint(ctx, dir)
 		if before == fingerprintUnchecked || after == fingerprintUnchecked || after == "" {
@@ -250,7 +289,10 @@ func workspaceFingerprint(ctx context.Context, dir string) string {
 		// that worker: the worker's own for a background run, the
 		// coordinator's tool call for a synchronous delegation. Never on the
 		// GUI request path.
-		status, err := git("status", "--porcelain=v1", "-z", "--untracked-files=all")
+		// Untracked directories as one entry each (their stat below still
+		// changes when files are added): listing every untracked file walked
+		// huge generated trees on every worker start and end.
+		status, err := git("status", "--porcelain=v1", "-z", "--untracked-files=normal")
 		if err == nil {
 			h := sha256.New()
 			for _, part := range []string{head, status} {
