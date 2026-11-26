@@ -267,6 +267,11 @@ func (s *Store) migrate() error {
 			return err
 		}
 	}
+	// Worker listings filter by session and status and sort by time without
+	// a temp-file sort over transcript-sized rows.
+	if _, err := s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_session_workers_updated ON session_workers(session_id, updated_at)`); err != nil {
+		return err
+	}
 	if err := s.ensureTableColumn("prompt_queue", "merge_dirty", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}

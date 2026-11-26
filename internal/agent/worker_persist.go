@@ -43,6 +43,12 @@ type WorkerStore interface {
 	SetWorkerStatus(ctx context.Context, sessionID, id, status, reason string) error
 }
 
+// WorkerSummaryLister is an optional WorkerStore extension: saved workers
+// without transcripts (Messages nil); activeOnly keeps created/running rows.
+type WorkerSummaryLister interface {
+	ListWorkerSummaries(ctx context.Context, sessionID string, activeOnly bool) ([]WorkerRecord, error)
+}
+
 // workerNotStartedReason is the saved, user-visible reason of a worker whose
 // first run never began.
 func workerNotStartedReason(err error) string {
@@ -248,7 +254,15 @@ func (r *WorkerRegistry) ReconcileSavedWorkers(ctx context.Context, sessionID st
 	if store == nil || sessionID == "" {
 		return nil, nil
 	}
-	recs, err := store.ListWorkers(ctx, sessionID)
+	// Only rows that claim to be active, without transcripts (the full list
+	// read every worker's history on each GUI poll).
+	var recs []WorkerRecord
+	var err error
+	if lister, ok := store.(WorkerSummaryLister); ok {
+		recs, err = lister.ListWorkerSummaries(ctx, sessionID, true)
+	} else {
+		recs, err = store.ListWorkers(ctx, sessionID)
+	}
 	if err != nil {
 		return nil, err
 	}

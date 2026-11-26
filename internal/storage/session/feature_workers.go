@@ -114,6 +114,33 @@ func (s *Store) ListWorkers(ctx context.Context, sessionID string) ([]WorkerRow,
 	return out, rows.Err()
 }
 
+// ListWorkerSummaries returns a session's saved workers without transcripts
+// (Messages nil), oldest first; activeOnly keeps "created"/"running" rows.
+// Listings and status polls use it: selecting messages_json for every worker
+// read hundreds of MB per GUI poll in a session with ~400 workers.
+func (s *Store) ListWorkerSummaries(ctx context.Context, sessionID string, activeOnly bool) ([]WorkerRow, error) {
+	query := `SELECT session_id,worker_id,agent,description,model,base_dir,status,last_error,runs,updated_at,commands_run,checks_run FROM session_workers WHERE session_id=?`
+	if activeOnly {
+		query += ` AND status IN ('created','running')`
+	}
+	rows, err := s.db.QueryContext(ctx, query+` ORDER BY updated_at`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []WorkerRow
+	for rows.Next() {
+		var row WorkerRow
+		var updated int64
+		if err := rows.Scan(&row.SessionID, &row.ID, &row.Agent, &row.Description, &row.Model, &row.BaseDir, &row.Status, &row.LastError, &row.Runs, &updated, &row.CommandsRun, &row.ChecksRun); err != nil {
+			return nil, err
+		}
+		row.UpdatedAt = time.UnixMilli(updated)
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
 // WorkerBrief is a saved worker without its transcript.
 type WorkerBrief struct {
 	ID, Agent, Description, Status string

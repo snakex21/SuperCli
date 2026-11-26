@@ -319,7 +319,14 @@ func (e *Engine) savedWorkerRows(ctx context.Context, sid string, seen map[strin
 	if store == nil {
 		return nil
 	}
-	recs, err := store.ListWorkers(ctx, sid)
+	// Listing only: no transcripts (see WorkerSummaryLister).
+	var recs []agent.WorkerRecord
+	var err error
+	if lister, ok := store.(agent.WorkerSummaryLister); ok {
+		recs, err = lister.ListWorkerSummaries(ctx, sid, false)
+	} else {
+		recs, err = store.ListWorkers(ctx, sid)
+	}
 	if err != nil {
 		return nil
 	}
