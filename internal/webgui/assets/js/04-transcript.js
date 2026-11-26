@@ -3485,7 +3485,7 @@ function addHistoryTask(note, prompt, savedActivity) {
 // built off-page gets a 2 s grace.
 function rowClockInterval(row, update) {
   var away = 0, timer = setInterval(function () {
-    if (!row.isConnected) {
+    if (row.isConnected === false) {
       if (++away >= 8) { clearInterval(timer); if (row._clock === timer) row._clock = null; }
       return;
     }
