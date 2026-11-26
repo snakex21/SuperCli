@@ -2764,6 +2764,7 @@ kbd.recording { border-color: var(--accent); color: var(--accent); }
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .task-run-meta { margin: 0 0 6px; color: var(--faint); font: var(--fs-xs) var(--sans); }
+.task-network-wait { margin: 0 0 6px; color: var(--muted); font: var(--fs-xs) var(--sans); }
 .task-run-meta[hidden] { display: none; }
 .worker-overview-item.stalled .worker-overview-live, .worker-overview-item.stalled .worker-overview-status { color: var(--status-pending); }
 /* State changes animate in place; rows are never removed and re-added. */

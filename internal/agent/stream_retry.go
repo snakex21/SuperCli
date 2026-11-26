@@ -265,9 +265,20 @@ func (l *Loop) completeWithStreamRetry(ctx context.Context, toolRequest prepared
 		return "", nil, nil, err
 	}
 	text, calls, usage, err := l.completeOnce(ctx, toolRequest, out)
+	networkWaited := false
 	for retries := 0; ; {
 		if ctx.Err() != nil {
 			return text, calls, usage, ctx.Err()
+		}
+		if !networkWaited && isNetworkDrop(err) {
+			networkWaited = true
+			// The network went away: wait for it and send the request again,
+			// also after visible output (withdrawn first). network_wait.go.
+			text, calls, usage, err = l.retryThroughNetworkLoss(ctx, toolRequest, out, text, calls, usage, err)
+			if err == nil || IsNetworkStop(err) || ctx.Err() != nil {
+				break
+			}
+			continue
 		}
 		if err == nil || !nothingVisibleYet(text, calls) {
 			break

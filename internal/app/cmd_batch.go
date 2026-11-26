@@ -353,6 +353,11 @@ func runBatch(userPrompt, home, dataDir, providerFlag, keyFlag, baseFlag, modelF
 				// Provider status (rate-limit retry etc.) — stderr so it
 				// never pollutes the assistant output on stdout.
 				fmt.Fprintf(os.Stderr, "[notice] %s\n", e.Text)
+			case agent.NetworkWaitEvent:
+				fmt.Fprintf(os.Stderr, "[network] waiting=%v\n", e.Waiting)
+			case agent.StreamDiscardEvent:
+				// Already printed text is repeated by the retried request.
+				fmt.Fprintf(os.Stderr, "[network] connection lost mid-answer; %d characters are repeated\n", len(e.Text))
 			case agent.ToolResultsPrunedEvent:
 				fmt.Fprintf(os.Stderr, "[prune] results=%d reclaimed=%d est=%d threshold=%d threshold_source=%s window=%d\n",
 					e.Pruned, e.Reclaimed, e.Estimated, e.Threshold, e.ThresholdSource, e.Window)

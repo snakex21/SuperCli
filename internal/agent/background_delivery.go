@@ -93,6 +93,7 @@ func (l *Loop) appendBackgroundMessages(ctx context.Context, pending []backgroun
 		if message.scoped {
 			// Unseen only once saved: a run that loads the conversation and
 			// acknowledges must find every unseen report in what it loaded.
+			l.unseenReports.add(workerReportRef(message.content))
 			l.unseenNotices.Add(1)
 		}
 		changed = true

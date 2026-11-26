@@ -30,12 +30,37 @@ var coordinatorForeground = time.Duration(coordinatorForegroundMS) * time.Millis
 
 var backgroundCommandSeq atomic.Int64
 
+// SetConversationWorkers lets the host report the conversation's running
+// workers, including those started by earlier runs (their loops are not this
+// one). Before, only this loop's own workers counted, so a long command in a
+// new run blocked for 25 minutes while 11 reports of earlier workers waited.
+func (l *Loop) SetConversationWorkers(count func() int) {
+	l.wakeMu.Lock()
+	l.conversationWorkers = count
+	l.wakeMu.Unlock()
+}
+
+// ConversationActiveWorkers is the conversation's running background work:
+// the host's conversation-wide count, at least this loop's own.
+func (l *Loop) ConversationActiveWorkers() int {
+	n := int(l.backgroundActive.Load())
+	l.wakeMu.Lock()
+	count := l.conversationWorkers
+	l.wakeMu.Unlock()
+	if count != nil {
+		if all := count(); all > n {
+			n = all
+		}
+	}
+	return n
+}
+
 // capCoordinatorCommand reports whether a coordinator ctx_execute goes
 // through the background fallback, and returns its arguments with the
 // runaway limit as timeout (a shorter explicit timeout is kept). Workers and
 // a plain coordinator without workers run commands as before.
 func (l *Loop) capCoordinatorCommand(name string, raw json.RawMessage) (json.RawMessage, bool) {
-	if name != "ctx_execute" || l.route != RouteCoordinator || !(l.orchestrator || l.backgroundActive.Load() > 0) {
+	if name != "ctx_execute" || l.route != RouteCoordinator || !(l.orchestrator || l.ConversationActiveWorkers() > 0) {
 		return raw, false
 	}
 	var args map[string]json.RawMessage

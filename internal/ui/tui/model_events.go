@@ -198,6 +198,17 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		m.appendLine(line)
 		m.markTranscriptPresent()
 		return m, m.waitForNextEvent()
+	case agent.NetworkWaitEvent:
+		if e.Waiting {
+			m.appendLine("[" + m.localizeNotice("No connection to the model — waiting for the network…") + "]")
+		} else {
+			m.appendLine("[" + m.localizeNotice("Connection restored.") + "]")
+		}
+		return m, m.waitForNextEvent()
+	case agent.StreamDiscardEvent:
+		// The broken stream's text is repeated by the retried request.
+		m.appendLine("[" + m.localizeNotice("Connection lost mid-answer; the answer is repeated below.") + "]")
+		return m, m.waitForNextEvent()
 	case agent.NoticeEvent:
 		// Provider status (e.g. rate-limit retry wait) — show it so
 		// the user knows the run is waiting, not hung.

@@ -122,3 +122,27 @@ func messagesContain(l *Loop, text string) bool {
 	}
 	return false
 }
+
+// Audited 25-minute block: the workers were started by an earlier run (their
+// loop is not this run's), so this run's own count was 0 and a 40-minute
+// command stayed in the foreground with orchestrator mode off. The
+// conversation-wide count decides now.
+func TestCommandCapCountsWorkersOfEarlierRuns(t *testing.T) {
+	newRun := &Loop{route: RouteCoordinator}
+	if _, bg := newRun.capCoordinatorCommand("ctx_execute", json.RawMessage(`{"command":["gradlew","runClient"],"timeout_ms":2400000}`)); bg {
+		t.Fatal("no workers anywhere: the command must stay as it was")
+	}
+	running := 3
+	newRun.SetConversationWorkers(func() int { return running })
+	if _, bg := newRun.capCoordinatorCommand("ctx_execute", json.RawMessage(`{"command":["gradlew","runClient"],"timeout_ms":2400000}`)); !bg {
+		t.Fatal("workers of an earlier run did not move the long command to the background")
+	}
+	if newRun.ConversationActiveWorkers() != 3 {
+		t.Fatalf("conversation workers = %d", newRun.ConversationActiveWorkers())
+	}
+	running = 0
+	newRun.backgroundActive.Store(1)
+	if newRun.ConversationActiveWorkers() != 1 {
+		t.Fatal("this loop's own workers must count even when the host reports none")
+	}
+}

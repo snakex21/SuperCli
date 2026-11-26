@@ -409,6 +409,7 @@ func (l *Loop) ActiveBackgroundWorkers() int { return int(l.backgroundActive.Loa
 // GUI calls it on an orphaned per-run loop when a newer loop has loaded the
 // persisted conversation (which contains those reports).
 func (l *Loop) AcknowledgeBackgroundReports() {
+	l.unseenReports.take()
 	if l.unseenNotices.Swap(0) != 0 {
 		l.emitBackgroundAgents()
 	}
@@ -523,7 +524,7 @@ func (l *Loop) prepareWakeRoute() {
 	if s := l.WakeScheduler(); s != nil && s.Config().Delegate {
 		hint = wakeTurnHint
 	}
-	l.implementationHintForRun = hint + wakeUserGoal(l.Messages)
+	l.implementationHintForRun = hint + l.unseenReportsHint() + reportStatusCheckHint + wakeUserGoal(l.Messages)
 	l.statusOnlyForRun = false
 	l.wakeTurnForRun = true
 	l.userPromptForRun = ""

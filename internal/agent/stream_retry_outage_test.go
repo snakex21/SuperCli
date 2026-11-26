@@ -360,7 +360,9 @@ func TestOutageRetryInterruptedReplyIsRetainedWithoutExecutingCalls(t *testing.T
 			failed = true
 		}
 	}
-	if !failed || mutations.Load() != 0 || p.calls.Load() != 1 {
+	// A reply broken mid-stream is sent again a few times (network_wait.go);
+	// when it keeps breaking the run fails and keeps the shown part.
+	if !failed || mutations.Load() != 0 || p.calls.Load() != 1+networkUpRetries {
 		t.Fatalf("failed=%v mutations=%d calls=%d", failed, mutations.Load(), p.calls.Load())
 	}
 	if !strings.Contains(reqText(l.Messages), "partial answer") || strings.Contains(reqText(l.Messages), "partial reasoning") {

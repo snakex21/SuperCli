@@ -6,6 +6,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"supercli/internal/llm"
 )
@@ -89,6 +90,7 @@ func ApplyRetryGlobals(t TomlConfig) {
 	}
 	llm.SetMaxRetries(n)
 	llm.SetRetryUnknownErrors(t.RetryUnknownErrorsOn())
+	llm.SetNetworkWait(time.Duration(t.NetworkWaitMinutes) * time.Minute)
 	llm.ResetRequestLimits()
 	rpm := t.RequestsPerMinute
 	if rpm < 0 {

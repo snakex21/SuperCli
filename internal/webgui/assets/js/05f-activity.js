@@ -93,6 +93,14 @@ function runActivityNote(model, ev, now) {
     case "question_closed":
       if (model.waitUser) { model.waitUser = null; runActivityFromOpen(model, now); }
       break;
+    case "network_wait":
+      // The model call waits for the network; cleared when it is back.
+      if (ev.status === "waiting") {
+        var since = Number(ev.output) > 0 ? Number(ev.output) : now;
+        if (typeof syncClockOffsetMS === "number") since -= syncClockOffsetMS;
+        if (!model.waitUser) runActivitySet(model, {kind: "network", detail: "", since: Math.min(since, now)}, now);
+      } else if (model.step && model.step.kind === "network" && !model.waitUser) runActivityFromOpen(model, now);
+      break;
     case "notice":
       // A completion check or a review is another model call after the
       // answer: say so instead of an unexplained wait.
@@ -125,10 +133,11 @@ function runActivityView(model, now, userWaiting) {
   // provider is closing the stream, the answer is being saved or checked):
   // "Finishing…", never a stale "Writing the answer…".
   if (step.kind === "writing" && now - model.last >= ACTIVITY_FINISHING_MS) step = {kind: "finishing", detail: "", since: model.last};
+  if (step.kind === "network") step = Object.assign({}, step, {clock: activityClock(now - step.since)});
   var label = runActivityStepLabel(step);
   // The user's turn, a retry, a check and the end of the turn are shown at
   // once (never a flicker); other changes wait out the 1 s debounce.
-  var immediate = step.kind === "user" || step.kind === "retry" || step.kind === "checking" || step.kind === "finishing";
+  var immediate = step.kind === "user" || step.kind === "retry" || step.kind === "checking" || step.kind === "finishing" || step.kind === "network";
   var shown = immediate ? (model._liveShown = {label: label, since: step.since, at: now}) :
     activityDebounce(model, label, step.since, now);
   var quiet = Math.max(0, now - model.last), limit = userWaiting ? 0 : activitySilenceMS(step);

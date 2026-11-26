@@ -614,3 +614,32 @@ func TestBuiltinSubAgents_RegisterCleanly(t *testing.T) {
 		}
 	}
 }
+
+// Audited: four worker runs died at exactly 150.0 min with a bare "context
+// deadline exceeded". The run limit is named, with how to continue.
+func TestAgentToolRunLimitIsNamed(t *testing.T) {
+	reg := NewSubAgentRegistry()
+	reg.MustRegister(SubAgent{Name: "slow", Description: "slow", MaxSteps: 1})
+	slowFactory := func(cfg LoopConfig) (*Loop, error) {
+		return NewLoop(LoopConfig{Provider: &stubReplyProvider{name: "slow", reply: "hi", delay: 300 * time.Millisecond}, Registry: cfg.Registry, MaxSteps: 1})
+	}
+	at, _ := NewAgentTool(reg, nil, newTestBaseRegistry(), &stubReplyProvider{name: "t"}, nil, slowFactory)
+	at.TimeoutPerStep = 50 * time.Millisecond
+	res, _ := at.execute(context.Background(), json.RawMessage(`{"agent":"slow","prompt":"x"}`))
+	text := res.Text
+	if res.Err != nil {
+		text += res.Err.Error()
+	}
+	if !strings.Contains(text, "SuperCli stopped this worker: its run hit the") || !strings.Contains(text, "send_message") {
+		t.Fatalf("run limit not named: %q", text)
+	}
+	if err := workerRunLimitError(context.Background(), context.Canceled, time.Hour, "w"); err != context.Canceled {
+		t.Fatal("other errors must stay unchanged")
+	}
+	expired, cancel := context.WithTimeout(context.Background(), 0)
+	defer cancel()
+	<-expired.Done()
+	if err := workerRunLimitError(expired, context.DeadlineExceeded, 150*time.Minute, "worker-475"); err == nil || !strings.Contains(err.Error(), "150 min time limit") || !strings.Contains(err.Error(), "worker-475") {
+		t.Fatalf("limit message: %v", err)
+	}
+}

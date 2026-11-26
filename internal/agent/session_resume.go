@@ -34,6 +34,7 @@ func (l *Loop) ResumeConversation(ctx context.Context, writer SessionWriter, msg
 	l.LoadConversation(msgs)
 	// A different conversation: earlier reports belong to the old one.
 	l.unseenNotices.Store(0)
+	l.unseenReports.take()
 	if s := l.WakeScheduler(); s != nil {
 		s.UserTurn()
 	}

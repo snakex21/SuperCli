@@ -69,11 +69,19 @@ type Loop struct {
 	sessionBusy atomic.Bool
 	// Background wake-up (background_wake.go): reports appended after the
 	// model's latest request, running detached workers and the host scheduler.
-	unseenNotices    atomic.Int32
+	unseenNotices atomic.Int32
+	// unseenReports names those reports (background_unseen.go); carriedReports
+	// are a previous loop's unseen reports handed to this run by the host.
+	unseenReports    unseenReportList
+	carriedReportsMu sync.Mutex
+	carriedReports   []WorkerReportRef
 	backgroundActive atomic.Int32
-	wakeMu           sync.Mutex
-	wake             *WakeScheduler
-	wakeTurn         bool // current Run is an automatic wake-up (owner-only)
+	// conversationWorkers: the host's count of the conversation's running
+	// workers across runs (coordinator_command_cap.go); guarded by wakeMu.
+	conversationWorkers func() int
+	wakeMu              sync.Mutex
+	wake                *WakeScheduler
+	wakeTurn            bool // current Run is an automatic wake-up (owner-only)
 	// wakeProgress counts effectful tool calls of the current Run (workers
 	// started/resumed, file changes, commands, goal updates). An automatic
 	// turn with none counts against the wake-up cap (WakeScheduler).

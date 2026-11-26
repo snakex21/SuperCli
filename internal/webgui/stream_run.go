@@ -261,6 +261,9 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	hostPowerLoop = loop
 	bg = e.backgroundFor(sid, home)
 	bg.attach(loop, false)
+	// Reports earlier loops saved while no request could carry them are
+	// named in this run's first coordinator request.
+	loop.NoteUnseenWorkerReports(bg.takeUnread())
 	bgLoop = loop
 	if ask := bg.askChannel(); ask != nil {
 		// Workers this run delegates keep asking the conversation after the
@@ -381,6 +384,7 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 	var progressC <-chan time.Time
 	activeTools := map[string]struct{}{}
 	delegatedWaiting := false
+	networkWaiting := false // a model call waits for the network: not inactivity
 	modelFinished := false
 	if progressTimeout > 0 {
 		timer := newTimer(progressTimeout)
@@ -389,7 +393,7 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 		defer progressTimer.Stop()
 	}
 	resetProgress := func() {
-		if progressTimer == nil || len(activeQuestions) > 0 || len(activeTools) > 0 || delegatedWaiting || modelFinished {
+		if progressTimer == nil || len(activeQuestions) > 0 || len(activeTools) > 0 || delegatedWaiting || networkWaiting || modelFinished {
 			return
 		}
 		if !progressTimer.Stop() {
@@ -655,6 +659,11 @@ func (e *Engine) runStreamWithImages(ctx context.Context, prompt, sessionID, use
 			case agent.DelegatedWaitEvent:
 				delegatedWaiting = event.Waiting
 				if delegatedWaiting {
+					pauseProgress()
+				}
+			case agent.NetworkWaitEvent:
+				networkWaiting = event.Waiting
+				if networkWaiting {
 					pauseProgress()
 				}
 			case agent.ToolCallEvent:

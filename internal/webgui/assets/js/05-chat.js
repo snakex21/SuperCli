@@ -1797,6 +1797,8 @@ function reasoningFallbackText(tokens) {
 // language; ev.err stays the fallback for everything still unclassified.
 function chatErrorText(ev) {
   if (ev.err_code) return t(ev.err_code).replace("{n}", ev.err_name || "");
+  // The network stayed away for the whole wait: a resumable stop.
+  if (/(^|: )network stop: /.test(String(ev.err || ""))) return t("task.networkStop");
   return ev.err || t("common.error");
 }
 
@@ -1860,6 +1862,13 @@ function handleEvent(ev, current) {
     case "notice":
       addEventLine(ev.text || "", "", noticeTag(ev.text || ""));
       return current;
+    case "network_wait":
+      // Shown in the activity line (runActivityEvent above); nothing in the chat.
+      return current;
+    case "stream_discard":
+      // The connection broke mid-answer: the retried request sends the text
+      // again, so the part already shown is withdrawn (never shown twice).
+      return discardAssistantStream(current, ev.text || "", ev.output || "");
 	case "worker_progress":
       addWorkerProgress(ev);
 	  return current;

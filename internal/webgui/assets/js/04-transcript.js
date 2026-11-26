@@ -1105,6 +1105,34 @@ function autoCollapseThinking(node) {
   });
 }
 
+// A broken stream's output is withdrawn before the retried request sends it
+// again (network_wait.go). Returns the node to keep appending to, or null
+// when nothing of it is left.
+function discardAssistantStream(node, text, reasoning) {
+  if (!node || node._sealed || typeof node._raw !== "string") return node;
+  var raw = node._raw;
+  if (text && raw.slice(-text.length) === text) raw = raw.slice(0, raw.length - text.length);
+  if (reasoning) {
+    var at = raw.lastIndexOf(reasoning);
+    if (at >= 0) raw = raw.slice(0, at) + raw.slice(at + reasoning.length);
+    raw = raw.replace(/<thinking>(\s*<\/thinking>\n?)?$/, "").replace(/<thinking>\s*<\/thinking>\n?/g, "");
+  }
+  if (raw === node._raw) return node;
+  node._raw = raw;
+  node._reasoningOpen = /<thinking>(?![\s\S]*<\/thinking>)/.test(raw);
+  if (!/<thinking>/.test(raw)) node._nativeReasoningEnd = 0;
+  node._partsCache = null;
+  node._pacedParts = null;
+  node._displayParts = null;
+  node._assistantParts = null; // rebuild the rendered parts from the source
+  if (!raw.trim()) {
+    if (node.parentNode) node.parentNode.removeChild(node);
+    return null;
+  }
+  try { renderAssistant(node); } catch (e) {}
+  return node;
+}
+
 function closeAssistantReasoning(node) {
   if (!node || !node._reasoningOpen) return;
   node._nativeReasoningEnd = node._raw.length;
@@ -1331,6 +1359,28 @@ function renderWorkerRunMeta(row) {
   }
   node.hidden = false;
   setNodeText(node, parts.join(" · "));
+}
+function renderWorkerNetworkWait(row, since) {
+  if (!row || !row._body) return;
+  clearInterval(row._networkTimer);
+  row._networkTimer = null;
+  var node = row._networkNode;
+  if (!since) {
+    if (node) node.remove();
+    row._networkNode = null;
+    return;
+  }
+  if (!node || node.parentNode !== row._body) {
+    node = row._networkNode = el("div", "task-network-wait");
+    row._body.insertBefore(node, row._body.firstChild);
+  }
+  var offset = typeof syncClockOffsetMS === "number" ? syncClockOffsetMS : 0;
+  function paint() {
+    if (!node.isConnected && row._networkTimer) { clearInterval(row._networkTimer); row._networkTimer = null; return; }
+    setNodeText(node, t("activity.networkWait").replace("{time}", activityClock(Math.max(0, Date.now() - (since - offset)))));
+  }
+  paint();
+  row._networkTimer = setInterval(paint, 1000);
 }
 function workerStatusTerminal(status) { return status === "done" || status === "review" || status === "failed" || status === "stopped" || status === "interrupted"; }
 // "done" with a review note (no file changes, red verify command) is shown as
@@ -2807,6 +2857,9 @@ function activityLabel(step) {
     case "worker": return t("activity.waitWorker").replace("{worker}", workerLabel(step.worker || "worker"));
     case "user": return t("activity.waitUser");
     case "checking": return t("activity.checking");
+    // "No connection — waiting for the network (0:42)…"; the clock is filled
+    // in by runActivityView.
+    case "network": return t("activity.networkWait").replace("{time}", step.clock || "0:00");
     case "finishing": return t("activity.finishing");
     case "retry": return t(step.reason === "rate" ? "activity.retryRateLimit" : step.reason === "provider" ? "activity.retryProvider" : "activity.retryConnection")
       .replace("{attempt}", String(step.attempt || "?")).replace("{max}", String(step.max || "?"));
@@ -2817,7 +2870,7 @@ function activityLabel(step) {
 // the turn, or commands run without a limit).
 function activitySilenceMS(step) {
   if (!step) return ACTIVITY_QUIET_MS;
-  if (step.kind === "user") return 0;
+  if (step.kind === "user" || step.kind === "network") return 0;
   if (step.command || step.workerCommandMs != null) {
     var limit = step.command ? step.timeoutMs : step.workerCommandMs;
     return limit > 0 ? Math.max(limit, ACTIVITY_QUIET_MS) : 0;
@@ -3326,7 +3379,10 @@ function humanWorkerError(text) {
   var s = String(text || "");
   // SuperCli's own stops read in the UI language; the raw text stays under
   // "Szczegóły błędu".
-  var stop = /max steps safety net \((\d+)\) tripped/.exec(s);
+  var stop = /its run hit the (\d+) min time limit/.exec(s);
+  if (stop) return t("task.runLimit").replace("{min}", stop[1]);
+  if (/^network stop: /.test(s.replace(/^(agent: )?/i, ""))) return t("task.networkStop");
+  stop = /max steps safety net \((\d+)\) tripped/.exec(s);
   if (stop) return t("task.maxSteps").replace("{n}", stop[1]);
   stop = /SuperCli stopped this worker: (\d+) file changes in a row failed/.exec(s);
   if (stop) return t("task.deadEnd").replace("{n}", stop[1]);
@@ -3423,6 +3479,21 @@ function addHistoryTask(note, prompt, savedActivity) {
   appendStream(row);
   return row;
 }
+// A card's 250 ms clock stops by itself once the card has left the page (a
+// rebuild of a busy conversation replaces every card; the old clocks kept
+// running on detached cards, more with every refresh). A card still being
+// built off-page gets a 2 s grace.
+function rowClockInterval(row, update) {
+  var away = 0, timer = setInterval(function () {
+    if (!row.isConnected) {
+      if (++away >= 8) { clearInterval(timer); if (row._clock === timer) row._clock = null; }
+      return;
+    }
+    away = 0;
+    update();
+  }, 250);
+  return timer;
+}
 // Remote events keep server epoch times; local/legacy events retain the
 // monotonic performance clock, including the originating client's behaviour.
 function keepTaskClock(row) {
@@ -3430,7 +3501,7 @@ function keepTaskClock(row) {
   function update() { setRowClock(row, taskStatusLabel("running"), toolElapsed(row)); }
   row._updateElapsed = update;
   update();
-  row._clock = setInterval(update, 250);
+  row._clock = rowClockInterval(row, update);
 }
 function toolElapsed(row, at) {
   if (row._startedAtMS > 0) {
@@ -3511,7 +3582,7 @@ function addToolCall(name, args, id, at) {
   }
   row._updateElapsed = updateElapsed;
   updateElapsed();
-  row._clock = setInterval(updateElapsed, 250);
+  row._clock = rowClockInterval(row, updateElapsed);
   appendStream(row);
   var key = id || ("~" + openToolOrder.length);
   toolRows[key] = row;
@@ -3907,6 +3978,12 @@ function addWorkerProgress(ev) {
   if (ev.run > 0 && !row._taskRun && ev.parent_call_id && (toolRows[ev.parent_call_id] === row || row._parentCallID === ev.parent_call_id)) row._taskRun = ev.run;
   noteWorkerLiveEvent(row, ev);
   if (ev.kind === "tool_args") return true; // liveness only, not an activity item
+  if (ev.kind === "network_wait") {
+    // "No connection — waiting for the network (0:42)…" on the card; the
+    // worker is not failed while it waits. Cleared when the network is back.
+    renderWorkerNetworkWait(row, ev.status === "waiting" ? (Number(ev.output) || Date.now()) : 0);
+    return true;
+  }
   if (ev.kind === "started") {
     setTaskStatus(row, "running");
     row.classList.remove("done", "failed");
@@ -3929,6 +4006,7 @@ function addWorkerProgress(ev) {
     return true;
   }
   if (ev.kind === "finished") {
+    renderWorkerNetworkWait(row, 0);
     setTaskStatus(row, ev.status || "done");
     row._workerStatusUnconfirmed = false;
     row._taskActivitySerial = (row._taskActivitySerial || 0) + 1;

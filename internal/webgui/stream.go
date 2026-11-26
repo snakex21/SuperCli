@@ -115,6 +115,17 @@ func toWireEvent(ev agent.Event) (wireEvent, bool) {
 		return wireEvent{Type: "notice", Text: fmt.Sprintf("pruned %d old tool result(s), reclaimed ~%d tokens (trigger=%d/%s)", e.Pruned, e.Reclaimed, e.Threshold, e.ThresholdSource)}, true
 	case agent.NoticeEvent:
 		return wireEvent{Type: "notice", Text: e.Text}, true
+	case agent.NetworkWaitEvent:
+		// "No connection — waiting for the network (0:42)": Output is when
+		// the wait began (Unix ms); status "ok" clears it.
+		status := "ok"
+		if e.Waiting {
+			status = "waiting"
+		}
+		return wireEvent{Type: "network_wait", Status: status, Output: fmt.Sprint(e.Since.UnixMilli())}, true
+	case agent.StreamDiscardEvent:
+		// A broken stream's output is withdrawn; the retried request sends it again.
+		return wireEvent{Type: "stream_discard", Text: e.Text, Output: e.Reasoning}, true
 	case agent.AnswerNoteEvent:
 		return wireEvent{Type: "answer_note", Kind: e.Kind, Text: e.Detail}, true
 	case agent.WorkerNotificationEvent:

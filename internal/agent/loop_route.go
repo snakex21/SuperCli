@@ -88,6 +88,12 @@ func (l *Loop) prepareRunRoute(ctx context.Context, prompt string) {
 		// Replaces the implementation hint: nothing is to be implemented.
 		l.implementationHintForRun = l.statusTurnContext()
 	}
+	if l.route == RouteCoordinator {
+		// Reports saved above the previous answer while it was being written.
+		if hint := l.unseenReportsHint(); hint != "" {
+			l.implementationHintForRun = strings.TrimSpace(l.implementationHintForRun + hint + reportStatusCheckHint)
+		}
+	}
 	if l.route == RouteCoordinator && l.computeHintOn {
 		if hint := l.computeHint(prompt); hint != "" {
 			l.implementationHintForRun = strings.TrimSpace(l.implementationHintForRun + "\n" + hint)

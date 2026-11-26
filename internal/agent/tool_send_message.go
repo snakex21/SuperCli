@@ -399,6 +399,20 @@ func runWorkerLoopLocked(ctx context.Context, w *Worker, prompt string, workers 
 		switch e := ev.(type) {
 		case MessageEvent:
 			text.WriteString(e.Text)
+		case StreamDiscardEvent:
+			// A broken stream's text is sent again by the retried request.
+			if current := text.String(); e.Text != "" && strings.HasSuffix(current, e.Text) {
+				text.Reset()
+				text.WriteString(strings.TrimSuffix(current, e.Text))
+			}
+		case NetworkWaitEvent:
+			// The card shows "no connection — waiting for the network"; the
+			// worker is not failed while it waits.
+			status := "ok"
+			if e.Waiting {
+				status = "waiting"
+			}
+			emit(WorkerProgressEvent{Kind: "network_wait", Status: status, Output: fmt.Sprint(e.Since.UnixMilli())})
 		case ToolCallEvent:
 			handle, partial := retainWorkerToolDetail(runCtx, w.Loop.toolOutputs, e, ToolResultEvent{})
 			w.setState(func(*Worker) { ui.call(e, handle) })
@@ -498,6 +512,10 @@ func runWorkerLoopLocked(ctx context.Context, w *Worker, prompt string, workers 
 		}
 		w.setState(func(w *Worker) {
 			w.Status = "failed"
+			if IsNetworkStop(runErr) {
+				// The network stayed away: resumable, not a failed task.
+				w.Status = WorkerStatusInterrupted
+			}
 			if stopped {
 				w.Status = "stopped"
 			}

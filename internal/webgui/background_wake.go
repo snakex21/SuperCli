@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"strings"
 	"sync"
 
 	"supercli/internal/agent"
@@ -46,6 +47,10 @@ type sessionBackground struct {
 	mu    sync.Mutex
 	loops map[*agent.Loop]struct{}
 	last  int // last published running-agent count
+	// unread: reports the detached loops saved that no request has carried
+	// yet, kept for the next run (which may load them above its previous
+	// answer: they arrived while that answer was being written).
+	unread []agent.WorkerReportRef
 }
 
 func (e *Engine) wakeConfig(home string) agent.WakeConfig {
@@ -91,6 +96,7 @@ func (bg *sessionBackground) attach(loop *agent.Loop, detached bool) {
 		return
 	}
 	loop.SetWakeScheduler(bg.sched)
+	loop.SetConversationWorkers(bg.running)
 	bg.mu.Lock()
 	bg.loops[loop] = struct{}{}
 	bg.mu.Unlock()
@@ -110,10 +116,32 @@ func (bg *sessionBackground) acknowledge() {
 	}
 	bg.mu.Lock()
 	for loop := range bg.loops {
-		loop.AcknowledgeBackgroundReports()
+		bg.unread = append(bg.unread, loop.TakeUnseenBackgroundReports()...)
 	}
 	bg.mu.Unlock()
 	bg.prune()
+}
+
+// takeUnread hands the named unread reports to a run, with each worker's
+// task title from the registry when it is known.
+func (bg *sessionBackground) takeUnread() []agent.WorkerReportRef {
+	if bg == nil {
+		return nil
+	}
+	bg.mu.Lock()
+	refs := bg.unread
+	bg.unread = nil
+	bg.mu.Unlock()
+	if bg.e.workers != nil {
+		for i := range refs {
+			if w, ok := bg.e.workers.Get(refs[i].ID); ok {
+				if title := strings.TrimSpace(w.Snapshot().Description); title != "" {
+					refs[i].Title = title
+				}
+			}
+		}
+	}
+	return refs
 }
 
 func (bg *sessionBackground) prune() {
@@ -140,8 +168,25 @@ func (bg *sessionBackground) state() agent.WakeState {
 	return total
 }
 
+// running is the conversation's running background work: workers of every
+// run (detached loops and the registry, which also knows resumed workers)
+// and background commands. The panel counter and the coordinator's command
+// cap both use it.
 func (bg *sessionBackground) running() int {
-	return bg.state().Active
+	n := bg.state().Active
+	if bg.e.workers != nil {
+		registry := 0
+		for _, w := range bg.e.workers.List() {
+			snap := w.Snapshot()
+			if snap.SessionID == bg.sid && (snap.Status == "running" || snap.Status == "created") {
+				registry++
+			}
+		}
+		if registry > n {
+			n = registry
+		}
+	}
+	return n
 }
 
 func (bg *sessionBackground) publishCount() {

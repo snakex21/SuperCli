@@ -97,6 +97,9 @@ type TomlConfig struct {
 	// provider endpoint without its own [[providers]].requests_per_minute.
 	// 0 (default) = off.
 	RequestsPerMinute int `toml:"requests_per_minute,omitzero"`
+	// NetworkWaitMinutes: how long a model call waits for a lost network
+	// connection to return before a resumable network stop. 0 = 10 minutes.
+	NetworkWaitMinutes int `toml:"network_wait_minutes,omitzero"`
 
 	// Sampling is the `[sampling]` table: temperature, top_p and friends.
 	// Every field is optional; unset parameters are never sent, so the

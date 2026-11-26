@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -345,6 +346,7 @@ func (a *AgentTool) startBackgroundRun(parentCtx context.Context, w *Worker, pro
 		} else {
 			handoff, err = runWorkerInvocation(ctx, w, prompt, nil)
 		}
+		err = workerRunLimitError(ctx, err, timeout, w.ID)
 		if err == nil && after != nil {
 			handoff = after(ctx, handoff)
 		}
@@ -490,4 +492,15 @@ func allowedTools(list ...string) []string {
 		out = append(out, n)
 	}
 	return out
+}
+
+// workerRunLimitError names the run-time limit when it ended a worker run.
+// Before, the worker just failed with "context deadline exceeded" (audited:
+// four runs died at exactly 150.0 min with no hint why).
+func workerRunLimitError(ctx context.Context, err error, limit time.Duration, id string) error {
+	if err == nil || !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return err
+	}
+	return fmt.Errorf("SuperCli stopped this worker: its run hit the %d min time limit. Its conversation is kept: send_message to %s continues it (split long waits; process_session wait returns after 15 min). Cause: %w",
+		int(limit.Round(time.Minute)/time.Minute), id, err)
 }

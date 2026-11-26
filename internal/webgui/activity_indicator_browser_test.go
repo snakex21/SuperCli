@@ -81,7 +81,7 @@ func TestActivityIndicatorStatesSilenceAndEndNativeBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, check := range []string{"checkActivityStates()", "checkActivityDebounce()", "checkActivitySilence()", "checkActivityLine()", "checkWorkerActivityLine()", "checkMessageStatsAndReasoning()"} {
+	for _, check := range []string{"checkActivityStates()", "checkActivityDebounce()", "checkActivitySilence()", "checkActivityLine()", "checkWorkerActivityLine()", "checkMessageStatsAndReasoning()", "checkCardClocksStop()"} {
 		var failure string
 		if err := page.Eval(ctx, check, &failure); err != nil {
 			t.Fatalf("%s: %v", check, err)
@@ -120,6 +120,15 @@ function check(ok,why){if(!ok)throw Error(why);}
 function args(v){return JSON.stringify(v);}
 function label(m,now,user){var v=runActivityView(m,now,!!user);return v?v.label:null;}
 function run(fn){try{fn();return '';}catch(e){return e.message;}}
+// A card's clock stops once the card left the page (rebuilds of a busy
+// conversation used to leave every old card's 250 ms clock running).
+async function checkCardClocksStop(){try{
+  var r=document.createElement('details');r._stat=document.createElement('span');r.appendChild(r._stat);document.body.appendChild(r);
+  keepTaskClock(r);check(r._clock,'no clock');
+  await new Promise(x=>setTimeout(x,600));check(r._clock,'clock stopped while the card is shown');
+  r.remove();await new Promise(x=>setTimeout(x,2600));
+  check(r._clock===null,'clock still running on a removed card');
+  return '';}catch(e){return e.message;}}
 function checkActivityStates(){return run(function(){
   check(!fixtureErrors.length,'fixture errors: '+fixtureErrors.join('; '));
   var T=1000000,m=runActivityNew(T);
@@ -172,6 +181,23 @@ function checkActivityStates(){return run(function(){
   var rv2=runActivityNew(T);
   runActivityNote(rv2,{type:'notice',text:'review (m): accepted'},T+100);
   check(label(rv2,T+200)==='Sprawdza odpowiedź…','review: '+label(rv2,T+200));
+  // Lost network: a translated status with its own clock, never a silence
+  // warning, cleared when the network is back.
+  var n=runActivityNew(T);
+  runActivityNote(n,{type:'network_wait',status:'waiting',output:String(T+1000)},T+1000);
+  check(label(n,T+43000)==='Brak połączenia — czekam na sieć (0:42)…','network wait: '+label(n,T+43000));
+  check(!runActivityView(n,T+600000).silent,'network wait warned about silence');
+  runActivityNote(n,{type:'network_wait',status:'ok',output:String(T+1000)},T+700000);
+  check(label(n,T+702000)==='Myśli…','network status not cleared: '+label(n,T+702000));
+  // A broken stream's shown text is withdrawn before the retried request.
+  var node=addAssistantMsg();appendAssistantSource(node,'Budowanie modu zakończo');renderAssistant(node);
+  var kept=discardAssistantStream(node,'Budowanie modu zakończo','');
+  check(kept===null&&!node.isConnected,'withdrawn answer still shown');
+  var node2=addAssistantMsg();appendAssistantSource(node2,'Pierwsza część. Druga');renderAssistant(node2);
+  discardAssistantStream(node2,' Druga','');
+  check(node2._raw==='Pierwsza część.'&&node2.textContent.indexOf('Druga')<0,'partial discard: '+node2._raw+' / '+node2.textContent);
+  node2.remove();
+  check(humanWorkerError('SuperCli stopped this worker: its run hit the 150 min time limit. x').indexOf('150 min')>0,'run limit text');
   runActivityNote(m,{type:'done'},T+22000);
   check(runActivityView(m,T+22000)===null,'done must clear the line');
 });}

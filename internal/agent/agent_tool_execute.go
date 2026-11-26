@@ -312,6 +312,9 @@ func (a *AgentTool) execute(ctx context.Context, args json.RawMessage) (tools.Re
 	}
 
 	handoff, err := runWorkerInvocation(childCtx, w, workerPrompt, nil)
+	if a.TimeoutPerStep > 0 && ctx.Err() == nil {
+		err = workerRunLimitError(childCtx, err, a.TimeoutPerStep*time.Duration(maxSteps), w.ID)
+	}
 	if err != nil {
 		a.emitPreparedWorkerNotification(handoff)
 		return handoff.result(w, err), nil

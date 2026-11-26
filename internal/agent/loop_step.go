@@ -37,6 +37,7 @@ func (l *Loop) runStep(
 	background := backgroundRunFrom(ctx)
 	l.drainBackgroundMessages(ctx)
 	// This step's request carries every report delivered so far.
+	l.unseenReports.take() // at the end of this loop's history: carried as-is
 	if l.unseenNotices.Swap(0) != 0 {
 		l.emitBackgroundAgents()
 	}
