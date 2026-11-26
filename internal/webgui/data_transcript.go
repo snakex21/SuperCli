@@ -54,7 +54,43 @@ func (e *Engine) transcriptPage(ctx context.Context, id string, beforeSeq, limit
 		// Pages containing only legacy summaries still need an advancing cursor.
 		cursor = rows[0].Seq
 	}
-	return transcriptPage{Messages: messages, HasMore: hasMore, BeforeSeq: cursor}, nil
+	version, _ := store.TranscriptEditVersion(ctx, id)
+	return transcriptPage{Messages: messages, HasMore: hasMore, BeforeSeq: cursor, Version: version}, nil
+}
+
+// transcriptAfter serves a live view refresh: only rows newer than afterSeq.
+// checkSeq/checkID name the newest row the view keeps; when it is gone or
+// replaced (a rewind) TailOK is false and the view reloads in full.
+func (e *Engine) transcriptAfter(ctx context.Context, id string, afterSeq, limit, checkSeq int, checkID string) (transcriptPage, error) {
+	store, err := e.sessionStore()
+	if err != nil {
+		return transcriptPage{Messages: []transcriptMsg{}}, nil
+	}
+	meta, err := store.Get(id)
+	if err != nil {
+		return transcriptPage{}, err
+	}
+	if !sameSessionWorkspace(meta.Cwd, e.Home()) {
+		return transcriptPage{}, errSessionOutsideWorkspace
+	}
+	ok := true
+	if checkSeq > 0 {
+		row, err := store.ReadTranscriptMessageAt(ctx, id, checkSeq)
+		ok = err == nil && strconv.FormatInt(row.MessageID, 10) == checkID
+	}
+	version, _ := store.TranscriptEditVersion(ctx, id)
+	if !ok {
+		return transcriptPage{Messages: []transcriptMsg{}, Version: version, TailOK: &ok}, nil
+	}
+	rows, hasMore, err := store.ReadTranscriptMessagesAfter(ctx, id, afterSeq, limit)
+	if err != nil {
+		return transcriptPage{}, err
+	}
+	messages, err := e.buildTranscript(ctx, store, id, rows)
+	if err != nil {
+		return transcriptPage{}, err
+	}
+	return transcriptPage{Messages: messages, HasMore: hasMore, Version: version, TailOK: &ok}, nil
 }
 
 func (e *Engine) buildTranscript(ctx context.Context, store *session.Store, id string, rows []session.TranscriptMessage) ([]transcriptMsg, error) {

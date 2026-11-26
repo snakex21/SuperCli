@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"database/sql"
+	"fmt"
 )
 
 // TranscriptMessage keeps the physical ID in the same SQLite snapshot as its
@@ -88,4 +89,37 @@ func (s *Store) ReadTranscriptMessagesBefore(ctx context.Context, sessionID stri
 	}
 	s.rehydrateTranscript(ctx, out)
 	return out, hasMore, nil
+}
+
+// ReadTranscriptMessagesAfter returns up to limit rows with seq > afterSeq,
+// oldest first, and whether more follow. A live view refresh reads only what
+// is new instead of the whole loaded history again.
+func (s *Store) ReadTranscriptMessagesAfter(ctx context.Context, sessionID string, afterSeq, limit int) ([]TranscriptMessage, bool, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	out, err := s.readTranscriptMessages(ctx, limit+1, transcriptSelect+` AND seq > ? ORDER BY seq ASC LIMIT ?`, sessionID, afterSeq, limit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	hasMore := len(out) > limit
+	if hasMore {
+		out = out[:limit]
+	}
+	s.rehydrateTranscript(ctx, out)
+	return out, hasMore, nil
+}
+
+// TranscriptEditVersion changes whenever a message of the session is edited
+// or restored, so a view can tell its rendered history is stale.
+func (s *Store) TranscriptEditVersion(ctx context.Context, sessionID string) (string, error) {
+	var count, latest int64
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(MAX(updated_at),0) FROM message_edits WHERE session_id=?`, sessionID).Scan(&count, &latest)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%d:%d", count, latest), nil
 }

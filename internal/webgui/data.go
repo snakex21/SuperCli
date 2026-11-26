@@ -87,6 +87,11 @@ type transcriptPage struct {
 	Messages  []transcriptMsg `json:"messages"`
 	HasMore   bool            `json:"has_more"`
 	BeforeSeq int             `json:"before_seq,omitempty"`
+	// Version changes when a message is edited or restored; TailOK (after=
+	// requests) is false when the row the view kept before the refetched
+	// tail is gone or replaced (a rewind): the view then reloads in full.
+	Version string `json:"version,omitempty"`
+	TailOK  *bool  `json:"tail_ok,omitempty"`
 }
 
 type transcriptToolCall struct {

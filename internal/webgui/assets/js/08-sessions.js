@@ -354,6 +354,9 @@ var transcriptBeforeSeq = 0;
 // Saved history shown in this view stops before this seq (0: no limit): a
 // background run re-attached here replays its own messages from its events.
 var transcriptHistoryEndSeq = 0;
+// Edit/restore version of the rendered history (server "version"): a live
+// refresh fetches only the newest turn while it is unchanged.
+var transcriptHistoryVersion = "";
 var transcriptSessionID = "";
 // Keep the initial DOM bounded. Tool outputs and reasoning can make one
 // persisted message very large; older pages remain available on demand.
@@ -627,7 +630,9 @@ function buildHistoryFragment(messages, pager, prepend) {
     (messages || []).forEach(function (m) {
       var mark = fragment.lastChild;
       renderHistoryMessage(m);
-      for (var n = mark ? mark.nextSibling : fragment.firstChild; n; n = n.nextSibling) if (n._historySeq == null) n._historySeq = m.seq;
+      for (var n = mark ? mark.nextSibling : fragment.firstChild; n; n = n.nextSibling) {
+        if (n._historySeq == null) { n._historySeq = m.seq; n._historyMessageID = m.message_id || ""; }
+      }
     });
     if (pendingImages) {
       for (var imageIndex = pendingImages.length - 1; imageIndex >= 0; imageIndex--) {
@@ -804,6 +809,53 @@ async function loadOlderTranscriptUntil(find, maxPages) {
   return found || null;
 }
 
+// refreshTranscriptTail re-renders only the newest saved turn and what came
+// after it (rows newer than the last user message on screen). Returns true
+// when done, false when stale, null when the view must reload in full: no
+// such turn on screen, an edit or a rewind since, or too much new history.
+async function refreshTranscriptTail(id, controller, keepTop, stale) {
+  var rows = stream.children, start = null, check = null;
+  for (var i = rows.length - 1; i >= 0; i--) {
+    var row = rows[i];
+    if (row._historySeq == null) continue;
+    if (!start) {
+      if (row.classList && row.classList.contains("msg-user")) start = row;
+      continue;
+    }
+    if (row._historySeq < start._historySeq && row._historyMessageID) { check = row; break; }
+  }
+  if (!start || !check || !transcriptHistoryVersion) return null;
+  var startSeq = start._historySeq;
+  var page = await j("/api/transcript?id=" + encodeURIComponent(id) + "&limit=500&after=" + (startSeq - 1) +
+    "&check_seq=" + check._historySeq + "&check_id=" + encodeURIComponent(check._historyMessageID), { signal: controller.signal });
+  if (stale()) return false;
+  var msgs = page.messages || [];
+  if (!page.tail_ok || page.has_more || (page.version || "") !== transcriptHistoryVersion || !msgs.length || msgs[0].seq !== startSeq) return null;
+  var liveRun = backgroundRunFor(id);
+  if (liveRun) msgs = msgs.filter(function (m) { return m.seq < liveRun.userSeq; });
+  transcriptHistoryEndSeq = liveRun && liveRun.userSeq > 0 ? liveRun.userSeq : 0;
+  var openBefore = typeof snapshotOpenDisclosures === "function" ? snapshotOpenDisclosures() : null;
+  var anchor = keepTop ? transcriptViewAnchor() : null;
+  cancelInitialTranscriptTail();
+  // Drop the newest turn and everything after it (its live replay, notices).
+  var removed = [];
+  for (var node = start; node; node = node.nextSibling) removed.push(node);
+  removed.forEach(function (node) { node.remove(); });
+  [toolRows, workerRows].forEach(function (rowsByID) {
+    Object.keys(rowsByID).forEach(function (key) { if (rowsByID[key] && !rowsByID[key].isConnected) delete rowsByID[key]; });
+  });
+  openToolOrder = [];
+  lastTurn = null; workersSeen = [];
+  stream.appendChild(buildHistoryFragment(msgs, null, false));
+  if (typeof rebindWorkerOverview === "function") rebindWorkerOverview();
+  if (liveRun) reattachDetachedRun(id);
+  else showFailedRun(id);
+  if (openBefore && typeof restoreOpenDisclosures === "function") restoreOpenDisclosures(openBefore);
+  if (anchor) applyTranscriptAnchor(anchor);
+  else if (!keepTop && typeof smartScroll === "function") smartScroll(true);
+  return true;
+}
+
 async function resumeSession(id, session, fromQueue, fromSync) {
   if (fromSync && activeRun && activeRun.remote) syncReleaseView(activeRun);
   if (streaming && id === activeSessionID) return true;
@@ -836,10 +888,22 @@ async function resumeSession(id, session, fromQueue, fromSync) {
     if (typeof syncWatchSession === "function") await syncWatchSession(id);
     if (epoch !== projectEpoch || resumeSeq !== sessionResumeSeq) return false;
     var fetchStartedAt = Date.now();
+    // A live refresh of the view on screen fetches only the newest turn and
+    // what follows it, never the whole loaded history again.
+    if (sameView) {
+      var tail = await refreshTranscriptTail(id, controller, keepTop, function () {
+        return epoch !== projectEpoch || resumeSeq !== sessionResumeSeq;
+      });
+      if (tail !== null) {
+        if (tail && typeof syncAfterHistoryRender === "function") syncAfterHistoryRender(id, fetchStartedAt);
+        return tail;
+      }
+    }
     var page = await j("/api/transcript?id=" + encodeURIComponent(id) + "&limit=" + transcriptPageSize,
       { signal: controller.signal });
     var msgs = page.messages || [];
     if (epoch !== projectEpoch || resumeSeq !== sessionResumeSeq) return false;
+    transcriptHistoryVersion = page.version || "";
     // Catch up to the oldest page this view already showed (bounded).
     for (var catchUp = 0; keepFromSeq && page.has_more && page.before_seq > keepFromSeq && catchUp < 40; catchUp++) {
       page = await j("/api/transcript?id=" + encodeURIComponent(id) + "&limit=500&before=" + page.before_seq,

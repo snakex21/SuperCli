@@ -226,7 +226,12 @@ func (s *Server) handleTranscript(w http.ResponseWriter, r *http.Request) {
 		if limit > 500 {
 			limit = 500
 		}
-		out, err = s.eng.transcriptPage(r.Context(), id, queryInt(r, "before", 0), limit)
+		if r.URL.Query().Has("after") {
+			out, err = s.eng.transcriptAfter(r.Context(), id, queryInt(r, "after", 0), limit,
+				queryInt(r, "check_seq", 0), strings.TrimSpace(r.URL.Query().Get("check_id")))
+		} else {
+			out, err = s.eng.transcriptPage(r.Context(), id, queryInt(r, "before", 0), limit)
+		}
 	} else {
 		// Keep the original array response for older clients and integrations.
 		out, err = s.eng.transcript(r.Context(), id)

@@ -163,6 +163,46 @@ await loadAll();
 checkComplete('after a run');
 `)
 
+	// 3b. With the whole history loaded, live refreshes fetch only the newest
+	// turn and what follows it: one small request each, no gaps, no
+	// duplicates (they re-fetched up to 40 pages of 500 rows before).
+	run("load all for live refreshes", `
+await resumeSession(SID);
+await loadAll();
+checkComplete('before live refreshes');
+`)
+	writer := session.NewWriter(store, sid)
+	for i := 0; i < 3; i++ {
+		_ = writer.AppendMessage(context.Background(), llm.Message{Role: llm.RoleUser, Content: fmt.Sprintf("live turn %d", i)})
+		_ = writer.AppendMessage(context.Background(), llm.Message{Role: llm.RoleAssistant, Content: fmt.Sprintf("live answer %d", i)})
+		var got struct {
+			Requests []string `json:"requests"`
+			Bytes    int      `json:"bytes"`
+			Failure  string   `json:"failure"`
+		}
+		script := `(async()=>{var reqs=[],bytes=0,orig=window.fetch;
+window.fetch=async function(u,o){var r=await orig(u,o);if(String(u).indexOf('/api/transcript')>=0){reqs.push(String(u).replace(/^.*\?/,''));var c=r.clone();bytes+=(await c.text()).length;}return r;};
+var failure='';try{await resumeSession(` + fmt.Sprintf("%q", sid) + `,null,false,true);}catch(e){failure=e.message;}
+window.fetch=orig;
+var seen=[];document.querySelectorAll('#stream .msg-user').forEach(function(n){var m=/^turn (\d+):/.exec(n.textContent.trim());if(m)seen.push(+m[1]);});
+for(var k=0;k<seen.length;k++)if(seen[k]!==k){failure=failure||('gap or duplicate at turn '+k);break;}
+if(seen.length!==` + fmt.Sprint(turns) + `)failure=failure||('turns shown: '+seen.length);
+var lives=Array.from(document.querySelectorAll('#stream .msg-user')).filter(function(n){return /^live turn /.test(n.textContent.trim());}).map(function(n){return n.textContent.trim();});
+if(lives.length!==` + fmt.Sprint(i+1) + `||new Set(lives).size!==lives.length)failure=failure||('live turns shown: '+JSON.stringify(lives));
+if(document.querySelector('#stream .history-older'))failure=failure||'older pages were dropped';
+return {requests:reqs,bytes:bytes,failure:failure};})()`
+		if err := page.Eval(ctx, script, &got); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("live refresh %d: requests %v, %d bytes", i+1, got.Requests, got.Bytes)
+		if got.Failure != "" {
+			t.Fatalf("live refresh %d: %s", i+1, got.Failure)
+		}
+		if len(got.Requests) != 1 || !strings.Contains(got.Requests[0], "after=") || got.Bytes > 64<<10 {
+			t.Fatalf("live refresh %d fetched %v (%d bytes), want one small after= request", i+1, got.Requests, got.Bytes)
+		}
+	}
+
 	// 4. Worker panel: a card far back (not loaded) is loaded, opened, shown,
 	// highlighted, and stays open through three live updates.
 	run("panel jump far back", `
