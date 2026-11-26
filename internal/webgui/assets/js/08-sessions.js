@@ -814,6 +814,7 @@ async function loadOlderTranscriptUntil(find, maxPages) {
 // when done, false when stale, null when the view must reload in full: no
 // such turn on screen, an edit or a rewind since, or too much new history.
 async function refreshTranscriptTail(id, controller, keepTop, stale) {
+  if (!transcriptHistoryVersion || !stream.children) return null;
   var rows = stream.children, start = null, check = null;
   for (var i = rows.length - 1; i >= 0; i--) {
     var row = rows[i];
