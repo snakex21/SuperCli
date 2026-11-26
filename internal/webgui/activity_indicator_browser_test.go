@@ -81,7 +81,7 @@ func TestActivityIndicatorStatesSilenceAndEndNativeBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, check := range []string{"checkActivityStates()", "checkActivityDebounce()", "checkActivitySilence()", "checkActivityLine()", "checkWorkerActivityLine()", "checkMessageStatsAndReasoning()", "checkCardClocksStop()"} {
+	for _, check := range []string{"checkActivityStates()", "checkActivityDebounce()", "checkActivitySilence()", "checkActivityLine()", "checkWorkerActivityLine()", "checkMessageStatsAndReasoning()", "checkCardClocksStop()", "checkWorkerPollingStopsWhenIdle()"} {
 		var failure string
 		if err := page.Eval(ctx, check, &failure); err != nil {
 			t.Fatalf("%s: %v", check, err)
@@ -122,6 +122,13 @@ function label(m,now,user){var v=runActivityView(m,now,!!user);return v?v.label:
 function run(fn){try{fn();return '';}catch(e){return e.message;}}
 // A card's clock stops once the card left the page (rebuilds of a busy
 // conversation used to leave every old card's 250 ms clock running).
+// No running worker in view: the worker status poll is not scheduled (it
+// used to read every saved worker's history each time).
+function checkWorkerPollingStopsWhenIdle(){return run(function(){
+  workerRows={};workerStatusArmed=true;scheduleWorkerStatusSync();
+  check(workerStatusTimer===null,'status poll scheduled with no running worker');
+  check(!workerStatusBindings().length,'fixture: no running worker');
+});}
 async function checkCardClocksStop(){try{
   var r=document.createElement('details');r._stat=document.createElement('span');r.appendChild(r._stat);document.body.appendChild(r);
   keepTaskClock(r);check(r._clock,'no clock');

@@ -75,9 +75,14 @@ document.addEventListener("keydown", function (e) {
   if (typeof initMemoryIndicator === "function") initMemoryIndicator();
   if (typeof startSubscriptionUsageAutoRefresh === "function") startSubscriptionUsageAutoRefresh();
   setInterval(checkHealth, 30000);
+	// The open Tasks tab refreshes every 2.5 s while a worker runs, else
+	// every 15 s; never while the page is hidden.
+	var workersTick = 0;
 	setInterval(function () {
 	  var tasksTab = $("#side-tabs button[data-tab='tasks']");
-	  if (tasksTab && tasksTab.classList.contains("active")) loadWorkers();
+	  workersTick++;
+	  if (document.hidden || !tasksTab || !tasksTab.classList.contains("active")) return;
+	  if ((typeof workersListRunning === "undefined" || workersListRunning) || workersTick % 6 === 0) loadWorkers();
 	}, 2500);
   promptEl.focus();
 })();

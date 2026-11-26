@@ -917,6 +917,9 @@ function loadPromptQueue() {
   return promptQueueReady;
 }
 
+// Whether the last listing had a worker still running (the Tasks tab then
+// refreshes often; otherwise rarely).
+var workersListRunning = true;
 async function loadWorkers() {
   var host = $("#worker-list"); if (!host) return;
   $("#worker-heading").textContent = t("task.workers");
@@ -925,6 +928,7 @@ async function loadWorkers() {
   try {
     var got = await j("/api/workers");
     renderWorkers(got && got.workers ? got.workers : []);
+    workersListRunning = !!(got && Array.isArray(got.workers) && got.workers.some(function (w) { return w.status === "running" || w.status === "created"; }));
     if (bindings && got && Array.isArray(got.workers) && epoch === workerStatusEpoch && scope === workerStatusScope()) {
       applyWorkerStatusSnapshot(got.workers, bindings, got.server_now);
     }
